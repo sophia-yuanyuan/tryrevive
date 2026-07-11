@@ -255,6 +255,35 @@ function saveProfile() {
   localStorage.setItem(key, JSON.stringify(state.userProfile));
 }
 
+function createDefaultReviveState() {
+  return {
+    schemaVersion: 1,
+    activeProjectId: null,
+    projects: [],
+    events: [],
+    draftConversation: null
+  };
+}
+
+function normalizeReviveState(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    schemaVersion: 1,
+    activeProjectId: typeof source.activeProjectId === "string" ? source.activeProjectId : null,
+    projects: Array.isArray(source.projects) ? source.projects.filter(Boolean).map(project => ({
+      evidence: [],
+      sessions: [],
+      status: "brief",
+      actionVariant: 0,
+      ...project,
+      evidence: Array.isArray(project.evidence) ? project.evidence : [],
+      sessions: Array.isArray(project.sessions) ? project.sessions : []
+    })) : [],
+    events: Array.isArray(source.events) ? source.events.slice(-500) : [],
+    draftConversation: source.draftConversation && typeof source.draftConversation === "object" ? source.draftConversation : null
+  };
+}
+
 // --- 2. 核心状态管理 ---
 const state = {
   currentUser: "",
@@ -273,6 +302,7 @@ const state = {
     step2: "",
     step3: "",
     quizAnswers: [],
+    revive: createDefaultReviveState(),
 
     // User Custom App Dock config
     appDock: defaultAppDock(),
@@ -305,7 +335,10 @@ const state = {
     cloudBubble: null,
     sprout: null
   },
-  actionSwitchInterval: null
+  actionSwitchInterval: null,
+  reviveUiMode: "auto",
+  homeMode: "revive",
+  reviveTimerInterval: null
 };
 
 // 系统“减少动态效果”偏好：用于给 canvas 动画降频/减量（CSS 媒体查询管不到 canvas）
@@ -439,6 +472,10 @@ function switchView(viewName) {
   if (state.canvasAnimIds.sprout) cancelAnimationFrame(state.canvasAnimIds.sprout);
   if (state.timerInterval) clearInterval(state.timerInterval);
   if (state.actionSwitchInterval) clearInterval(state.actionSwitchInterval);
+  if (viewName !== "home" && state.reviveTimerInterval) {
+    clearInterval(state.reviveTimerInterval);
+    state.reviveTimerInterval = null;
+  }
   state.meditationActive = false;
   stopOceanWaves();
 
@@ -454,9 +491,19 @@ function switchView(viewName) {
     targetScreen.classList.add("active");
   }
   state.activeView = viewName;
+  document.body.classList.toggle("revive-home-active", viewName === "home");
+  if (viewName !== "home") {
+    document.body.classList.remove("revive-focus-tools-active", "revive-insights-open");
+    const reviveSidebar = document.querySelector(".revive-sidebar");
+    if (reviveSidebar) {
+      reviveSidebar.setAttribute("inert", "");
+      reviveSidebar.setAttribute("aria-hidden", "true");
+    }
+  }
 
   // Initialize specific page logics
   if (viewName === "home") {
+    setHomeMode(state.homeMode || "revive", false);
     // Dock Edit Mode disabled by default
     state.dockEditMode = false;
     const editBtn = document.getElementById("edit-dock-btn");
@@ -477,6 +524,8 @@ function switchView(viewName) {
     
     // MBTI template warning pre-generation & synchronization
     syncWarningMotivationalDOM();
+
+    renderReviveWorkspace();
 
     // 云朵心语：定时飘出来问候状态
     scheduleCloudCheckin(CLOUD_FIRST_DELAY_MS);
@@ -590,11 +639,47 @@ function loadUserProfile(username) {
     if (loaded.quizAnswers === undefined) {
       loaded.quizAnswers = [];
     }
+    loaded.revive = normalizeReviveState(loaded.revive);
     return loaded;
   } catch (e) {
     console.error("Failed to parse user profile:", e);
     return null;
   }
+}
+
+function startGuestMode() {
+  const guestId = "local_guest";
+  let guestProfile = loadUserProfile(guestId);
+  if (!guestProfile) {
+    guestProfile = {
+      nickname: "朋友",
+      password: "",
+      passwordSalt: "",
+      mbti: "",
+      motivation: "让一个停滞项目重新动起来",
+      customQuote: "",
+      apiKey: "",
+      aiProxyUrl: "",
+      calmingColor: { h: 16, s: 78, l: 62 },
+      showPet: false,
+      petStyle: "B",
+      currentGoal: "",
+      firstStep: "",
+      step2: "",
+      step3: "",
+      quizAnswers: [],
+      revive: createDefaultReviveState(),
+      appDock: defaultAppDock(),
+      lanshiMigrated: true
+    };
+  }
+  state.currentUser = guestId;
+  state.userProfile = guestProfile;
+  localStorage.setItem("tryrevive_active_user", guestId);
+  saveProfile();
+  applyThemeColor(guestProfile.calmingColor.h, guestProfile.calmingColor.s, guestProfile.calmingColor.l);
+  switchView("home");
+  if (!getReviveStore().projects.length) startNewRevive();
 }
 
 async function handleRegister() {
@@ -635,6 +720,7 @@ async function handleRegister() {
     step2: "",
     step3: "",
     quizAnswers: [],
+    revive: createDefaultReviveState(),
 
     appDock: defaultAppDock(),
     lanshiMigrated: true
@@ -2444,7 +2530,7 @@ function extendFocusTimer(seconds) {
   if (state.blockerTimerActive) {
     state.blockerTimeLimitSec += seconds;
     stopHeartbeatLoop();
-    document.title = "Tryrevive - 夺回你的注意力主权";
+    document.title = "Try Revive — 让停滞项目重新动起来";
     
     const overlay = document.getElementById("alert-blocking");
     if (overlay) overlay.classList.remove("active");
@@ -2456,7 +2542,7 @@ function enterMeditationFromBlocker() {
   if (overlay) overlay.classList.remove("active");
   
   stopHeartbeatLoop();
-  document.title = "Tryrevive - 夺回你的注意力主权";
+  document.title = "Try Revive — 让停滞项目重新动起来";
   
   state.blockerTimerActive = false;
   if (state.blockerInterval) clearInterval(state.blockerInterval);
@@ -2713,6 +2799,25 @@ const CLOUD_QUESTIONS = [
   "有被什么卡住吗？跟我说说也可以。",
   "给现在的状态打个分吧，1 到 10 分？"
 ];
+
+// 按小人状态加权的问候（源自 heart-cloud 提示语库）
+const CLOUD_STATE_QUESTIONS = {
+  black: [
+    "我看见你有点被卷走了。现在最想从哪里回来？",
+    "状态好像有些乱。此刻真正想守住的目标是什么？",
+    "先不用责备自己。写一句现在最想重新开始的小想法吧。"
+  ],
+  gray: [
+    "现在状态还好吗？今天最想推进的一个小目标是什么？",
+    "路还在。此刻脑子里最值得留下的想法是哪一句？",
+    "要不要把当前的目标收进来，给自己一个更稳的方向？"
+  ],
+  white: [
+    "现在很清醒。想把这份状态留给哪件事？",
+    "你已经回到自己这里了。下一步想轻轻做什么？",
+    "这份专注挺珍贵的。把它写成一句目标吧。"
+  ]
+};
 const CLOUD_FIRST_DELAY_MS = 10 * 1000;      // 进入首页 10 秒后第一次飘出
 const CLOUD_MIN_GAP_MS = 3 * 60 * 1000;      // 之后每 3~6 分钟随机飘一次
 const CLOUD_MAX_GAP_MS = 6 * 60 * 1000;
@@ -2740,9 +2845,12 @@ function showCloudCheckin() {
   const textEl = document.getElementById("cloud-checkin-text");
   if (!cloud || !textEl) return;
 
+  // 通用问候 + 按当前小人状态加权的心云问候
+  const statePool = CLOUD_STATE_QUESTIONS[state.avatarState] || CLOUD_STATE_QUESTIONS.gray;
+  const pool = CLOUD_QUESTIONS.concat(statePool, statePool); // 状态语双倍权重
   let q = cloudState.question;
-  while (CLOUD_QUESTIONS.length > 1 && q === cloudState.question) {
-    q = CLOUD_QUESTIONS[Math.floor(Math.random() * CLOUD_QUESTIONS.length)];
+  while (pool.length > 1 && q === cloudState.question) {
+    q = pool[Math.floor(Math.random() * pool.length)];
   }
   cloudState.question = q;
   textEl.textContent = q;
@@ -2804,7 +2912,1082 @@ function triggerBlockerWarning(overtimeSeconds) {
   });
 }
 
-// --- 18. Initial Boot Up & DOM Events binding ---
+// --- 18. Try Revive：停滞项目复活闭环 ---
+const REVIVE_BLOCKER_LABELS = {
+  context: "上下文断了",
+  too_big: "下一步仍然太大",
+  tool: "找不到工作入口",
+  commitment: "缺少承诺与陪伴",
+  unclear: "不确定什么才算推进"
+};
+
+const REVIVE_STATUS_LABELS = {
+  brief: "待开始",
+  running: "行动中",
+  evidence: "待提交证据",
+  completed: "本轮完成",
+  paused: "已暂停"
+};
+
+const REVIVE_CONVERSATION_QUESTIONS = [
+  { field: "name", prompt: "先告诉我：你想重新启动的项目叫什么？", placeholder: "例如：个人作品集网站", type: "text" },
+  { field: "goal", prompt: "你原本希望它最后变成什么结果？不用讲完整计划，只说你想看到的成品。", placeholder: "例如：上线一个能展示三个项目的作品集", type: "text" },
+  { field: "lastProgress", prompt: "它停下前，最后一次真实进展是什么？", placeholder: "例如：首页已经写完，详情页还是空白", type: "text" },
+  { field: "stalledDays", prompt: "它大概停了多久？可以直接说“两周”或“20 天”。", placeholder: "例如：两周", type: "days" },
+  { field: "whyContinue", prompt: "为什么它现在仍然值得继续？一句话就够。", placeholder: "例如：我需要用它申请实习", type: "text" },
+  { field: "lastCompleted", prompt: "最后一个已经完成、能指给别人看的东西是什么？", placeholder: "例如：已经可以打开的首页", type: "text" },
+  {
+    field: "blocker", prompt: "现在最大的阻力更像哪一种？", type: "options",
+    options: [
+      { value: "context", label: "忘了做到哪里" }, { value: "too_big", label: "下一步太大" },
+      { value: "tool", label: "找不到工作入口" }, { value: "commitment", label: "一个人容易拖" },
+      { value: "unclear", label: "不确定什么算推进" }
+    ]
+  },
+  {
+    field: "availableMinutes", prompt: "今天你愿意先给它多少时间？", type: "options",
+    options: [
+      { value: 10, label: "10 分钟" }, { value: 15, label: "15 分钟" },
+      { value: 20, label: "20 分钟" }, { value: 45, label: "45 分钟" }
+    ]
+  }
+];
+
+function getReviveStore() {
+  if (!state.userProfile.revive) state.userProfile.revive = createDefaultReviveState();
+  return state.userProfile.revive;
+}
+
+function reviveUid(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function getActiveReviveProject() {
+  const store = getReviveStore();
+  return store.projects.find(project => project.id === store.activeProjectId) || null;
+}
+
+function recordReviveEvent(type, projectId, metadata) {
+  const store = getReviveStore();
+  store.events.push({
+    id: reviveUid("evt"),
+    type,
+    projectId: projectId || null,
+    at: Date.now(),
+    metadata: metadata || {}
+  });
+  if (store.events.length > 500) store.events = store.events.slice(-500);
+}
+
+function reviveSaveAndRender(message, type) {
+  saveProfile();
+  if (message) showReviveNotice(message, type);
+  renderReviveWorkspace();
+}
+
+function showReviveNotice(message, type) {
+  const notice = document.getElementById("revive-notice");
+  if (!notice) return;
+  notice.textContent = message || "";
+  notice.className = `revive-notice${message ? " show" : ""}${type === "error" ? " error" : ""}`;
+  clearTimeout(showReviveNotice.timer);
+  if (message) {
+    showReviveNotice.timer = setTimeout(() => {
+      notice.className = "revive-notice";
+      notice.textContent = "";
+    }, 6500);
+  }
+}
+
+function setHomeMode(mode, shouldRender = true) {
+  state.homeMode = mode === "tools" ? "tools" : "revive";
+  const isTools = state.homeMode === "tools";
+  const workspace = document.getElementById("revive-workspace-panel");
+  const tools = document.getElementById("attention-tools-panel");
+  const reviveTab = document.getElementById("revive-tab-workspace");
+  const toolsTab = document.getElementById("revive-tab-tools");
+  if (workspace) workspace.hidden = isTools;
+  if (tools) tools.hidden = !isTools;
+  if (reviveTab) reviveTab.classList.toggle("active", !isTools);
+  if (toolsTab) toolsTab.classList.toggle("active", isTools);
+  document.body.classList.toggle("revive-focus-tools-active", isTools && state.activeView === "home");
+  if (isTools) toggleReviveInsights(false);
+  if (shouldRender && !isTools) renderReviveWorkspace();
+  if (shouldRender && isTools) {
+    renderAppDock();
+    syncWarningMotivationalDOM();
+  }
+}
+
+function reviveFormatDateTime(value) {
+  if (!value) return "未安排";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未安排";
+  return date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function reviveFormatRemaining(seconds) {
+  const safe = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function reviveSafeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function startNewRevive() {
+  const store = getReviveStore();
+  store.draftConversation = {
+    step: 0,
+    answers: {},
+    messages: [{ role: "assistant", text: REVIVE_CONVERSATION_QUESTIONS[0].prompt }]
+  };
+  state.reviveUiMode = "conversation";
+  document.body.classList.remove("revive-insights-open");
+  saveProfile();
+  setHomeMode("revive", false);
+  renderReviveWorkspace();
+  document.getElementById("revive-stage-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function toggleReviveInsights(force) {
+  const shouldOpen = typeof force === "boolean" ? force : !document.body.classList.contains("revive-insights-open");
+  document.body.classList.toggle("revive-insights-open", shouldOpen);
+  const sidebar = document.querySelector(".revive-sidebar");
+  if (sidebar) {
+    sidebar.toggleAttribute("inert", !shouldOpen);
+    sidebar.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
+  }
+  if (shouldOpen) {
+    renderReviveProjectList();
+    renderReviveMetrics();
+    renderReviveWeeklyReport();
+  }
+}
+
+function reviveSelectProject(projectId) {
+  const store = getReviveStore();
+  if (!store.projects.some(project => project.id === projectId)) return;
+  store.activeProjectId = projectId;
+  state.reviveUiMode = "auto";
+  document.body.classList.remove("revive-insights-open");
+  saveProfile();
+  renderReviveWorkspace();
+}
+
+function renderReviveWorkspace() {
+  const stage = document.getElementById("revive-stage-panel");
+  if (!stage) return;
+  const store = getReviveStore();
+  if (store.activeProjectId && !store.projects.some(project => project.id === store.activeProjectId)) {
+    store.activeProjectId = store.projects[0]?.id || null;
+  }
+
+  renderReviveProjectList();
+  renderReviveMetrics();
+  renderReviveWeeklyReport();
+
+  if (state.reviveUiMode === "auto" && store.draftConversation) state.reviveUiMode = "conversation";
+
+  if (state.reviveUiMode === "conversation") {
+    stage.innerHTML = reviveConversationTemplate();
+    requestAnimationFrame(() => {
+      const messages = document.getElementById("revive-chat-messages");
+      if (messages) messages.scrollTop = messages.scrollHeight;
+      document.getElementById("revive-chat-input")?.focus();
+    });
+    return;
+  }
+
+  if (state.reviveUiMode === "intake") {
+    stage.innerHTML = reviveIntakeTemplate();
+    return;
+  }
+
+  const project = getActiveReviveProject();
+  if (!project) {
+    stage.innerHTML = `
+      <div class="revive-empty-state">
+        <div>
+          <div class="revive-empty-symbol">↗</div>
+          <h2>从一句话开始</h2>
+          <p>我会一次只问一个问题，并在对话过程中自动填写项目资料。最后只给你一个现在能完成的动作。</p>
+          <button class="revive-primary-btn" onclick="startNewRevive()">开始复活对话</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (project.status === "running") stage.innerHTML = reviveTimerTemplate(project);
+  else if (project.status === "evidence") stage.innerHTML = reviveEvidenceTemplate(project);
+  else if (project.status === "completed") stage.innerHTML = reviveCompleteTemplate(project);
+  else if (project.status === "paused") stage.innerHTML = revivePausedTemplate(project);
+  else stage.innerHTML = reviveBriefTemplate(project);
+
+  if (project.status === "running") beginReviveTimerLoop();
+}
+
+function reviveConversationTemplate() {
+  const store = getReviveStore();
+  const draft = store.draftConversation || {
+    step: 0,
+    answers: {},
+    messages: [{ role: "assistant", text: REVIVE_CONVERSATION_QUESTIONS[0].prompt }]
+  };
+  store.draftConversation = draft;
+  const question = REVIVE_CONVERSATION_QUESTIONS[draft.step] || REVIVE_CONVERSATION_QUESTIONS[0];
+  const messages = (draft.messages || []).map(message =>
+    `<div class="revive-chat-bubble ${message.role === "user" ? "user" : (message.role === "ack" ? "ack" : "assistant")}">${escapeHtml(message.text)}</div>`
+  ).join("");
+  const options = question.type === "options" ? `
+    <div class="revive-chat-options">
+      ${question.options.map(option => `<button class="revive-chat-option" onclick="reviveConversationChoose('${option.value}', '${option.label}')">${escapeHtml(option.label)}</button>`).join("")}
+    </div>` : "";
+  const composer = question.type !== "options" ? `
+    <form class="revive-chat-composer" onsubmit="reviveSubmitConversation(event)">
+      <input id="revive-chat-input" class="revive-input" autocomplete="off" placeholder="${escapeHtml(question.placeholder || "直接说就好")}" aria-label="回答当前问题">
+      <button type="submit" class="revive-primary-btn">发送</button>
+    </form>` : "";
+  const summary = reviveConversationSummary(draft.answers || {});
+
+  return `
+    <div class="revive-chat">
+      <div class="revive-chat-head">
+        <div><span class="revive-eyebrow">REVIVAL CONVERSATION</span><h2>我来问，你只需要回答</h2></div>
+        <span class="revive-chat-progress">${Math.min(draft.step + 1, REVIVE_CONVERSATION_QUESTIONS.length)} / ${REVIVE_CONVERSATION_QUESTIONS.length}</span>
+      </div>
+      <div id="revive-chat-messages" class="revive-chat-messages">${messages}</div>
+      ${options}
+      ${composer}
+      <div class="revive-chat-summary">${summary}</div>
+      <div class="revive-chat-note">答案会自动写入项目资料。你随时可以取消，或切换到完整表单。</div>
+      <div class="revive-action-row">
+        <div><button class="revive-quiet-btn" onclick="reviveCancelConversation()">取消对话</button></div>
+        <div><button class="revive-quiet-btn" onclick="state.reviveUiMode='intake'; renderReviveWorkspace()">切换完整表单</button></div>
+      </div>
+    </div>`;
+}
+
+function reviveConversationSummary(answers) {
+  const items = [];
+  if (answers.name) items.push(`项目：${answers.name}`);
+  if (answers.goal) items.push(`目标：${answers.goal}`);
+  if (answers.lastProgress) items.push(`进展：${answers.lastProgress}`);
+  if (answers.stalledDays) items.push(`停滞：${answers.stalledDays} 天`);
+  if (answers.whyContinue) items.push(`继续理由：${answers.whyContinue}`);
+  if (answers.lastCompleted) items.push(`已有成果：${answers.lastCompleted}`);
+  if (answers.blocker) items.push(`阻力：${REVIVE_BLOCKER_LABELS[answers.blocker] || answers.blocker}`);
+  if (answers.availableMinutes) items.push(`可用时间：${answers.availableMinutes} 分钟`);
+  if (!items.length) return "<span>还没有填写内容</span>";
+  return items.map(item => `<span title="${escapeHtml(item)}">${escapeHtml(item)}</span>`).join("");
+}
+
+function reviveParseDays(value) {
+  const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) return null;
+  const chineseNumbers = { "一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
+  const chineseMatch = raw.match(/([一两二三四五六七八九十]+)(天|周|星期|个月|月)/);
+  if (chineseMatch) {
+    const text = chineseMatch[1];
+    let number = chineseNumbers[text] || 0;
+    if (!number && text.startsWith("十")) number = 10 + (chineseNumbers[text.slice(1)] || 0);
+    if (!number && text.endsWith("十")) number = (chineseNumbers[text[0]] || 1) * 10;
+    if (chineseMatch[2] === "周" || chineseMatch[2] === "星期") return number * 7;
+    if (chineseMatch[2] === "个月" || chineseMatch[2] === "月") return number * 30;
+    return number;
+  }
+  if (raw.includes("半个月")) return 15;
+  if (raw.includes("半年")) return 180;
+  const numeric = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!numeric) return null;
+  const number = Number(numeric[1]);
+  if (raw.includes("周") || raw.includes("星期")) return Math.round(number * 7);
+  if (raw.includes("月")) return Math.round(number * 30);
+  return Math.round(number);
+}
+
+function reviveConversationAck(field, value, displayValue) {
+  if (field === "name") return `收到，我把项目记为“${displayValue}”。`;
+  if (field === "goal") return "明白了，我只保留这个结果，不展开完整计划。";
+  if (field === "lastProgress") return "已保存最后现场，下次不会从空白开始。";
+  if (field === "stalledDays") return `记下了：停滞约 ${value} 天。`;
+  if (field === "whyContinue") return "这个继续理由会用来判断建议是否值得做。";
+  if (field === "lastCompleted") return "很好，新的动作会从这个真实成果继续。";
+  if (field === "blocker") return `主要阻力已标记为“${displayValue}”。`;
+  if (field === "availableMinutes") return `好，我会把第一步控制在 ${Math.min(10, Number(value) || 10)} 分钟。`;
+  return "已自动填入。";
+}
+
+function reviveSubmitConversation(event) {
+  event.preventDefault();
+  const input = document.getElementById("revive-chat-input");
+  const value = input?.value.trim();
+  if (!value) return;
+  reviveHandleConversationAnswer(value, value);
+}
+
+function reviveConversationChoose(value, label) {
+  reviveHandleConversationAnswer(value, label);
+}
+
+function reviveHandleConversationAnswer(rawValue, displayValue) {
+  const store = getReviveStore();
+  const draft = store.draftConversation;
+  if (!draft) return;
+  const question = REVIVE_CONVERSATION_QUESTIONS[draft.step];
+  if (!question) return;
+  let value = rawValue;
+  if (question.type === "days") {
+    value = reviveParseDays(rawValue);
+    if (!value) {
+      showReviveNotice("我没看懂停滞时间。可以回答“14 天”或“两周”。", "error");
+      return;
+    }
+    if (value < 7) {
+      showReviveNotice("Try Revive 先处理停滞至少 7 天的项目。请确认一个 7 天以上的时间。", "error");
+      return;
+    }
+    value = Math.min(3650, value);
+    displayValue = `${value} 天`;
+  }
+  if (question.type === "text" && String(value).trim().length < 2) {
+    showReviveNotice("可以再多说一点点吗？两三个词就够。", "error");
+    return;
+  }
+  if (question.field === "availableMinutes") value = Number(value) || 10;
+
+  draft.answers[question.field] = value;
+  draft.messages.push({ role: "user", text: String(displayValue) });
+  draft.messages.push({ role: "ack", text: reviveConversationAck(question.field, value, displayValue) });
+  draft.step += 1;
+
+  if (draft.step >= REVIVE_CONVERSATION_QUESTIONS.length) {
+    reviveCompleteConversation();
+    return;
+  }
+  draft.messages.push({ role: "assistant", text: REVIVE_CONVERSATION_QUESTIONS[draft.step].prompt });
+  saveProfile();
+  renderReviveWorkspace();
+}
+
+function reviveCompleteConversation() {
+  const store = getReviveStore();
+  const draft = store.draftConversation;
+  if (!draft) return;
+  const answers = draft.answers || {};
+  const now = Date.now();
+  const project = {
+    id: reviveUid("project"),
+    name: answers.name,
+    goal: answers.goal,
+    lastProgress: answers.lastProgress,
+    stalledDays: answers.stalledDays,
+    availableMinutes: answers.availableMinutes || 10,
+    toolLink: "",
+    whyContinue: answers.whyContinue,
+    lastCompleted: answers.lastCompleted,
+    blocker: answers.blocker || "context",
+    obstacle: "",
+    decision: "continue",
+    status: "brief",
+    actionVariant: 0,
+    action: null,
+    evidence: [],
+    sessions: [],
+    reminderAt: null,
+    createdAt: now,
+    updatedAt: now,
+    intakeMode: "conversation"
+  };
+  project.action = generateRevivalAction(project, 0, false);
+  store.projects.unshift(project);
+  store.activeProjectId = project.id;
+  store.draftConversation = null;
+  state.reviveUiMode = "auto";
+  recordReviveEvent("brief_created", project.id, { blocker: project.blocker, intakeMode: "conversation" });
+  reviveSaveAndRender("对话已自动整理成 Revival Brief。你只需要检查这一步是否足够小。", "success");
+}
+
+function reviveCancelConversation() {
+  getReviveStore().draftConversation = null;
+  state.reviveUiMode = "auto";
+  saveProfile();
+  renderReviveWorkspace();
+}
+
+function reviveIntakeTemplate() {
+  return `
+    <form id="revive-intake-form" onsubmit="reviveCreateProject(event)">
+      <div class="revive-form-head">
+        <div><span class="revive-eyebrow">PROJECT INTAKE</span><h2>用两分钟恢复项目现场</h2></div>
+        <span class="revive-form-progress">项目背景 + 最多 3 个诊断问题</span>
+      </div>
+      <div class="revive-form-grid">
+        <div class="revive-field">
+          <label for="revive-project-name">项目名称 *</label>
+          <input id="revive-project-name" name="name" class="revive-input" maxlength="80" required placeholder="例如：个人作品集网站">
+        </div>
+        <div class="revive-field">
+          <label for="revive-stalled-days">已经停了多久 *</label>
+          <input id="revive-stalled-days" name="stalledDays" class="revive-input" type="number" min="7" max="3650" value="7" required>
+        </div>
+        <div class="revive-field full">
+          <label for="revive-goal">原本想完成什么 *</label>
+          <textarea id="revive-goal" name="goal" class="revive-textarea" maxlength="500" required placeholder="写结果，不用重写完整 PRD。例如：上线一个能让别人浏览三个项目的作品集。"></textarea>
+        </div>
+        <div class="revive-field full">
+          <label for="revive-last-progress">停下前最后的真实进展 *</label>
+          <textarea id="revive-last-progress" name="lastProgress" class="revive-textarea" maxlength="500" required placeholder="例如：首页结构已经写完，但项目详情页仍是空白。"></textarea>
+        </div>
+        <div class="revive-field">
+          <label for="revive-available-time">今天可用时间</label>
+          <select id="revive-available-time" name="availableMinutes" class="revive-select">
+            <option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option><option value="45">45 分钟</option>
+          </select>
+        </div>
+        <div class="revive-field">
+          <label for="revive-tool-link">工作入口（选填）</label>
+          <input id="revive-tool-link" name="toolLink" class="revive-input" placeholder="Notion / Figma / GitHub / 在线文档链接">
+          <small>只保存链接；不会自动读取或修改外部资料。</small>
+        </div>
+        <div class="revive-field full">
+          <label for="revive-why">问题 1：为什么它现在仍值得继续？ *</label>
+          <textarea id="revive-why" name="whyContinue" class="revive-textarea" maxlength="400" required placeholder="一句话即可。若已经不值得继续，暂停也是正确结果。"></textarea>
+        </div>
+        <div class="revive-field full">
+          <label for="revive-last-done">问题 2：最后一个已经完成、能指给别人看的东西是什么？ *</label>
+          <input id="revive-last-done" name="lastCompleted" class="revive-input" maxlength="240" required placeholder="例如：已经可以打开的首页 / 一页草稿 / 一段可运行代码">
+        </div>
+        <div class="revive-field">
+          <label for="revive-blocker">问题 3：当前最大的阻力 *</label>
+          <select id="revive-blocker" name="blocker" class="revive-select" required>
+            <option value="context">忘了做到哪里</option><option value="too_big">下一步太大</option><option value="tool">找不到文件或入口</option><option value="commitment">一个人容易继续拖</option><option value="unclear">不确定什么才算推进</option>
+          </select>
+        </div>
+        <div class="revive-field">
+          <label for="revive-obstacle">补充一句具体情况</label>
+          <input id="revive-obstacle" name="obstacle" class="revive-input" maxlength="240" placeholder="例如：一打开 Figma 就想重新设计全部页面">
+        </div>
+        <div class="revive-field full">
+          <label for="revive-decision">这次的决定</label>
+          <select id="revive-decision" name="decision" class="revive-select">
+            <option value="continue">继续：给我一个现在能完成的动作</option>
+            <option value="shrink">缩小：保留价值，但先缩小目标</option>
+            <option value="pause">暂不继续：保存现场，之后再判断</option>
+          </select>
+        </div>
+      </div>
+      <div class="revive-form-actions">
+        <button type="button" class="revive-quiet-btn" onclick="reviveCancelConversation()">取消</button>
+        <div class="revive-form-actions-right">
+          <button type="submit" class="revive-primary-btn">生成 Revival Brief</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+function reviveCreateProject(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const stalledDays = Number(data.get("stalledDays"));
+  if (!Number.isFinite(stalledDays) || stalledDays < 7) {
+    showReviveNotice("Try Revive 只处理至少停滞 7 天的项目。若刚停下，先继续原计划。", "error");
+    return;
+  }
+
+  const now = Date.now();
+  const project = {
+    id: reviveUid("project"),
+    name: String(data.get("name") || "").trim(),
+    goal: String(data.get("goal") || "").trim(),
+    lastProgress: String(data.get("lastProgress") || "").trim(),
+    stalledDays,
+    availableMinutes: Number(data.get("availableMinutes")) || 10,
+    toolLink: reviveSafeUrl(data.get("toolLink")),
+    whyContinue: String(data.get("whyContinue") || "").trim(),
+    lastCompleted: String(data.get("lastCompleted") || "").trim(),
+    blocker: String(data.get("blocker") || "context"),
+    obstacle: String(data.get("obstacle") || "").trim(),
+    decision: String(data.get("decision") || "continue"),
+    status: data.get("decision") === "pause" ? "paused" : "brief",
+    actionVariant: 0,
+    action: null,
+    evidence: [],
+    sessions: [],
+    reminderAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  if (!project.name || !project.goal || !project.lastProgress || !project.whyContinue || !project.lastCompleted) {
+    showReviveNotice("请补齐必填信息，尤其是最后的真实进展与继续理由。", "error");
+    return;
+  }
+  project.action = generateRevivalAction(project, 0, project.decision === "shrink");
+
+  const store = getReviveStore();
+  store.draftConversation = null;
+  store.projects.unshift(project);
+  store.activeProjectId = project.id;
+  state.reviveUiMode = "auto";
+  recordReviveEvent(project.status === "paused" ? "project_paused" : "brief_created", project.id, { blocker: project.blocker });
+  reviveSaveAndRender(project.status === "paused" ? "已保存项目现场。暂停也是正确结果。" : "Revival Brief 已生成。先检查动作是否足够小。", "success");
+}
+
+function generateRevivalAction(project, variant, forceSmall) {
+  const name = project.name || "这个项目";
+  const goal = project.goal || "原目标";
+  const last = project.lastCompleted || project.lastProgress || "已有内容";
+  const blocker = project.blocker || "context";
+  const versions = {
+    context: [
+      `打开「${name}」最近的工作文件，在顶部写下“当前状态 / 卡点 / 下一步”各 1 句。`,
+      `只查看「${name}」最后一次产出，把仍然有效的内容复制到一份“复活草稿”。`,
+      `打开「${name}」的主要文件，标出一处最接近完成的内容，并写下它缺的最后一步。`
+    ],
+    too_big: [
+      `为「${name}」做一个 60 分版本：只完成“${goal.slice(0, 42)}”中最小可展示的一块。`,
+      `删掉「${name}」下一步中的非必要部分，只保留一个别人能看见的结果并做出第一版。`,
+      `复制现有内容做一份“粗糙但可展示”的草稿，只补上最明显的一个空缺。`
+    ],
+    tool: [
+      `找到并打开「${name}」的主要工作文件，把它固定到易访问位置，然后完成一个可见改动。`,
+      `只做入口恢复：找到「${last.slice(0, 45)}」所在文件，重命名为清晰标题并保存到固定位置。`,
+      `打开最接近成品的文件，在里面留下一行“下次从这里继续”的明确标记。`
+    ],
+    commitment: [
+      `打开「${name}」并完成一个可见改动；完成后在本页记录证据和下一次继续时间。`,
+      `给自己写一条只包含交付物与截止时间的承诺，然后立刻做出交付物的第一小块。`,
+      `先完成「${name}」里一个能截图的变化，再决定是否邀请同伴见证下一轮。`
+    ],
+    unclear: [
+      `把“${goal.slice(0, 46)}”改写成一个今天能展示的结果，并完成它的第一处可见内容。`,
+      `从「${last.slice(0, 45)}」继续，只做一个让页面、文档或原型明显发生变化的修改。`,
+      `写下「${name}」本轮的完成标准，然后先完成标准中的第一项。`
+    ]
+  };
+  const list = versions[blocker] || versions.context;
+  const index = Math.abs(Number(variant) || 0) % list.length;
+  const minutes = forceSmall ? 5 : Math.min(10, Math.max(5, Number(project.availableMinutes) || 10));
+  let text = list[index];
+  if (forceSmall && !text.startsWith("只")) text = `只做最小版：${text}`;
+  const doneDefinitions = {
+    context: "工作文件中出现 3 行状态说明，且你能明确指出下次从哪里继续。",
+    too_big: "出现一个可打开、可截图或可给别人看的 60 分草稿。",
+    tool: "主要文件已找到并固定，文件中至少保存了一处可见变化。",
+    commitment: "有一处真实改动，并在本页记录了证据与下一次继续时间。",
+    unclear: "完成标准已写清，并且已经产生第一处可见内容。"
+  };
+  const rationale = `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。这一步从已完成的“${last.slice(0, 64)}”继续，不要求重做完整计划。`;
+  return { text, minutes, rationale, doneDefinition: doneDefinitions[blocker] || doneDefinitions.context, createdAt: Date.now() };
+}
+
+function reviveBriefTemplate(project) {
+  const action = project.action || generateRevivalAction(project, 0, false);
+  project.action = action;
+  const toolButton = project.toolLink ? `<button class="revive-secondary-btn" onclick="reviveOpenTool()">打开工作入口 ↗</button>` : "";
+  return `
+    <div class="revive-brief-head">
+      <div>
+        <span class="revive-eyebrow">REVIVAL BRIEF</span>
+        <h2>${escapeHtml(project.name)}</h2>
+        <div class="revive-brief-context">停滞 ${project.stalledDays} 天 · 当前阻力：${escapeHtml(REVIVE_BLOCKER_LABELS[project.blocker] || "启动摩擦")}</div>
+      </div>
+      <span class="revive-status-pill active">只做当前一步</span>
+    </div>
+    <div class="revive-action-card">
+      <div class="revive-action-meta"><span class="revive-mini-pill">${action.minutes} 分钟</span><span class="revive-mini-pill">60 分版本</span><span class="revive-mini-pill">需要真实结果</span></div>
+      <h3>${escapeHtml(action.text)}</h3>
+      <div class="revive-done-definition"><strong>完成标准：</strong>${escapeHtml(action.doneDefinition)}</div>
+      <div class="revive-action-rationale"><strong>为什么建议这一步：</strong>${escapeHtml(action.rationale)}</div>
+      <div id="revive-edit-box" class="revive-edit-box">
+        <textarea id="revive-action-edit" class="revive-textarea">${escapeHtml(action.text)}</textarea>
+        <textarea id="revive-definition-edit" class="revive-textarea">${escapeHtml(action.doneDefinition)}</textarea>
+        <div><button class="revive-secondary-btn" onclick="reviveSaveEditedAction()">保存修改</button></div>
+      </div>
+      <div class="revive-action-row">
+        <div>
+          <button class="revive-secondary-btn" onclick="reviveChangeAction('smaller')">再缩小</button>
+          <button class="revive-secondary-btn" onclick="reviveChangeAction('next')">换一步</button>
+          <button class="revive-quiet-btn" onclick="document.getElementById('revive-edit-box')?.classList.toggle('open')">自己修改</button>
+        </div>
+        <div>${toolButton}<button class="revive-primary-btn" onclick="reviveStartNow()">Start now · ${action.minutes} 分钟</button></div>
+      </div>
+    </div>
+    <div class="revive-form-actions">
+      <button class="revive-quiet-btn danger" onclick="revivePauseProject()">暂不继续这个项目</button>
+      <span class="revive-form-progress">不会自动写入文件、发送消息或提交代码</span>
+    </div>`;
+}
+
+function reviveChangeAction(mode) {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  if (mode === "next") project.actionVariant = (Number(project.actionVariant) || 0) + 1;
+  project.action = generateRevivalAction(project, project.actionVariant, mode === "smaller");
+  project.updatedAt = Date.now();
+  recordReviveEvent("action_changed", project.id, { mode, minutes: project.action.minutes });
+  reviveSaveAndRender(mode === "smaller" ? "动作已缩到 5 分钟。" : "已换一个仍然产出真实结果的动作。", "success");
+}
+
+function reviveSaveEditedAction() {
+  const project = getActiveReviveProject();
+  const actionText = document.getElementById("revive-action-edit")?.value.trim();
+  const doneDefinition = document.getElementById("revive-definition-edit")?.value.trim();
+  if (!project || !actionText || !doneDefinition) {
+    showReviveNotice("动作和完成标准都不能为空。", "error");
+    return;
+  }
+  project.action = { ...project.action, text: actionText, doneDefinition, createdAt: Date.now() };
+  project.updatedAt = Date.now();
+  recordReviveEvent("action_edited", project.id, {});
+  reviveSaveAndRender("已保存你的动作版本。", "success");
+}
+
+function reviveStartNow() {
+  const project = getActiveReviveProject();
+  if (!project || !project.action) return;
+  const remaining = Math.max(60, Number(project.action.minutes || 10) * 60);
+  project.status = "running";
+  project.timerRunning = true;
+  project.timerRemainingSec = remaining;
+  project.timerEndAt = Date.now() + remaining * 1000;
+  project.sessionStartedAt = Date.now();
+  project.updatedAt = Date.now();
+  recordReviveEvent("action_started", project.id, { minutes: project.action.minutes });
+  state.userProfile.currentGoal = project.name;
+  state.userProfile.firstStep = project.action.text;
+  saveProfile();
+  renderReviveWorkspace();
+}
+
+function reviveGetRemainingSec(project) {
+  if (!project) return 0;
+  if (project.timerRunning && project.timerEndAt) return Math.max(0, Math.ceil((project.timerEndAt - Date.now()) / 1000));
+  return Math.max(0, Number(project.timerRemainingSec) || 0);
+}
+
+function reviveTimerTemplate(project) {
+  const remaining = reviveGetRemainingSec(project);
+  if (project.timerRunning && remaining <= 0) {
+    project.timerRunning = false;
+    project.timerRemainingSec = 0;
+    saveProfile();
+  }
+  return `
+    <div class="revive-timer-stage">
+      <div class="revive-timer-label">START NOW · 当前只做这一件</div>
+      <h2 class="revive-timer-action">${escapeHtml(project.action.text)}</h2>
+      <div id="revive-timer-clock" class="revive-timer-clock">${reviveFormatRemaining(remaining)}</div>
+      <div class="revive-timer-controls">
+        <button id="revive-pause-btn" class="revive-secondary-btn" onclick="reviveToggleTimer()">${project.timerRunning ? "暂停" : "继续"}</button>
+        <button class="revive-primary-btn" onclick="reviveCompleteAction()">我完成了</button>
+        <button class="revive-quiet-btn" onclick="reviveActionStillTooLarge()">动作仍然太大</button>
+      </div>
+      ${project.toolLink ? `<button class="revive-tool-link" onclick="reviveOpenTool()">打开真实工作入口 ↗</button>` : ""}
+      <div class="revive-done-definition"><strong>完成标准：</strong>${escapeHtml(project.action.doneDefinition)}</div>
+    </div>`;
+}
+
+function beginReviveTimerLoop() {
+  if (state.reviveTimerInterval) clearInterval(state.reviveTimerInterval);
+  state.reviveTimerInterval = setInterval(() => {
+    const project = getActiveReviveProject();
+    if (!project || project.status !== "running") {
+      clearInterval(state.reviveTimerInterval);
+      state.reviveTimerInterval = null;
+      return;
+    }
+    const remaining = reviveGetRemainingSec(project);
+    const clock = document.getElementById("revive-timer-clock");
+    if (clock) clock.textContent = reviveFormatRemaining(remaining);
+    if (remaining <= 0 && project.timerRunning) {
+      project.timerRunning = false;
+      project.timerRemainingSec = 0;
+      saveProfile();
+      const button = document.getElementById("revive-pause-btn");
+      if (button) button.textContent = "继续";
+      showReviveNotice("时间到了。完成了就提交证据；没完成也可以再缩小动作。", "success");
+    }
+  }, 1000);
+}
+
+function reviveToggleTimer() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  if (project.timerRunning) {
+    project.timerRemainingSec = reviveGetRemainingSec(project);
+    project.timerRunning = false;
+    project.timerEndAt = null;
+    recordReviveEvent("timer_paused", project.id, { remainingSec: project.timerRemainingSec });
+  } else {
+    const remaining = Math.max(60, Number(project.timerRemainingSec) || Number(project.action.minutes || 10) * 60);
+    project.timerRemainingSec = remaining;
+    project.timerEndAt = Date.now() + remaining * 1000;
+    project.timerRunning = true;
+    recordReviveEvent("timer_resumed", project.id, { remainingSec: remaining });
+  }
+  reviveSaveAndRender();
+}
+
+function reviveActionStillTooLarge() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.status = "brief";
+  project.timerRunning = false;
+  project.timerEndAt = null;
+  project.action = generateRevivalAction(project, project.actionVariant, true);
+  project.updatedAt = Date.now();
+  recordReviveEvent("action_too_large", project.id, {});
+  reviveSaveAndRender("已停止计时并把动作缩到 5 分钟。不是失败，是诊断结果。", "success");
+}
+
+function reviveCompleteAction() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.status = "evidence";
+  project.timerRemainingSec = reviveGetRemainingSec(project);
+  project.timerRunning = false;
+  project.timerEndAt = null;
+  project.updatedAt = Date.now();
+  saveProfile();
+  renderReviveWorkspace();
+}
+
+function reviveEvidenceTemplate(project) {
+  return `
+    <form onsubmit="reviveSubmitEvidence(event)">
+      <div class="revive-form-head">
+        <div><span class="revive-eyebrow">COMPLETION EVIDENCE</span><h2>留下足够轻的完成证据</h2></div>
+        <span class="revive-status-pill active">不会上传云端</span>
+      </div>
+      <p class="revive-evidence-intro">证据是为了让下次不用重新回忆，不是为了审查你。可用文字、链接、文件名，或只做自我确认。</p>
+      <div class="revive-form-grid">
+        <div class="revive-field">
+          <label for="revive-evidence-type">证据方式</label>
+          <select id="revive-evidence-type" name="type" class="revive-select">
+            <option value="text">文字说明</option><option value="link">成果链接</option><option value="file">截图 / 文件名</option><option value="self">仅自我确认</option>
+          </select>
+        </div>
+        <div class="revive-field">
+          <label for="revive-reminder">下次什么时候继续</label>
+          <select id="revive-reminder" name="reminder" class="revive-select">
+            <option value="1">24 小时后</option><option value="7">7 天后</option><option value="0">暂不提醒</option>
+          </select>
+        </div>
+        <div class="revive-field full">
+          <label for="revive-evidence-note">我具体完成了什么</label>
+          <textarea id="revive-evidence-note" name="note" class="revive-textarea" maxlength="800" placeholder="例如：作品集首页已经能展示三个项目，并完成移动端首屏。"></textarea>
+        </div>
+        <div class="revive-field">
+          <label for="revive-evidence-link">成果链接（选填）</label>
+          <input id="revive-evidence-link" name="link" class="revive-input" placeholder="https://...">
+        </div>
+        <div class="revive-field">
+          <label for="revive-evidence-file">截图或文件（选填）</label>
+          <input id="revive-evidence-file" name="file" type="file" class="revive-input revive-file-input">
+          <small>只记录文件名和大小；文件内容不会写入浏览器存档。</small>
+        </div>
+      </div>
+      <div class="revive-form-actions">
+        <button type="button" class="revive-quiet-btn" onclick="reviveReturnToAction()">返回动作</button>
+        <button type="submit" class="revive-primary-btn">保存证据并完成本轮</button>
+      </div>
+    </form>`;
+}
+
+function reviveReturnToAction() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.status = "running";
+  project.timerRunning = false;
+  reviveSaveAndRender();
+}
+
+function reviveSubmitEvidence(event) {
+  event.preventDefault();
+  const project = getActiveReviveProject();
+  if (!project) return;
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const type = String(data.get("type") || "text");
+  const note = String(data.get("note") || "").trim();
+  const link = reviveSafeUrl(data.get("link"));
+  const file = form.querySelector('[name="file"]')?.files?.[0] || null;
+  if (type !== "self" && !note && !link && !file) {
+    showReviveNotice("请留下一条文字、链接或文件名；也可以选择“仅自我确认”。", "error");
+    return;
+  }
+
+  const now = Date.now();
+  const evidence = {
+    id: reviveUid("evidence"),
+    type,
+    note: note || (type === "self" ? "用户确认本动作已完成" : ""),
+    link,
+    file: file ? { name: file.name, size: file.size, type: file.type || "" } : null,
+    createdAt: now
+  };
+  project.evidence.push(evidence);
+  project.sessions.push({
+    id: reviveUid("session"),
+    action: { ...project.action },
+    startedAt: project.sessionStartedAt || now,
+    completedAt: now,
+    durationSec: Math.max(0, Math.round((now - (project.sessionStartedAt || now)) / 1000)),
+    evidenceId: evidence.id
+  });
+  const reminderDays = Number(data.get("reminder"));
+  project.reminderAt = reminderDays > 0 ? now + reminderDays * 24 * 60 * 60 * 1000 : null;
+  project.status = "completed";
+  project.completedAt = now;
+  project.updatedAt = now;
+  recordReviveEvent("action_completed", project.id, { evidenceType: type, reminderDays });
+  setAvatarState("white");
+  reviveSaveAndRender("你已经让项目重新动了一次。下一轮会从这份证据继续。", "success");
+}
+
+function reviveCompleteTemplate(project) {
+  const evidence = project.evidence[project.evidence.length - 1];
+  const reminder = project.reminderAt ? reviveFormatDateTime(project.reminderAt) : "未安排提醒";
+  return `
+    <div class="revive-complete-card">
+      <div class="revive-complete-mark">✓</div>
+      <span class="revive-eyebrow">REAL PROGRESS RECORDED</span>
+      <h2>项目已经重新动起来了</h2>
+      <p>${escapeHtml(evidence?.note || "本轮动作已完成")} 下一次不需要从头回忆，直接从这份结果继续。</p>
+      <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">证据 ${project.evidence.length} 条</span><span class="revive-mini-pill">完成会话 ${project.sessions.length} 次</span><span class="revive-mini-pill">下次：${escapeHtml(reminder)}</span></div>
+      <div class="revive-next-card">
+        <h3>下一步只选一种</h3>
+        <div class="revive-form-grid">
+          <div class="revive-field full">
+            <label for="revive-sprint-deliverable">可选：进入 45 分钟短冲刺，每阶段只交付一件东西</label>
+            <input id="revive-sprint-deliverable" class="revive-input" placeholder="例如：完成项目详情页的 60 分版本">
+          </div>
+        </div>
+        <div class="revive-action-row">
+          <div><button class="revive-secondary-btn" onclick="reviveStartFollowUp()">生成下一次微动作</button></div>
+          <div><button class="revive-primary-btn" onclick="reviveStartShortSprint()">开始 45 分钟短冲刺</button></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function reviveStartFollowUp() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.actionVariant = (Number(project.actionVariant) || 0) + 1;
+  project.action = generateRevivalAction(project, project.actionVariant, false);
+  project.status = "brief";
+  project.reminderAt = null;
+  project.updatedAt = Date.now();
+  recordReviveEvent("followup_brief_created", project.id, {});
+  reviveSaveAndRender("下一轮动作已从最新证据继续生成。", "success");
+}
+
+function reviveStartShortSprint() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  const input = document.getElementById("revive-sprint-deliverable");
+  const deliverable = input?.value.trim() || `完成「${project.name}」下一阶段的一个可展示版本`;
+  project.action = {
+    text: deliverable,
+    minutes: 45,
+    rationale: "你已经完成首个微动作。短冲刺只保留一个交付物，避免重新展开完整 backlog。",
+    doneDefinition: "45 分钟结束时有一个可打开、可截图或可展示的阶段交付物。",
+    createdAt: Date.now(),
+    isSprint: true
+  };
+  project.status = "brief";
+  project.reminderAt = null;
+  project.updatedAt = Date.now();
+  recordReviveEvent("short_sprint_created", project.id, {});
+  reviveSaveAndRender("短冲刺已准备好；开始后页面只显示当前交付物。", "success");
+}
+
+function revivePausedTemplate(project) {
+  return `
+    <div class="revive-empty-state">
+      <div>
+        <div class="revive-empty-symbol">Ⅱ</div>
+        <span class="revive-eyebrow">PAUSED WITH CONTEXT</span>
+        <h2>${escapeHtml(project.name)} 已暂停</h2>
+        <p>现场已经保存：${escapeHtml(project.lastProgress)}。不继续也是正确结果；想回来时不用重新解释项目。</p>
+        <button class="revive-primary-btn" onclick="reviveResumeProject()">重新判断并继续</button>
+      </div>
+    </div>`;
+}
+
+function revivePauseProject() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.status = "paused";
+  project.timerRunning = false;
+  project.timerEndAt = null;
+  project.updatedAt = Date.now();
+  recordReviveEvent("project_paused", project.id, {});
+  reviveSaveAndRender("已保存现场，没有制造虚假的待办压力。", "success");
+}
+
+function reviveResumeProject() {
+  const project = getActiveReviveProject();
+  if (!project) return;
+  project.status = "brief";
+  project.action = generateRevivalAction(project, project.actionVariant || 0, true);
+  project.updatedAt = Date.now();
+  recordReviveEvent("project_resumed", project.id, {});
+  reviveSaveAndRender("欢迎回来。先从 5 分钟最小版开始。", "success");
+}
+
+function reviveOpenTool() {
+  const project = getActiveReviveProject();
+  if (!project?.toolLink) {
+    showReviveNotice("这个项目还没有设置工作入口。你可以修改项目或直接打开本地文件。", "error");
+    return;
+  }
+  recordReviveEvent("tool_opened", project.id, { host: new URL(project.toolLink).hostname });
+  saveProfile();
+  openExternal(project.toolLink);
+}
+
+function renderReviveProjectList() {
+  const list = document.getElementById("revive-project-list");
+  const count = document.getElementById("revive-project-count");
+  if (!list || !count) return;
+  const store = getReviveStore();
+  count.textContent = String(store.projects.length);
+  if (!store.projects.length) {
+    list.innerHTML = '<div class="revive-project-empty">还没有项目。第一次复活会自动保存在这里。</div>';
+    return;
+  }
+  list.innerHTML = store.projects.map(project => {
+    const due = project.status === "completed" && project.reminderAt && project.reminderAt <= Date.now();
+    const status = due ? "该继续了" : (REVIVE_STATUS_LABELS[project.status] || "待处理");
+    return `
+      <div class="revive-project-item ${project.id === store.activeProjectId ? "selected" : ""}" role="button" tabindex="0" onclick="reviveSelectProject('${project.id}')" onkeydown="if(event.key==='Enter'){reviveSelectProject('${project.id}')}" aria-label="打开项目 ${escapeHtml(project.name)}">
+        <div><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(status)} · ${project.sessions.length} 次完成</small></div>
+        <button class="revive-project-delete" onclick="event.stopPropagation(); reviveDeleteProject('${project.id}')" aria-label="删除 ${escapeHtml(project.name)}">×</button>
+      </div>`;
+  }).join("");
+}
+
+function renderReviveMetrics() {
+  const box = document.getElementById("revive-metrics");
+  if (!box) return;
+  const store = getReviveStore();
+  const started = store.events.filter(event => event.type === "action_started").length;
+  const completed = store.events.filter(event => event.type === "action_completed").length;
+  const successRate = started ? Math.round((completed / started) * 100) : 0;
+  let d7Eligible = 0;
+  let d7Success = 0;
+  store.projects.forEach(project => {
+    const sessions = [...project.sessions].sort((a, b) => a.completedAt - b.completedAt);
+    sessions.forEach((session, index) => {
+      if (index >= sessions.length - 1) return;
+      d7Eligible += 1;
+      if (sessions[index + 1].completedAt - session.completedAt <= 7 * 24 * 60 * 60 * 1000) d7Success += 1;
+    });
+  });
+  const d7Rate = d7Eligible ? Math.round((d7Success / d7Eligible) * 100) : 0;
+  box.innerHTML = `
+    <div class="revive-metric"><strong>${started}</strong><span>启动真实动作</span></div>
+    <div class="revive-metric"><strong>${successRate}%</strong><span>复活会话成功率</span></div>
+    <div class="revive-metric"><strong>${d7Rate}%</strong><span>D7 二次推进率</span></div>
+    <div class="revive-metric"><strong>${completed}</strong><span>有效完成证据</span></div>`;
+}
+
+function renderReviveWeeklyReport() {
+  const box = document.getElementById("revive-weekly-report");
+  if (!box) return;
+  const store = getReviveStore();
+  const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const weekEvents = store.events.filter(event => event.at >= since);
+  const started = weekEvents.filter(event => event.type === "action_started").length;
+  const completed = weekEvents.filter(event => event.type === "action_completed").length;
+  const weekSessions = store.projects.flatMap(project => project.sessions || []).filter(session => session.completedAt >= since);
+  const minutes = Math.round(weekSessions.reduce((sum, session) => sum + (Number(session.durationSec) || 0), 0) / 60);
+  const blockerCounts = {};
+  store.projects.filter(project => project.updatedAt >= since || project.createdAt >= since).forEach(project => {
+    blockerCounts[project.blocker] = (blockerCounts[project.blocker] || 0) + 1;
+  });
+  const commonBlocker = Object.entries(blockerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+  if (!started && !completed) {
+    box.innerHTML = `
+      <div class="revive-weekly-empty">完成第一次复活后，这里会给你一份很短的行为复盘：什么让你启动、动作是否过大、下周应减少什么摩擦。</div>
+      <div class="revive-weekly-disclaimer">只总结可观察行为，不做人格、心理或“网瘾”诊断。</div>`;
+    return;
+  }
+  const rate = started ? Math.round((completed / started) * 100) : 0;
+  let insight = "本周已经产生真实推进。下周继续保持“一次只做一个可验证动作”。";
+  if (started >= 2 && rate < 50) insight = "开始次数不少，但完成率偏低。下周优先把默认动作缩到 5 分钟，不增加提醒数量。";
+  else if (commonBlocker === "too_big") insight = "最常见摩擦是动作过大。下周每次先做 60 分版本，再决定是否进入 45 分钟短冲刺。";
+  else if (commonBlocker === "context") insight = "最常见摩擦是上下文断裂。下周完成后固定留下“现状 / 卡点 / 下一步”三行记录。";
+  else if (commonBlocker === "commitment") insight = "你更容易卡在独自启动。可以小样本尝试同伴见证，但不要使用羞耻、惩罚或财务押注。";
+
+  box.innerHTML = `
+    <div class="revive-weekly-statline">
+      <div class="revive-weekly-stat"><strong>${started}</strong><span>开始</span></div>
+      <div class="revive-weekly-stat"><strong>${completed}</strong><span>完成</span></div>
+      <div class="revive-weekly-stat"><strong>${minutes}</strong><span>行动分钟</span></div>
+    </div>
+    <div class="revive-weekly-insight">${escapeHtml(insight)}</div>
+    <div class="revive-weekly-disclaimer">依据本周复活动作与完成证据生成。网络使用模式只有在用户主动授权浏览器扩展后才应纳入，而且仍不做医学诊断。</div>`;
+}
+
+function reviveDeleteProject(projectId) {
+  const store = getReviveStore();
+  const project = store.projects.find(item => item.id === projectId);
+  if (!project) return;
+  if (!confirm(`确定删除“${project.name}”及其全部证据吗？此操作无法撤销。`)) return;
+  store.projects = store.projects.filter(item => item.id !== projectId);
+  store.events = store.events.filter(event => event.projectId !== projectId);
+  if (store.activeProjectId === projectId) store.activeProjectId = store.projects[0]?.id || null;
+  state.reviveUiMode = "auto";
+  reviveSaveAndRender("项目及其本地证据已删除。", "success");
+}
+
+function reviveExportData() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    product: "Try Revive",
+    user: state.currentUser,
+    data: getReviveStore()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `tryrevive-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  recordReviveEvent("data_exported", null, {});
+  saveProfile();
+  showReviveNotice("本地项目数据已导出为 JSON。", "success");
+}
+
+function reviveClearAllData() {
+  if (!confirm("确定清空全部 Try Revive 项目、会话与证据吗？注意力工具设置会保留。")) return;
+  state.userProfile.revive = createDefaultReviveState();
+  state.reviveUiMode = "auto";
+  saveProfile();
+  renderReviveWorkspace();
+  showReviveNotice("Try Revive 项目数据已全部清空。", "success");
+}
+
+// --- 19. Initial Boot Up & DOM Events binding ---
 document.addEventListener("DOMContentLoaded", () => {
   const goalStepInput = document.getElementById("goal-first-step-input");
   if (goalStepInput) {

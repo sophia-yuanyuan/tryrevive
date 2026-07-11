@@ -20,14 +20,18 @@ document.addEventListener("DOMContentLoaded", () => {
     openBtn.addEventListener("click", () => {
       chrome.tabs.query({}, (tabs) => {
         // Look for existing Tryrevive tab
-        const target = tabs.find(t => t.url && t.url.includes("Tryrevive/index.html"));
+        const target = tabs.find(t => t.url && (
+          t.url.startsWith("https://tryrevive.online") ||
+          t.url.startsWith("https://www.tryrevive.online") ||
+          t.url.startsWith("http://localhost:8000") ||
+          t.url.startsWith("http://127.0.0.1:8000")
+        ));
         if (target) {
           chrome.tabs.update(target.id, { active: true });
         } else {
-          // If not found, open as a new tab
-          // For local files development, we can point to standard index.html path
-          const localUrl = chrome.runtime.getURL("../index.html");
-          chrome.tabs.create({ url: localUrl });
+          // Extension packages cannot open files outside their own directory.
+          // Open the deployed app, where captured articles are synced by content.js.
+          chrome.tabs.create({ url: "https://tryrevive.online/" });
         }
       });
     });

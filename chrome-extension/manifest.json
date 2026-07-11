@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tryrevive Attention Guard",
-  "version": "1.0",
-  "description": "夺回你的注意力主权 - 网站使用时间监测与超时冷静插件",
+  "version": "1.1",
+  "description": "夺回注意力主权，并一键收录公开微信公众号文章到 Tryrevive 知识库",
   "permissions": [
     "tabs",
     "storage",
