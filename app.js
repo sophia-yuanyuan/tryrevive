@@ -1,4 +1,5 @@
-// Tryrevive MVP 三期核心控制系统 - 谷歌极简首页、矢量花叶HSL无极调节、智能MBTI梦想警示语、无眼蜡笔Chubby桌宠、不规则云雾气泡与手写自定心语
+// TryRevive V2：停滞项目复活版。注意力工具代码保留用于历史回退，但不在本版本暴露入口。
+const REVIVAL_ONLY_BUILD = true;
 
 // --- 1. 静态数据配置 (测试题/自适应话术库/气泡) ---
 const QUIZ_QUESTIONS = [
@@ -503,32 +504,28 @@ function switchView(viewName) {
 
   // Initialize specific page logics
   if (viewName === "home") {
-    setHomeMode(state.homeMode || "revive", false);
-    // Dock Edit Mode disabled by default
-    state.dockEditMode = false;
-    const editBtn = document.getElementById("edit-dock-btn");
-    if (editBtn) editBtn.innerHTML = "<span>编辑</span>";
-    
-    renderAppDock();
-    
-    // Sync Pet display
-    const petContainer = document.getElementById("desk-pet-container");
-    if (petContainer) {
-      petContainer.style.display = state.userProfile.showPet ? "block" : "none";
+    setHomeMode("revive", false);
+
+    if (!REVIVAL_ONLY_BUILD) {
+      // V1 attention-tool initialization remains available for a reversible build.
+      state.dockEditMode = false;
+      const editBtn = document.getElementById("edit-dock-btn");
+      if (editBtn) editBtn.innerHTML = "<span>编辑</span>";
+      renderAppDock();
+
+      const petContainer = document.getElementById("desk-pet-container");
+      if (petContainer) {
+        petContainer.style.display = state.userProfile.showPet ? "block" : "none";
+      }
+      if (state.userProfile.showPet) {
+        initAvatarCanvas("avatar-canvas", "avatar");
+        initActionCycle();
+      }
+      syncWarningMotivationalDOM();
+      scheduleCloudCheckin(CLOUD_FIRST_DELAY_MS);
     }
-    
-    if (state.userProfile.showPet) {
-      initAvatarCanvas("avatar-canvas", "avatar");
-      initActionCycle();
-    }
-    
-    // MBTI template warning pre-generation & synchronization
-    syncWarningMotivationalDOM();
 
     renderReviveWorkspace();
-
-    // 云朵心语：定时飘出来问候状态
-    scheduleCloudCheckin(CLOUD_FIRST_DELAY_MS);
 
   } else if (viewName === "meditation") {
     const setupOverlay = document.getElementById("meditation-setup-overlay");
@@ -713,7 +710,7 @@ async function handleRegister() {
     customQuote: "",
     aiProxyUrl: "",
     calmingColor: { h: 220, s: 65, l: 55 },
-    showPet: true,
+    showPet: false,
     petStyle: "B",
     currentGoal: "",
     firstStep: "",
@@ -726,7 +723,15 @@ async function handleRegister() {
     lanshiMigrated: true
   };
 
-  startQuiz();
+  saveProfile();
+  localStorage.setItem("tryrevive_active_user", state.currentUser);
+  applyThemeColor(
+    state.userProfile.calmingColor.h,
+    state.userProfile.calmingColor.s,
+    state.userProfile.calmingColor.l
+  );
+  switchView("home");
+  startNewRevive();
 }
 
 async function handleLogin() {
@@ -3000,7 +3005,7 @@ function showReviveNotice(message, type) {
 }
 
 function setHomeMode(mode, shouldRender = true) {
-  state.homeMode = mode === "tools" ? "tools" : "revive";
+  state.homeMode = !REVIVAL_ONLY_BUILD && mode === "tools" ? "tools" : "revive";
   const isTools = state.homeMode === "tools";
   const workspace = document.getElementById("revive-workspace-panel");
   const tools = document.getElementById("attention-tools-panel");
@@ -4066,7 +4071,7 @@ document.addEventListener("DOMContentLoaded", () => {
     runNarrativeIntro();
   }
 
-  initFocusMonitor();
+  if (!REVIVAL_ONLY_BUILD) initFocusMonitor();
 });
 
 function setAvatarState(stateName) {

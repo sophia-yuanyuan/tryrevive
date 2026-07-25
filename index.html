@@ -8,9 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Noto+Serif+SC:wght@300;500&family=Ma+Shan+Zheng&display=swap">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="wechat-knowledge.css">
 </head>
-<body>
+<body class="revival-only-build">
 
   <!-- 1. LINK INTERCEPT MODAL (跳转前置拦截) -->
   <div id="link-intercept-modal" class="dialog-overlay">
@@ -145,7 +144,7 @@
       <footer>
         <div style="display: flex; flex-direction: column; gap: 0.8rem; width: 100%;">
           <button onclick="startGuestMode()" class="btn-primary">直接试用 Try Revive</button>
-          <button onclick="handleRegister()" class="btn-sec" style="text-align: center;">建立独立存档（可选个性设置）</button>
+          <button onclick="handleRegister()" class="btn-sec" style="text-align: center;">建立独立项目存档</button>
           <button onclick="handleLogin()" class="btn-sec" style="text-align: center;">载入旧存档</button>
         </div>
       </footer>
@@ -275,13 +274,11 @@
             <div class="revive-brand-caption">从停滞，到一个真实动作</div>
           </div>
         </div>
-        <nav class="revive-tabs" aria-label="首页功能">
-          <button id="revive-tab-workspace" class="revive-tab active" onclick="setHomeMode('revive')">复活项目</button>
-          <button id="revive-tab-tools" class="revive-tab" onclick="setHomeMode('tools')">注意力工具</button>
+        <nav class="revive-tabs" aria-label="当前版本">
+          <span id="revive-tab-workspace" class="revive-tab active" aria-current="page">项目复活版</span>
         </nav>
         <div class="revive-account-actions">
           <button onclick="toggleReviveInsights()" class="revive-icon-btn revive-insights-btn">项目与复盘</button>
-          <button onclick="switchView('onboarding')" class="revive-icon-btn" aria-label="设置偏好">设置</button>
           <button onclick="handleLogout()" class="revive-icon-btn">登出</button>
         </div>
       </header>
@@ -352,7 +349,7 @@
       </div>
 
       <!-- Existing attention management features remain available as a secondary tool page. -->
-      <div id="attention-tools-panel" class="attention-tools-panel" hidden>
+      <div id="attention-tools-panel" class="attention-tools-panel" hidden inert aria-hidden="true">
         <div class="attention-tools-intro">
           <span class="revive-eyebrow">FOCUS SUPPORT</span>
           <h2 id="dashboard-welcome-title">你好，朋友！</h2>
@@ -418,17 +415,17 @@
       </div>
 
       <!-- ☁️ 云朵心语：定时飘出来，轻轻问一句状态 -->
-      <div id="cloud-checkin" class="cloud-checkin" onclick="openCloudChat()" role="button" aria-label="打开心语对话">
+      <div id="cloud-checkin" class="cloud-checkin" onclick="openCloudChat()" role="button" aria-label="打开心语对话" hidden>
         <button class="cloud-checkin-close" onclick="dismissCloudCheckin(event)" title="先不聊">✕</button>
         <span class="cloud-checkin-emoji">☁️</span>
         <span id="cloud-checkin-text" class="cloud-checkin-text">此刻的你，感觉怎么样？</span>
       </div>
 
       <!-- AI 心语对话（浮动按钮 + 透明气泡面板） -->
-      <button id="ai-chat-toggle" class="ai-chat-toggle" onclick="toggleAIChat()" title="和 AI 聊聊">
+      <button id="ai-chat-toggle" class="ai-chat-toggle" onclick="toggleAIChat()" title="和 AI 聊聊" hidden>
         <span class="ai-chat-orb"></span>
       </button>
-      <div id="ai-chat-panel" class="ai-chat-panel">
+      <div id="ai-chat-panel" class="ai-chat-panel" hidden>
         <div class="ai-chat-head">
           <span>心语 · 和自己对话</span>
           <button onclick="toggleAIChat()" class="ai-chat-close">✕</button>
@@ -517,6 +514,5 @@
   </main>
 
   <script src="app.js"></script>
-  <script src="wechat-knowledge.js"></script>
 </body>
 </html>

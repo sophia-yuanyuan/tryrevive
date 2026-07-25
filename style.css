@@ -2086,3 +2086,10 @@ body.revive-insights-open .revive-drawer-backdrop { opacity: 1; visibility: visi
   .revive-chat-composer { grid-template-columns: 1fr; }
   .revive-chat-composer button { width: 100%; }
 }
+/* V2 revival-only build: keep V1 implementation in history without exposing its UI. */
+body.revival-only-build #attention-tools-panel,
+body.revival-only-build #cloud-checkin,
+body.revival-only-build #ai-chat-toggle,
+body.revival-only-build #ai-chat-panel {
+  display: none !important;
+}
