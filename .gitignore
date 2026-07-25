@@ -19,6 +19,8 @@ npm-debug.log*
 # 临时文件
 *.tmp
 *.temp
+.tmp-e2e/
+.qa-v3/
 
 # 私人文档（不上传公开仓库）
 *.docx

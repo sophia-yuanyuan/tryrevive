@@ -341,7 +341,9 @@
             </div>
             <div class="revive-data-actions">
               <button onclick="reviveExportData()">导出 JSON</button>
+              <button onclick="document.getElementById('revive-import-input')?.click()">导入并合并</button>
               <button class="danger" onclick="reviveClearAllData()">清空数据</button>
+              <input id="revive-import-input" type="file" accept="application/json,.json" hidden onchange="reviveImportData(event)">
             </div>
           </section>
         </aside>
@@ -513,6 +515,8 @@
 
   </main>
 
+  <script src="revival-core.js"></script>
+  <script src="revival-github.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

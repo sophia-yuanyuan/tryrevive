@@ -1,5 +1,7 @@
-// TryRevive V2：停滞项目复活版。注意力工具代码保留用于历史回退，但不在本版本暴露入口。
+// TryRevive V3：项目复活控制层。V1 注意力工具代码保留用于历史回退，但不在本版本暴露入口。
 const REVIVAL_ONLY_BUILD = true;
+const REVIVAL_CORE = typeof window !== "undefined" ? window.TryReviveCore : null;
+const REVIVAL_GITHUB = typeof window !== "undefined" ? window.TryReviveGitHub : null;
 
 // --- 1. 静态数据配置 (测试题/自适应话术库/气泡) ---
 const QUIZ_QUESTIONS = [
@@ -257,8 +259,10 @@ function saveProfile() {
 }
 
 function createDefaultReviveState() {
+  if (REVIVAL_CORE) return REVIVAL_CORE.createStore();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    revision: 1,
     activeProjectId: null,
     projects: [],
     events: [],
@@ -267,9 +271,11 @@ function createDefaultReviveState() {
 }
 
 function normalizeReviveState(raw) {
+  if (REVIVAL_CORE) return REVIVAL_CORE.migrateStore(raw);
   const source = raw && typeof raw === "object" ? raw : {};
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    revision: Math.max(1, Number(source.revision) || 1),
     activeProjectId: typeof source.activeProjectId === "string" ? source.activeProjectId : null,
     projects: Array.isArray(source.projects) ? source.projects.filter(Boolean).map(project => ({
       evidence: [],
@@ -339,7 +345,8 @@ const state = {
   actionSwitchInterval: null,
   reviveUiMode: "auto",
   homeMode: "revive",
-  reviveTimerInterval: null
+  reviveTimerInterval: null,
+  reviveReturnInterval: null
 };
 
 // 系统“减少动态效果”偏好：用于给 canvas 动画降频/减量（CSS 媒体查询管不到 canvas）
@@ -2963,6 +2970,82 @@ function getReviveStore() {
   return state.userProfile.revive;
 }
 
+function reviveNormalizeProjectRecord(project) {
+  return REVIVAL_CORE ? REVIVAL_CORE.normalizeProject(project) : project;
+}
+
+function reviveTransitionProject(project, nextStatus) {
+  if (!project) return false;
+  if (!REVIVAL_CORE) {
+    project.status = nextStatus;
+    project.updatedAt = Date.now();
+    return true;
+  }
+  try {
+    REVIVAL_CORE.transitionProject(project, nextStatus);
+    return true;
+  } catch (error) {
+    console.warn("TryRevive state transition rejected:", error);
+    showReviveNotice(error.message || "项目状态转换失败。", "error");
+    return false;
+  }
+}
+
+function reviveAssignAction(project, action) {
+  if (!project) return null;
+  if (!REVIVAL_CORE) {
+    project.action = action;
+    return action;
+  }
+  try {
+    return REVIVAL_CORE.assignAction(project, action);
+  } catch (error) {
+    console.warn("Invalid Action Contract:", error);
+    showReviveNotice(error.message || "动作不符合单步约束。", "error");
+    return null;
+  }
+}
+
+function reviveGetActiveContextSnapshot(project) {
+  if (!project) return null;
+  if (REVIVAL_CORE) return REVIVAL_CORE.getActiveContextSnapshot(project);
+  return Array.isArray(project.contextSnapshots)
+    ? project.contextSnapshots.find(item => item.id === project.activeContextSnapshotId) || project.contextSnapshots.at(-1)
+    : null;
+}
+
+function reviveAddContextSnapshot(project, snapshot) {
+  if (!project) return null;
+  if (REVIVAL_CORE) return REVIVAL_CORE.addContextSnapshot(project, snapshot);
+  if (!Array.isArray(project.contextSnapshots)) project.contextSnapshots = [];
+  project.contextSnapshots.push(snapshot);
+  project.activeContextSnapshotId = snapshot.id;
+  return snapshot;
+}
+
+function reviveAddEvidenceRecord(project, evidence) {
+  if (!project) return null;
+  if (REVIVAL_CORE) return REVIVAL_CORE.addEvidence(project, evidence);
+  if (!Array.isArray(project.evidence)) project.evidence = [];
+  project.evidence.push(evidence);
+  return evidence;
+}
+
+function reviveSetReturnPlan(project, dueAt) {
+  if (!project) return null;
+  if (REVIVAL_CORE) {
+    return REVIVAL_CORE.setReturnPlan(project, dueAt ? { dueAt, channel: "in_app" } : null);
+  }
+  project.reminderAt = dueAt || null;
+  return dueAt ? { dueAt, channel: "in_app", status: "scheduled" } : null;
+}
+
+function reviveEvidenceTrustLabel(trust) {
+  if (trust === "verified") return "已验证";
+  if (trust === "observed") return "已观察";
+  return "用户确认";
+}
+
 function reviveUid(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -2982,6 +3065,7 @@ function recordReviveEvent(type, projectId, metadata) {
     metadata: metadata || {}
   });
   if (store.events.length > 500) store.events = store.events.slice(-500);
+  store.revision = Math.max(1, Number(store.revision) || 1) + 1;
 }
 
 function reviveSaveAndRender(message, type) {
@@ -3290,7 +3374,7 @@ function reviveCompleteConversation() {
   if (!draft) return;
   const answers = draft.answers || {};
   const now = Date.now();
-  const project = {
+  let project = {
     id: reviveUid("project"),
     name: answers.name,
     goal: answers.goal,
@@ -3313,7 +3397,8 @@ function reviveCompleteConversation() {
     updatedAt: now,
     intakeMode: "conversation"
   };
-  project.action = generateRevivalAction(project, 0, false);
+  project = reviveNormalizeProjectRecord(project);
+  reviveAssignAction(project, generateRevivalAction(project, 0, false));
   store.projects.unshift(project);
   store.activeProjectId = project.id;
   store.draftConversation = null;
@@ -3411,7 +3496,7 @@ function reviveCreateProject(event) {
   }
 
   const now = Date.now();
-  const project = {
+  let project = {
     id: reviveUid("project"),
     name: String(data.get("name") || "").trim(),
     goal: String(data.get("goal") || "").trim(),
@@ -3438,7 +3523,8 @@ function reviveCreateProject(event) {
     showReviveNotice("请补齐必填信息，尤其是最后的真实进展与继续理由。", "error");
     return;
   }
-  project.action = generateRevivalAction(project, 0, project.decision === "shrink");
+  project = reviveNormalizeProjectRecord(project);
+  reviveAssignAction(project, generateRevivalAction(project, 0, project.decision === "shrink"));
 
   const store = getReviveStore();
   store.draftConversation = null;
@@ -3454,6 +3540,8 @@ function generateRevivalAction(project, variant, forceSmall) {
   const goal = project.goal || "原目标";
   const last = project.lastCompleted || project.lastProgress || "已有内容";
   const blocker = project.blocker || "context";
+  const contextSnapshot = reviveGetActiveContextSnapshot(project);
+  const githubContext = contextSnapshot?.sourceType === "github" ? contextSnapshot.data : null;
   const versions = {
     context: [
       `打开「${name}」最近的工作文件，在顶部写下“当前状态 / 卡点 / 下一步”各 1 句。`,
@@ -3485,6 +3573,25 @@ function generateRevivalAction(project, variant, forceSmall) {
   const index = Math.abs(Number(variant) || 0) % list.length;
   const minutes = forceSmall ? 5 : Math.min(10, Math.max(5, Number(project.availableMinutes) || 10));
   let text = list[index];
+  if (githubContext?.repository) {
+    const repoName = githubContext.repository.fullName;
+    const lastCommit = githubContext.lastCommit;
+    const firstIssue = githubContext.openIssues?.[0];
+    const githubVersions = {
+      context: lastCommit
+        ? `打开「${repoName}」并查看最近提交 ${lastCommit.shortSha}（${lastCommit.message || "最近改动"}），在 README 或一个 Issue 中写下“当前状态 / 卡点 / 下一步”各 1 句。`
+        : `打开「${repoName}」，在 README 或一个 Issue 中写下“当前状态 / 卡点 / 下一步”各 1 句。`,
+      too_big: firstIssue
+        ? `只推进「${repoName}」的 Issue #${firstIssue.number}：先提交一个可查看的 60 分版本，不展开新的 backlog。`
+        : `只为「${repoName}」完成一个能形成 commit 的 60 分改动，不新增第二个目标。`,
+      tool: `打开「${repoName}」默认分支 ${githubContext.repository.defaultBranch || "main"}，定位最近改动文件并保存一处可见变化。`,
+      commitment: `在「${repoName}」完成一处真实改动并形成 commit；完成后把 commit 链接作为本轮证据。`,
+      unclear: firstIssue
+        ? `把 Issue #${firstIssue.number} 缩成一个今天能提交的改动，并先完成第一处可见内容。`
+        : `为「${repoName}」写下本轮唯一完成标准，并提交满足它的第一处可见改动。`
+    };
+    text = githubVersions[blocker] || githubVersions.context;
+  }
   if (forceSmall && !text.startsWith("只")) text = `只做最小版：${text}`;
   const doneDefinitions = {
     context: "工作文件中出现 3 行状态说明，且你能明确指出下次从哪里继续。",
@@ -3493,13 +3600,141 @@ function generateRevivalAction(project, variant, forceSmall) {
     commitment: "有一处真实改动，并在本页记录了证据与下一次继续时间。",
     unclear: "完成标准已写清，并且已经产生第一处可见内容。"
   };
-  const rationale = `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。这一步从已完成的“${last.slice(0, 64)}”继续，不要求重做完整计划。`;
-  return { text, minutes, rationale, doneDefinition: doneDefinitions[blocker] || doneDefinitions.context, createdAt: Date.now() };
+  const doneDefinition = githubContext?.repository
+    ? `${doneDefinitions[blocker] || doneDefinitions.context} 若产生代码改动，请使用该仓库的新 commit 或 PR 链接作为证据。`
+    : (doneDefinitions[blocker] || doneDefinitions.context);
+  const rationale = githubContext?.repository
+    ? `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。动作依据 ${githubContext.repository.fullName} 的公开上下文快照生成，不要求重做完整计划。`
+    : `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。这一步从已完成的“${last.slice(0, 64)}”继续，不要求重做完整计划。`;
+  const contract = {
+    text,
+    deliverable: text,
+    minutes,
+    timeboxMinutes: minutes,
+    rationale,
+    doneDefinition,
+    doneCriteria: [doneDefinition],
+    sourceSnapshotId: contextSnapshot?.id || null,
+    createdBy: {
+      type: "local_rule",
+      id: githubContext?.repository ? "github-revival-rule-v1" : "revival-rule-v1"
+    },
+    executor: {
+      kind: "human",
+      capability: githubContext?.repository ? "github_work" : "manual_work"
+    },
+    requiresApproval: false,
+    createdAt: Date.now()
+  };
+  return REVIVAL_CORE ? REVIVAL_CORE.createActionContract(contract) : contract;
+}
+
+function reviveContextCardTemplate(project) {
+  const snapshot = reviveGetActiveContextSnapshot(project);
+  const githubData = snapshot?.sourceType === "github" ? snapshot.data : null;
+  const contextStatus = project.contextStatus || {};
+  const githubRef = REVIVAL_GITHUB?.parseGitHubRepoUrl(project.toolLink || "");
+  const currentUrl = githubRef?.htmlUrl || "";
+  if (githubData?.repository) {
+    const repo = githubData.repository;
+    const commit = githubData.lastCommit;
+    const issue = githubData.openIssues?.[0];
+    return `
+      <section class="revive-context-card connected">
+        <div class="revive-context-head">
+          <div><span class="revive-eyebrow">CONTEXT SNAPSHOT · GITHUB</span><h3>${escapeHtml(repo.fullName)}</h3></div>
+          <span class="revive-trust-pill verified">公开上下文已读取</span>
+        </div>
+        <p>${escapeHtml(repo.description || "该仓库没有公开说明。")}</p>
+        <div class="revive-context-facts">
+          <span>默认分支 ${escapeHtml(repo.defaultBranch || "main")}</span>
+          <span>${commit ? `最近提交 ${escapeHtml(commit.shortSha)}` : "未获取到提交"}</span>
+          <span>公开 Issue ${Number(repo.openIssueCount) || 0}</span>
+        </div>
+        ${commit ? `<a class="revive-context-link" href="${escapeHtml(commit.htmlUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(commit.message || "查看最近提交")} ↗</a>` : ""}
+        ${issue ? `<a class="revive-context-link" href="${escapeHtml(issue.htmlUrl)}" target="_blank" rel="noopener noreferrer">Issue #${issue.number} · ${escapeHtml(issue.title)} ↗</a>` : ""}
+        <div class="revive-context-actions">
+          <span>快照 ${escapeHtml(reviveFormatDateTime(snapshot.capturedAt))}</span>
+          <button class="revive-quiet-btn" onclick="reviveLoadGitHubContext()">刷新公开上下文</button>
+        </div>
+      </section>`;
+  }
+
+  const statusMessage = contextStatus.status === "loading"
+    ? "正在读取公开仓库上下文…"
+    : (contextStatus.status === "error" ? escapeHtml(contextStatus.error || "读取失败，请检查仓库是否公开。") : "当前仍使用手动填写的项目现场。");
+  return `
+    <section class="revive-context-card">
+      <div class="revive-context-head">
+        <div><span class="revive-eyebrow">CONTEXT SNAPSHOT</span><h3>连接一个公开 GitHub 仓库</h3></div>
+        <span class="revive-trust-pill claimed">只读</span>
+      </div>
+      <p>读取仓库说明、最近提交和公开 Issue，让下一步基于真实项目现场。不会创建 Issue、提交代码或获取私有仓库。</p>
+      <div class="revive-context-connect">
+        <input id="revive-github-url" class="revive-input" value="${escapeHtml(currentUrl)}" placeholder="https://github.com/owner/repo" ${contextStatus.status === "loading" ? "disabled" : ""}>
+        <button class="revive-secondary-btn" onclick="reviveConnectGitHubFromInput()" ${contextStatus.status === "loading" ? "disabled" : ""}>读取公开上下文</button>
+      </div>
+      <small class="${contextStatus.status === "error" ? "revive-context-error" : ""}">${statusMessage}</small>
+    </section>`;
+}
+
+async function reviveConnectGitHubFromInput() {
+  const project = getActiveReviveProject();
+  const input = document.getElementById("revive-github-url");
+  const value = input?.value.trim() || "";
+  if (!project || !REVIVAL_GITHUB) return;
+  const repoRef = REVIVAL_GITHUB.parseGitHubRepoUrl(value);
+  if (!repoRef) {
+    showReviveNotice("请输入公开 GitHub 仓库首页地址。", "error");
+    return;
+  }
+  project.toolLink = repoRef.htmlUrl;
+  await reviveLoadGitHubContext(repoRef.htmlUrl);
+}
+
+async function reviveLoadGitHubContext(explicitUrl) {
+  const project = getActiveReviveProject();
+  if (!project || !REVIVAL_GITHUB) {
+    showReviveNotice("GitHub 只读连接器尚未加载。", "error");
+    return;
+  }
+  const url = explicitUrl || project.toolLink;
+  const repoRef = REVIVAL_GITHUB.parseGitHubRepoUrl(url);
+  if (!repoRef) {
+    showReviveNotice("当前工作入口不是公开 GitHub 仓库地址。", "error");
+    return;
+  }
+
+  project.contextStatus = { source: "github", status: "loading", error: null, updatedAt: Date.now() };
+  saveProfile();
+  renderReviveWorkspace();
+  try {
+    const snapshotInput = await REVIVAL_GITHUB.loadRepositoryContext(repoRef.htmlUrl);
+    const snapshot = reviveAddContextSnapshot(project, snapshotInput);
+    project.contextStatus = { source: "github", status: "ready", error: null, updatedAt: Date.now() };
+    if (project.status === "brief") {
+      reviveAssignAction(project, generateRevivalAction(project, Number(project.actionVariant) || 0, false));
+    }
+    recordReviveEvent("context_snapshot_created", project.id, {
+      sourceType: "github",
+      snapshotId: snapshot?.id || null,
+      repository: snapshot?.data?.repository?.fullName || repoRef.fullName
+    });
+    reviveSaveAndRender("已读取公开 GitHub 上下文，当前动作已重新基于真实仓库生成。", "success");
+  } catch (error) {
+    project.contextStatus = {
+      source: "github",
+      status: "error",
+      error: error.message || "GitHub 上下文读取失败",
+      updatedAt: Date.now()
+    };
+    reviveSaveAndRender(error.message || "GitHub 上下文读取失败。", "error");
+  }
 }
 
 function reviveBriefTemplate(project) {
   const action = project.action || generateRevivalAction(project, 0, false);
-  project.action = action;
+  if (!project.action) reviveAssignAction(project, action);
   const toolButton = project.toolLink ? `<button class="revive-secondary-btn" onclick="reviveOpenTool()">打开工作入口 ↗</button>` : "";
   return `
     <div class="revive-brief-head">
@@ -3510,6 +3745,7 @@ function reviveBriefTemplate(project) {
       </div>
       <span class="revive-status-pill active">只做当前一步</span>
     </div>
+    ${reviveContextCardTemplate(project)}
     <div class="revive-action-card">
       <div class="revive-action-meta"><span class="revive-mini-pill">${action.minutes} 分钟</span><span class="revive-mini-pill">60 分版本</span><span class="revive-mini-pill">需要真实结果</span></div>
       <h3>${escapeHtml(action.text)}</h3>
@@ -3539,7 +3775,7 @@ function reviveChangeAction(mode) {
   const project = getActiveReviveProject();
   if (!project) return;
   if (mode === "next") project.actionVariant = (Number(project.actionVariant) || 0) + 1;
-  project.action = generateRevivalAction(project, project.actionVariant, mode === "smaller");
+  reviveAssignAction(project, generateRevivalAction(project, project.actionVariant, mode === "smaller"));
   project.updatedAt = Date.now();
   recordReviveEvent("action_changed", project.id, { mode, minutes: project.action.minutes });
   reviveSaveAndRender(mode === "smaller" ? "动作已缩到 5 分钟。" : "已换一个仍然产出真实结果的动作。", "success");
@@ -3553,7 +3789,14 @@ function reviveSaveEditedAction() {
     showReviveNotice("动作和完成标准都不能为空。", "error");
     return;
   }
-  project.action = { ...project.action, text: actionText, doneDefinition, createdAt: Date.now() };
+  reviveAssignAction(project, {
+    ...project.action,
+    text: actionText,
+    deliverable: actionText,
+    doneDefinition,
+    doneCriteria: [doneDefinition],
+    createdAt: Date.now()
+  });
   project.updatedAt = Date.now();
   recordReviveEvent("action_edited", project.id, {});
   reviveSaveAndRender("已保存你的动作版本。", "success");
@@ -3562,8 +3805,9 @@ function reviveSaveEditedAction() {
 function reviveStartNow() {
   const project = getActiveReviveProject();
   if (!project || !project.action) return;
+  if (!reviveTransitionProject(project, "running")) return;
   const remaining = Math.max(60, Number(project.action.minutes || 10) * 60);
-  project.status = "running";
+  project.action.status = "running";
   project.timerRunning = true;
   project.timerRemainingSec = remaining;
   project.timerEndAt = Date.now() + remaining * 1000;
@@ -3648,10 +3892,10 @@ function reviveToggleTimer() {
 function reviveActionStillTooLarge() {
   const project = getActiveReviveProject();
   if (!project) return;
-  project.status = "brief";
+  if (!reviveTransitionProject(project, "brief")) return;
   project.timerRunning = false;
   project.timerEndAt = null;
-  project.action = generateRevivalAction(project, project.actionVariant, true);
+  reviveAssignAction(project, generateRevivalAction(project, project.actionVariant, true));
   project.updatedAt = Date.now();
   recordReviveEvent("action_too_large", project.id, {});
   reviveSaveAndRender("已停止计时并把动作缩到 5 分钟。不是失败，是诊断结果。", "success");
@@ -3660,7 +3904,8 @@ function reviveActionStillTooLarge() {
 function reviveCompleteAction() {
   const project = getActiveReviveProject();
   if (!project) return;
-  project.status = "evidence";
+  if (!reviveTransitionProject(project, "evidence")) return;
+  if (project.action) project.action.status = "evidence_pending";
   project.timerRemainingSec = reviveGetRemainingSec(project);
   project.timerRunning = false;
   project.timerEndAt = null;
@@ -3676,7 +3921,7 @@ function reviveEvidenceTemplate(project) {
         <div><span class="revive-eyebrow">COMPLETION EVIDENCE</span><h2>留下足够轻的完成证据</h2></div>
         <span class="revive-status-pill active">不会上传云端</span>
       </div>
-      <p class="revive-evidence-intro">证据是为了让下次不用重新回忆，不是为了审查你。可用文字、链接、文件名，或只做自我确认。</p>
+      <p class="revive-evidence-intro">证据是为了让下次不用重新回忆，不是为了审查你。连接公开 GitHub 仓库后，新的 commit 或 PR 链接会自动核验；其余证据仍可保留为用户确认。</p>
       <div class="revive-form-grid">
         <div class="revive-field">
           <label for="revive-evidence-type">证据方式</label>
@@ -3695,8 +3940,8 @@ function reviveEvidenceTemplate(project) {
           <textarea id="revive-evidence-note" name="note" class="revive-textarea" maxlength="800" placeholder="例如：作品集首页已经能展示三个项目，并完成移动端首屏。"></textarea>
         </div>
         <div class="revive-field">
-          <label for="revive-evidence-link">成果链接（选填）</label>
-          <input id="revive-evidence-link" name="link" class="revive-input" placeholder="https://...">
+          <label for="revive-evidence-link">成果链接（选填，可验证 commit / PR）</label>
+          <input id="revive-evidence-link" name="link" class="revive-input" placeholder="https://github.com/owner/repo/commit/...">
         </div>
         <div class="revive-field">
           <label for="revive-evidence-file">截图或文件（选填）</label>
@@ -3714,16 +3959,19 @@ function reviveEvidenceTemplate(project) {
 function reviveReturnToAction() {
   const project = getActiveReviveProject();
   if (!project) return;
-  project.status = "running";
+  if (!reviveTransitionProject(project, "running")) return;
+  if (project.action) project.action.status = "running";
   project.timerRunning = false;
   reviveSaveAndRender();
 }
 
-function reviveSubmitEvidence(event) {
+async function reviveSubmitEvidence(event) {
   event.preventDefault();
   const project = getActiveReviveProject();
   if (!project) return;
   const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
   const data = new FormData(form);
   const type = String(data.get("type") || "text");
   const note = String(data.get("note") || "").trim();
@@ -3731,19 +3979,49 @@ function reviveSubmitEvidence(event) {
   const file = form.querySelector('[name="file"]')?.files?.[0] || null;
   if (type !== "self" && !note && !link && !file) {
     showReviveNotice("请留下一条文字、链接或文件名；也可以选择“仅自我确认”。", "error");
+    if (submitButton) submitButton.disabled = false;
     return;
   }
 
   const now = Date.now();
-  const evidence = {
-    id: reviveUid("evidence"),
+  let trust = file ? "observed" : "claimed";
+  let verification = {
+    status: trust,
+    validator: file ? "browser-file-metadata" : "self_report",
+    checkedAt: now,
+    reason: file ? "浏览器观察到文件名和大小，未读取文件内容" : "用户自述，尚未连接外部验证器"
+  };
+  const contextSnapshot = reviveGetActiveContextSnapshot(project);
+  const expectedRepo = contextSnapshot?.sourceType === "github"
+    ? contextSnapshot.data?.repository?.fullName
+    : null;
+  if (link && REVIVAL_GITHUB?.parseGitHubArtifactUrl(link)) {
+    showReviveNotice("正在通过 GitHub 公共 API 核验成果…", "success");
+    try {
+      verification = await REVIVAL_GITHUB.verifyArtifact(link, expectedRepo, project.sessionStartedAt);
+      trust = verification.trust || "observed";
+    } catch (error) {
+      verification = {
+        status: "claimed",
+        validator: "github-public-api",
+        checkedAt: Date.now(),
+        reason: `暂时无法核验：${error.message || "GitHub API 请求失败"}`
+      };
+      trust = "claimed";
+    }
+  }
+
+  const evidence = reviveAddEvidenceRecord(project, {
     type,
     note: note || (type === "self" ? "用户确认本动作已完成" : ""),
     link,
     file: file ? { name: file.name, size: file.size, type: file.type || "" } : null,
+    trust,
+    verification,
+    actionId: project.action?.id || null,
+    contextSnapshotId: project.activeContextSnapshotId || null,
     createdAt: now
-  };
-  project.evidence.push(evidence);
+  });
   project.sessions.push({
     id: reviveUid("session"),
     action: { ...project.action },
@@ -3753,25 +4031,46 @@ function reviveSubmitEvidence(event) {
     evidenceId: evidence.id
   });
   const reminderDays = Number(data.get("reminder"));
-  project.reminderAt = reminderDays > 0 ? now + reminderDays * 24 * 60 * 60 * 1000 : null;
-  project.status = "completed";
+  const reminderAt = reminderDays > 0 ? now + reminderDays * 24 * 60 * 60 * 1000 : null;
+  reviveSetReturnPlan(project, reminderAt);
+  if (!reviveTransitionProject(project, "completed")) {
+    if (submitButton) submitButton.disabled = false;
+    return;
+  }
+  if (project.action) project.action.status = "completed";
   project.completedAt = now;
   project.updatedAt = now;
-  recordReviveEvent("action_completed", project.id, { evidenceType: type, reminderDays });
+  recordReviveEvent("action_completed", project.id, { evidenceType: type, evidenceTrust: trust, reminderDays });
   setAvatarState("white");
-  reviveSaveAndRender("你已经让项目重新动了一次。下一轮会从这份证据继续。", "success");
+  reviveSaveAndRender(
+    trust === "verified"
+      ? "GitHub 成果已经验证。下一轮会从这份真实结果继续。"
+      : "你已经让项目重新动了一次。下一轮会从这份证据继续。",
+    "success"
+  );
 }
 
 function reviveCompleteTemplate(project) {
   const evidence = project.evidence[project.evidence.length - 1];
   const reminder = project.reminderAt ? reviveFormatDateTime(project.reminderAt) : "未安排提醒";
+  const trust = evidence?.trust || "claimed";
+  const trustReason = evidence?.verification?.reason || "尚未连接外部验证器";
+  const resumePacket = REVIVAL_CORE ? REVIVAL_CORE.buildResumePacket(project) : null;
   return `
     <div class="revive-complete-card">
       <div class="revive-complete-mark">✓</div>
       <span class="revive-eyebrow">REAL PROGRESS RECORDED</span>
       <h2>项目已经重新动起来了</h2>
       <p>${escapeHtml(evidence?.note || "本轮动作已完成")} 下一次不需要从头回忆，直接从这份结果继续。</p>
-      <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">证据 ${project.evidence.length} 条</span><span class="revive-mini-pill">完成会话 ${project.sessions.length} 次</span><span class="revive-mini-pill">下次：${escapeHtml(reminder)}</span></div>
+      <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">证据 ${project.evidence.length} 条</span><span class="revive-mini-pill">完成会话 ${project.sessions.length} 次</span><span class="revive-trust-pill ${trust}">${reviveEvidenceTrustLabel(trust)}</span><span class="revive-mini-pill">下次：${escapeHtml(reminder)}</span></div>
+      <div class="revive-verification-note">${escapeHtml(trustReason)}</div>
+      ${resumePacket ? `<div class="revive-resume-packet"><strong>恢复包：</strong>${escapeHtml(resumePacket.lastKnownProgress || "本轮成果已保存")} · 下次从当前项目状态继续</div>` : ""}
+      ${project.reminderAt ? `
+        <div class="revive-return-actions">
+          <button class="revive-secondary-btn" onclick="reviveDownloadCalendarReminder()">添加到系统日历</button>
+          <button class="revive-quiet-btn" onclick="reviveEnableBrowserReminder()">允许页内通知</button>
+          <small>日历提醒可在关闭网页后送达；页内通知只在浏览器允许且页面打开时触发。</small>
+        </div>` : ""}
       <div class="revive-next-card">
         <h3>下一步只选一种</h3>
         <div class="revive-form-grid">
@@ -3788,12 +4087,125 @@ function reviveCompleteTemplate(project) {
     </div>`;
 }
 
+function reviveIcsDate(timestamp) {
+  return new Date(timestamp).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function reviveIcsEscape(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function reviveDownloadCalendarReminder() {
+  const project = getActiveReviveProject();
+  if (!project?.reminderAt) {
+    showReviveNotice("这个项目还没有安排下一次继续时间。", "error");
+    return;
+  }
+  const evidence = project.evidence?.[project.evidence.length - 1];
+  const start = Number(project.reminderAt);
+  const end = start + 15 * 60 * 1000;
+  const uid = `${project.id}-${start}@tryrevive.local`;
+  const description = [
+    evidence?.note ? `上次完成：${evidence.note}` : "",
+    project.action?.text ? `上次动作：${project.action.text}` : "",
+    `打开 TryRevive：${location.href}`
+  ].filter(Boolean).join("\n");
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//TryRevive//Project Return//ZH-CN",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${reviveIcsEscape(uid)}`,
+    `DTSTAMP:${reviveIcsDate(Date.now())}`,
+    `DTSTART:${reviveIcsDate(start)}`,
+    `DTEND:${reviveIcsDate(end)}`,
+    `SUMMARY:${reviveIcsEscape(`继续：${project.name}`)}`,
+    `DESCRIPTION:${reviveIcsEscape(description)}`,
+    `URL:${reviveIcsEscape(location.href)}`,
+    "END:VEVENT",
+    "END:VCALENDAR"
+  ].join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `tryrevive-${String(project.name || "project").replace(/[\\/:*?"<>|]/g, "-")}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  if (project.returnPlan) project.returnPlan.channel = "calendar";
+  recordReviveEvent("return_calendar_exported", project.id, { dueAt: start });
+  saveProfile();
+  showReviveNotice("日历提醒文件已生成。导入系统日历后，即使关闭网页也能收到提醒。", "success");
+}
+
+async function reviveEnableBrowserReminder() {
+  const project = getActiveReviveProject();
+  if (!project?.reminderAt) {
+    showReviveNotice("请先安排下一次继续时间。", "error");
+    return;
+  }
+  if (!("Notification" in window)) {
+    showReviveNotice("当前浏览器不支持网页通知，请使用“添加到系统日历”。", "error");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    showReviveNotice("没有获得通知权限；日历提醒仍然可用。", "error");
+    return;
+  }
+  if (project.returnPlan) project.returnPlan.channel = "browser";
+  recordReviveEvent("browser_return_enabled", project.id, { dueAt: project.reminderAt });
+  saveProfile();
+  showReviveNotice("已允许页内通知。网页关闭后的可靠提醒请同时添加到系统日历。", "success");
+}
+
+function reviveCheckDueReturns() {
+  const store = getReviveStore();
+  const now = Date.now();
+  let changed = false;
+  store.projects.forEach(project => {
+    const plan = project.returnPlan;
+    if (!plan?.dueAt || project.status !== "completed" || plan.dueAt > now) return;
+    if (plan.status !== "due") {
+      plan.status = "due";
+      recordReviveEvent("return_due", project.id, { dueAt: plan.dueAt });
+      changed = true;
+    }
+    const recentlyNotified = plan.lastNotifiedAt && now - plan.lastNotifiedAt < 60 * 60 * 1000;
+    if (!recentlyNotified && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification(`继续：${project.name}`, {
+          body: `上次已完成：${project.evidence?.at(-1)?.note || "一个真实动作"}。现在从保存的现场继续。`,
+          tag: `tryrevive-${project.id}`
+        });
+        plan.lastNotifiedAt = now;
+        changed = true;
+      } catch (error) {
+        console.warn("TryRevive notification failed:", error);
+      }
+    }
+  });
+  const active = getActiveReviveProject();
+  if (active?.returnPlan?.status === "due" && active.status === "completed") {
+    showReviveNotice(`“${active.name}”已经到继续时间。你可以生成下一次微动作。`, "success");
+  }
+  if (changed) saveProfile();
+}
+
 function reviveStartFollowUp() {
   const project = getActiveReviveProject();
   if (!project) return;
   project.actionVariant = (Number(project.actionVariant) || 0) + 1;
-  project.action = generateRevivalAction(project, project.actionVariant, false);
-  project.status = "brief";
+  reviveAssignAction(project, generateRevivalAction(project, project.actionVariant, false));
+  if (!reviveTransitionProject(project, "brief")) return;
+  if (project.returnPlan) project.returnPlan.status = "completed";
   project.reminderAt = null;
   project.updatedAt = Date.now();
   recordReviveEvent("followup_brief_created", project.id, {});
@@ -3805,15 +4217,22 @@ function reviveStartShortSprint() {
   if (!project) return;
   const input = document.getElementById("revive-sprint-deliverable");
   const deliverable = input?.value.trim() || `完成「${project.name}」下一阶段的一个可展示版本`;
-  project.action = {
+  reviveAssignAction(project, {
     text: deliverable,
+    deliverable,
     minutes: 45,
+    timeboxMinutes: 45,
     rationale: "你已经完成首个微动作。短冲刺只保留一个交付物，避免重新展开完整 backlog。",
     doneDefinition: "45 分钟结束时有一个可打开、可截图或可展示的阶段交付物。",
+    doneCriteria: ["45 分钟结束时有一个可打开、可截图或可展示的阶段交付物。"],
+    sourceSnapshotId: project.activeContextSnapshotId || null,
+    createdBy: { type: "user", id: "short-sprint" },
+    executor: { kind: "human", capability: "focused_sprint" },
     createdAt: Date.now(),
     isSprint: true
-  };
-  project.status = "brief";
+  });
+  if (!reviveTransitionProject(project, "brief")) return;
+  if (project.returnPlan) project.returnPlan.status = "completed";
   project.reminderAt = null;
   project.updatedAt = Date.now();
   recordReviveEvent("short_sprint_created", project.id, {});
@@ -3836,7 +4255,7 @@ function revivePausedTemplate(project) {
 function revivePauseProject() {
   const project = getActiveReviveProject();
   if (!project) return;
-  project.status = "paused";
+  if (!reviveTransitionProject(project, "paused")) return;
   project.timerRunning = false;
   project.timerEndAt = null;
   project.updatedAt = Date.now();
@@ -3847,8 +4266,8 @@ function revivePauseProject() {
 function reviveResumeProject() {
   const project = getActiveReviveProject();
   if (!project) return;
-  project.status = "brief";
-  project.action = generateRevivalAction(project, project.actionVariant || 0, true);
+  if (!reviveTransitionProject(project, "brief")) return;
+  reviveAssignAction(project, generateRevivalAction(project, project.actionVariant || 0, true));
   project.updatedAt = Date.now();
   recordReviveEvent("project_resumed", project.id, {});
   reviveSaveAndRender("欢迎回来。先从 5 分钟最小版开始。", "success");
@@ -3892,6 +4311,9 @@ function renderReviveMetrics() {
   const store = getReviveStore();
   const started = store.events.filter(event => event.type === "action_started").length;
   const completed = store.events.filter(event => event.type === "action_completed").length;
+  const verified = store.projects
+    .flatMap(project => project.evidence || [])
+    .filter(evidence => evidence.trust === "verified").length;
   const successRate = started ? Math.round((completed / started) * 100) : 0;
   let d7Eligible = 0;
   let d7Success = 0;
@@ -3908,7 +4330,7 @@ function renderReviveMetrics() {
     <div class="revive-metric"><strong>${started}</strong><span>启动真实动作</span></div>
     <div class="revive-metric"><strong>${successRate}%</strong><span>复活会话成功率</span></div>
     <div class="revive-metric"><strong>${d7Rate}%</strong><span>D7 二次推进率</span></div>
-    <div class="revive-metric"><strong>${completed}</strong><span>有效完成证据</span></div>`;
+    <div class="revive-metric"><strong>${verified}/${completed}</strong><span>已验证 / 总完成</span></div>`;
 }
 
 function renderReviveWeeklyReport() {
@@ -3981,6 +4403,36 @@ function reviveExportData() {
   recordReviveEvent("data_exported", null, {});
   saveProfile();
   showReviveNotice("本地项目数据已导出为 JSON。", "success");
+}
+
+async function reviveImportData(event) {
+  const input = event?.currentTarget;
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!REVIVAL_CORE) {
+    showReviveNotice("状态迁移模块尚未加载，无法安全导入。", "error");
+    input.value = "";
+    return;
+  }
+  try {
+    const raw = JSON.parse(await file.text());
+    const incoming = REVIVAL_CORE.migrateStore(raw?.data || raw);
+    const merged = REVIVAL_CORE.mergeStores(getReviveStore(), incoming);
+    state.userProfile.revive = merged;
+    state.reviveUiMode = "auto";
+    recordReviveEvent("data_imported", null, {
+      fileName: file.name,
+      importedProjects: incoming.projects.length,
+      schemaVersion: incoming.schemaVersion
+    });
+    saveProfile();
+    renderReviveWorkspace();
+    showReviveNotice(`已安全合并 ${incoming.projects.length} 个项目；同 ID 项目保留更新时间较新的版本。`, "success");
+  } catch (error) {
+    showReviveNotice(`导入失败：${error.message || "JSON 格式不正确"}`, "error");
+  } finally {
+    input.value = "";
+  }
 }
 
 function reviveClearAllData() {
@@ -4071,6 +4523,9 @@ document.addEventListener("DOMContentLoaded", () => {
     runNarrativeIntro();
   }
 
+  reviveCheckDueReturns();
+  if (state.reviveReturnInterval) clearInterval(state.reviveReturnInterval);
+  state.reviveReturnInterval = setInterval(reviveCheckDueReturns, 60 * 1000);
   if (!REVIVAL_ONLY_BUILD) initFocusMonitor();
 });
 
