@@ -2181,10 +2181,26 @@ body.revival-only-build #ai-chat-panel {
   align-items: center;
   gap: 0.55rem;
   margin-bottom: 1.1rem;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+.revive-sigil-hero:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+  border-radius: 50%;
+}
+.sigil-stage {
+  position: relative;
+  border-radius: 50%;
+  padding: 8px;
 }
 .revive-sigil-hero .revive-sigil-svg {
-  filter: drop-shadow(0 0 22px rgba(255, 138, 101, 0.16));
+  display: block;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.5));
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.revive-sigil-hero:hover .revive-sigil-svg { transform: scale(1.04) rotate(-2deg); }
 .revive-sigil-caption {
   font-size: 0.82rem;
   color: var(--accent-light);
@@ -2196,16 +2212,39 @@ body.revival-only-build #ai-chat-panel {
   letter-spacing: 0.03em;
 }
 .revive-sigil-inline { flex-shrink: 0; line-height: 0; }
-.revive-sigil-mini { flex-shrink: 0; line-height: 0; opacity: 0.9; }
+.revive-sigil-mini { flex-shrink: 0; line-height: 0; opacity: 0.95; }
 .revive-project-item:has(.revive-sigil-mini) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
 }
-@keyframes sigilBreathe {
-  0%, 100% { opacity: 0.55; }
+
+/* 轻点纪念章：小人朝你晃一晃 */
+@keyframes sigilWink {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.07) rotate(-4deg); }
+  55% { transform: scale(1.05) rotate(3deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.sigil-wink .revive-sigil-svg { animation: sigilWink 0.9s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes sigilBlushPop {
+  0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
-.sigil-ring-breathe { animation: sigilBreathe 3.6s ease-in-out 4; }
+.sigil-wink .s-blush { animation: sigilBlushPop 0.9s ease; }
+/* 本轮刚点亮：进度环轻轻呼吸三次 */
+@keyframes sigilRingNew {
+  0%, 100% { stroke-width: 2.4; opacity: 0.9; }
+  50% { stroke-width: 3.6; opacity: 1; }
+}
+.s-ring-new { animation: sigilRingNew 1.6s ease-in-out 3; }
+
+/* 毕业页 */
+.revive-finished-card .revive-sigil-hero { margin-bottom: 1.3rem; }
+.revive-graduate-row {
+  margin-top: 0.9rem;
+  text-align: center;
+}
+.revive-graduate-row .revive-quiet-btn { font-size: 0.72rem; }
 
 /* ==========================================================
    RESUME LETTER · 上次的你留给现在的你
@@ -2378,5 +2417,6 @@ body.focus-mode-active { overflow: hidden; }
   #revive-focus-overlay { animation: none; }
   .focus-star { display: none; }
   .focus-phase { transition: opacity 0.25s ease; transform: none; }
-  .sigil-ring-breathe { animation: none; }
+  .sigil-wink .revive-sigil-svg, .sigil-wink .s-blush, .s-ring-new { animation: none; }
+  .revive-sigil-hero:hover .revive-sigil-svg { transform: none; }
 }

@@ -2925,44 +2925,41 @@ function triggerBlockerWarning(overtimeSeconds) {
 }
 
 // --- 18. Try Revive：停滞项目复活闭环 ---
-const REVIVE_BLOCKER_LABELS = {
-  context: "上下文断了",
-  too_big: "下一步仍然太大",
-  tool: "找不到工作入口",
-  commitment: "缺少承诺与陪伴",
-  unclear: "不确定什么才算推进"
-};
+// 标签通过 i18n 代理动态取词；缺 key 时返回 undefined 以保留 "||" 回退逻辑
+const REVIVE_BLOCKER_LABELS = new Proxy({}, {
+  get: (_, key) => (window.ReviveI18N?.has(`blocker.${String(key)}`) ? t(`blocker.${String(key)}`) : undefined)
+});
 
-const REVIVE_STATUS_LABELS = {
-  brief: "待开始",
-  running: "行动中",
-  evidence: "待提交证据",
-  completed: "本轮完成",
-  paused: "已暂停"
-};
+const REVIVE_STATUS_LABELS = new Proxy({}, {
+  get: (_, key) => (window.ReviveI18N?.has(`status.${String(key)}`) ? t(`status.${String(key)}`) : undefined)
+});
+
+function reviveQ(field, type, extra) {
+  const q = { field, type, get prompt() { return t(`q.${field}`); } };
+  if (type === "text" || type === "days") {
+    Object.defineProperty(q, "placeholder", { get: () => t(`q.${field}.ph`) });
+  }
+  if (extra?.options) {
+    q.options = extra.options.map(o => ({ value: o.value, get label() { return o.key ? t(o.key) : t("unit.min", { n: o.value }); } }));
+  }
+  return q;
+}
 
 const REVIVE_CONVERSATION_QUESTIONS = [
-  { field: "name", prompt: "先告诉我：你想重新启动的项目叫什么？", placeholder: "例如：个人作品集网站", type: "text" },
-  { field: "goal", prompt: "你原本希望它最后变成什么结果？不用讲完整计划，只说你想看到的成品。", placeholder: "例如：上线一个能展示三个项目的作品集", type: "text" },
-  { field: "lastProgress", prompt: "它停下前，最后一次真实进展是什么？", placeholder: "例如：首页已经写完，详情页还是空白", type: "text" },
-  { field: "stalledDays", prompt: "它大概停了多久？可以直接说“两周”或“20 天”。", placeholder: "例如：两周", type: "days" },
-  { field: "whyContinue", prompt: "为什么它现在仍然值得继续？一句话就够。", placeholder: "例如：我需要用它申请实习", type: "text" },
-  { field: "lastCompleted", prompt: "最后一个已经完成、能指给别人看的东西是什么？", placeholder: "例如：已经可以打开的首页", type: "text" },
-  {
-    field: "blocker", prompt: "现在最大的阻力更像哪一种？", type: "options",
-    options: [
-      { value: "context", label: "忘了做到哪里" }, { value: "too_big", label: "下一步太大" },
-      { value: "tool", label: "找不到工作入口" }, { value: "commitment", label: "一个人容易拖" },
-      { value: "unclear", label: "不确定什么算推进" }
-    ]
-  },
-  {
-    field: "availableMinutes", prompt: "今天你愿意先给它多少时间？", type: "options",
-    options: [
-      { value: 10, label: "10 分钟" }, { value: 15, label: "15 分钟" },
-      { value: 20, label: "20 分钟" }, { value: 45, label: "45 分钟" }
-    ]
-  }
+  reviveQ("name", "text"),
+  reviveQ("goal", "text"),
+  reviveQ("lastProgress", "text"),
+  reviveQ("stalledDays", "days"),
+  reviveQ("whyContinue", "text"),
+  reviveQ("lastCompleted", "text"),
+  reviveQ("blocker", "options", { options: [
+    { value: "context", key: "opt.context" }, { value: "too_big", key: "opt.too_big" },
+    { value: "tool", key: "opt.tool" }, { value: "commitment", key: "opt.commitment" },
+    { value: "unclear", key: "opt.unclear" }
+  ] }),
+  reviveQ("availableMinutes", "options", { options: [
+    { value: 10 }, { value: 15 }, { value: 20 }, { value: 45 }
+  ] })
 ];
 
 function getReviveStore() {
@@ -3041,9 +3038,9 @@ function reviveSetReturnPlan(project, dueAt) {
 }
 
 function reviveEvidenceTrustLabel(trust) {
-  if (trust === "verified") return "已验证";
-  if (trust === "observed") return "已观察";
-  return "用户确认";
+  if (trust === "verified") return t("trust.verified");
+  if (trust === "observed") return t("trust.observed");
+  return t("trust.claimed");
 }
 
 function reviveUid(prefix) {
@@ -3208,11 +3205,16 @@ function renderReviveWorkspace() {
       <div class="revive-empty-state">
         <div>
           <div class="revive-empty-symbol">↗</div>
-          <h2>从一句话开始</h2>
-          <p>我会一次只问一个问题，并在对话过程中自动填写项目资料。最后只给你一个现在能完成的动作。</p>
-          <button class="revive-primary-btn" onclick="startNewRevive()">开始复活对话</button>
+          <h2>${escapeHtml(t("empty.title"))}</h2>
+          <p>${escapeHtml(t("empty.desc"))}</p>
+          <button class="revive-primary-btn" onclick="startNewRevive()">${escapeHtml(t("empty.cta"))}</button>
         </div>
       </div>`;
+    return;
+  }
+
+  if (project.finished) {
+    stage.innerHTML = reviveFinishedTemplate(project);
     return;
   }
 
@@ -3243,40 +3245,40 @@ function reviveConversationTemplate() {
     </div>` : "";
   const composer = question.type !== "options" ? `
     <form class="revive-chat-composer" onsubmit="reviveSubmitConversation(event)">
-      <input id="revive-chat-input" class="revive-input" autocomplete="off" placeholder="${escapeHtml(question.placeholder || "直接说就好")}" aria-label="回答当前问题">
-      <button type="submit" class="revive-primary-btn">发送</button>
+      <input id="revive-chat-input" class="revive-input" autocomplete="off" placeholder="${escapeHtml(question.placeholder || t("chat.ph"))}" aria-label="${escapeHtml(t("chat.aria"))}">
+      <button type="submit" class="revive-primary-btn">${escapeHtml(t("chat.send"))}</button>
     </form>` : "";
   const summary = reviveConversationSummary(draft.answers || {});
 
   return `
     <div class="revive-chat">
       <div class="revive-chat-head">
-        <div><span class="revive-eyebrow">REVIVAL CONVERSATION</span><h2>我来问，你只需要回答</h2></div>
+        <div><span class="revive-eyebrow">REVIVAL CONVERSATION</span><h2>${escapeHtml(t("chat.title"))}</h2></div>
         <span class="revive-chat-progress">${Math.min(draft.step + 1, REVIVE_CONVERSATION_QUESTIONS.length)} / ${REVIVE_CONVERSATION_QUESTIONS.length}</span>
       </div>
       <div id="revive-chat-messages" class="revive-chat-messages">${messages}</div>
       ${options}
       ${composer}
       <div class="revive-chat-summary">${summary}</div>
-      <div class="revive-chat-note">答案会自动写入项目资料。你随时可以取消，或切换到完整表单。</div>
+      <div class="revive-chat-note">${escapeHtml(t("chat.note"))}</div>
       <div class="revive-action-row">
-        <div><button class="revive-quiet-btn" onclick="reviveCancelConversation()">取消对话</button></div>
-        <div><button class="revive-quiet-btn" onclick="state.reviveUiMode='intake'; renderReviveWorkspace()">切换完整表单</button></div>
+        <div><button class="revive-quiet-btn" onclick="reviveCancelConversation()">${escapeHtml(t("chat.cancel"))}</button></div>
+        <div><button class="revive-quiet-btn" onclick="state.reviveUiMode='intake'; renderReviveWorkspace()">${escapeHtml(t("chat.switch"))}</button></div>
       </div>
     </div>`;
 }
 
 function reviveConversationSummary(answers) {
   const items = [];
-  if (answers.name) items.push(`项目：${answers.name}`);
-  if (answers.goal) items.push(`目标：${answers.goal}`);
-  if (answers.lastProgress) items.push(`进展：${answers.lastProgress}`);
-  if (answers.stalledDays) items.push(`停滞：${answers.stalledDays} 天`);
-  if (answers.whyContinue) items.push(`继续理由：${answers.whyContinue}`);
-  if (answers.lastCompleted) items.push(`已有成果：${answers.lastCompleted}`);
-  if (answers.blocker) items.push(`阻力：${REVIVE_BLOCKER_LABELS[answers.blocker] || answers.blocker}`);
-  if (answers.availableMinutes) items.push(`可用时间：${answers.availableMinutes} 分钟`);
-  if (!items.length) return "<span>还没有填写内容</span>";
+  if (answers.name) items.push(t("sum.name", { v: answers.name }));
+  if (answers.goal) items.push(t("sum.goal", { v: answers.goal }));
+  if (answers.lastProgress) items.push(t("sum.progress", { v: answers.lastProgress }));
+  if (answers.stalledDays) items.push(t("sum.stalled", { v: answers.stalledDays }));
+  if (answers.whyContinue) items.push(t("sum.why", { v: answers.whyContinue }));
+  if (answers.lastCompleted) items.push(t("sum.done", { v: answers.lastCompleted }));
+  if (answers.blocker) items.push(t("sum.blocker", { v: REVIVE_BLOCKER_LABELS[answers.blocker] || answers.blocker }));
+  if (answers.availableMinutes) items.push(t("sum.time", { v: answers.availableMinutes }));
+  if (!items.length) return `<span>${escapeHtml(t("chat.empty"))}</span>`;
   return items.map(item => `<span title="${escapeHtml(item)}">${escapeHtml(item)}</span>`).join("");
 }
 
@@ -3299,21 +3301,21 @@ function reviveParseDays(value) {
   const numeric = raw.match(/(\d+(?:\.\d+)?)/);
   if (!numeric) return null;
   const number = Number(numeric[1]);
-  if (raw.includes("周") || raw.includes("星期")) return Math.round(number * 7);
-  if (raw.includes("月")) return Math.round(number * 30);
+  if (raw.includes("周") || raw.includes("星期") || raw.includes("week")) return Math.round(number * 7);
+  if (raw.includes("月") || raw.includes("month")) return Math.round(number * 30);
   return Math.round(number);
 }
 
 function reviveConversationAck(field, value, displayValue) {
-  if (field === "name") return `收到，我把项目记为“${displayValue}”。`;
-  if (field === "goal") return "明白了，我只保留这个结果，不展开完整计划。";
-  if (field === "lastProgress") return "已保存最后现场，下次不会从空白开始。";
-  if (field === "stalledDays") return `记下了：停滞约 ${value} 天。`;
-  if (field === "whyContinue") return "这个继续理由会用来判断建议是否值得做。";
-  if (field === "lastCompleted") return "很好，新的动作会从这个真实成果继续。";
-  if (field === "blocker") return `主要阻力已标记为“${displayValue}”。`;
-  if (field === "availableMinutes") return `好，我会把第一步控制在 ${Math.min(10, Number(value) || 10)} 分钟。`;
-  return "已自动填入。";
+  if (field === "name") return t("ack.name", { v: displayValue });
+  if (field === "goal") return t("ack.goal");
+  if (field === "lastProgress") return t("ack.lastProgress");
+  if (field === "stalledDays") return t("ack.stalledDays", { n: value });
+  if (field === "whyContinue") return t("ack.whyContinue");
+  if (field === "lastCompleted") return t("ack.lastCompleted");
+  if (field === "blocker") return t("ack.blocker", { v: displayValue });
+  if (field === "availableMinutes") return t("ack.minutes", { n: Math.min(10, Number(value) || 10) });
+  return t("ack.default");
 }
 
 function reviveSubmitConversation(event) {
@@ -3338,18 +3340,18 @@ function reviveHandleConversationAnswer(rawValue, displayValue) {
   if (question.type === "days") {
     value = reviveParseDays(rawValue);
     if (!value) {
-      showReviveNotice("我没看懂停滞时间。可以回答“14 天”或“两周”。", "error");
+      showReviveNotice(t("err.daysUnclear"), "error");
       return;
     }
     if (value < 7) {
-      showReviveNotice("Try Revive 先处理停滞至少 7 天的项目。请确认一个 7 天以上的时间。", "error");
+      showReviveNotice(t("err.days7"), "error");
       return;
     }
     value = Math.min(3650, value);
-    displayValue = `${value} 天`;
+    displayValue = t("unit.days", { n: value });
   }
   if (question.type === "text" && String(value).trim().length < 2) {
-    showReviveNotice("可以再多说一点点吗？两三个词就够。", "error");
+    showReviveNotice(t("err.tooShort"), "error");
     return;
   }
   if (question.field === "availableMinutes") value = Number(value) || 10;
@@ -3404,7 +3406,7 @@ function reviveCompleteConversation() {
   store.draftConversation = null;
   state.reviveUiMode = "auto";
   recordReviveEvent("brief_created", project.id, { blocker: project.blocker, intakeMode: "conversation" });
-  reviveSaveAndRender("对话已自动整理成 Revival Brief。你只需要检查这一步是否足够小。", "success");
+  reviveSaveAndRender(t("n.briefFromChat"), "success");
 }
 
 function reviveCancelConversation() {
@@ -3418,68 +3420,68 @@ function reviveIntakeTemplate() {
   return `
     <form id="revive-intake-form" onsubmit="reviveCreateProject(event)">
       <div class="revive-form-head">
-        <div><span class="revive-eyebrow">PROJECT INTAKE</span><h2>用两分钟恢复项目现场</h2></div>
-        <span class="revive-form-progress">项目背景 + 最多 3 个诊断问题</span>
+        <div><span class="revive-eyebrow">PROJECT INTAKE</span><h2>${escapeHtml(t("intake.head"))}</h2></div>
+        <span class="revive-form-progress">${escapeHtml(t("intake.sub"))}</span>
       </div>
       <div class="revive-form-grid">
         <div class="revive-field">
-          <label for="revive-project-name">项目名称 *</label>
-          <input id="revive-project-name" name="name" class="revive-input" maxlength="80" required placeholder="例如：个人作品集网站">
+          <label for="revive-project-name">${escapeHtml(t("intake.name"))}</label>
+          <input id="revive-project-name" name="name" class="revive-input" maxlength="80" required placeholder="${escapeHtml(t("q.name.ph"))}">
         </div>
         <div class="revive-field">
-          <label for="revive-stalled-days">已经停了多久 *</label>
+          <label for="revive-stalled-days">${escapeHtml(t("intake.stalled"))}</label>
           <input id="revive-stalled-days" name="stalledDays" class="revive-input" type="number" min="7" max="3650" value="7" required>
         </div>
         <div class="revive-field full">
-          <label for="revive-goal">原本想完成什么 *</label>
-          <textarea id="revive-goal" name="goal" class="revive-textarea" maxlength="500" required placeholder="写结果，不用重写完整 PRD。例如：上线一个能让别人浏览三个项目的作品集。"></textarea>
+          <label for="revive-goal">${escapeHtml(t("intake.goal"))}</label>
+          <textarea id="revive-goal" name="goal" class="revive-textarea" maxlength="500" required placeholder="${escapeHtml(t("intake.goalPh"))}"></textarea>
         </div>
         <div class="revive-field full">
-          <label for="revive-last-progress">停下前最后的真实进展 *</label>
-          <textarea id="revive-last-progress" name="lastProgress" class="revive-textarea" maxlength="500" required placeholder="例如：首页结构已经写完，但项目详情页仍是空白。"></textarea>
+          <label for="revive-last-progress">${escapeHtml(t("intake.last"))}</label>
+          <textarea id="revive-last-progress" name="lastProgress" class="revive-textarea" maxlength="500" required placeholder="${escapeHtml(t("intake.lastPh"))}"></textarea>
         </div>
         <div class="revive-field">
-          <label for="revive-available-time">今天可用时间</label>
+          <label for="revive-available-time">${escapeHtml(t("intake.time"))}</label>
           <select id="revive-available-time" name="availableMinutes" class="revive-select">
-            <option value="10">10 分钟</option><option value="15">15 分钟</option><option value="20">20 分钟</option><option value="45">45 分钟</option>
+            <option value="10">${escapeHtml(t("unit.min", { n: 10 }))}</option><option value="15">${escapeHtml(t("unit.min", { n: 15 }))}</option><option value="20">${escapeHtml(t("unit.min", { n: 20 }))}</option><option value="45">${escapeHtml(t("unit.min", { n: 45 }))}</option>
           </select>
         </div>
         <div class="revive-field">
-          <label for="revive-tool-link">工作入口（选填）</label>
-          <input id="revive-tool-link" name="toolLink" class="revive-input" placeholder="Notion / Figma / GitHub / 在线文档链接">
-          <small>只保存链接；不会自动读取或修改外部资料。</small>
+          <label for="revive-tool-link">${escapeHtml(t("intake.tool"))}</label>
+          <input id="revive-tool-link" name="toolLink" class="revive-input" placeholder="${escapeHtml(t("intake.toolPh"))}">
+          <small>${escapeHtml(t("intake.toolNote"))}</small>
         </div>
         <div class="revive-field full">
-          <label for="revive-why">问题 1：为什么它现在仍值得继续？ *</label>
-          <textarea id="revive-why" name="whyContinue" class="revive-textarea" maxlength="400" required placeholder="一句话即可。若已经不值得继续，暂停也是正确结果。"></textarea>
+          <label for="revive-why">${escapeHtml(t("intake.why"))}</label>
+          <textarea id="revive-why" name="whyContinue" class="revive-textarea" maxlength="400" required placeholder="${escapeHtml(t("intake.whyPh"))}"></textarea>
         </div>
         <div class="revive-field full">
-          <label for="revive-last-done">问题 2：最后一个已经完成、能指给别人看的东西是什么？ *</label>
-          <input id="revive-last-done" name="lastCompleted" class="revive-input" maxlength="240" required placeholder="例如：已经可以打开的首页 / 一页草稿 / 一段可运行代码">
+          <label for="revive-last-done">${escapeHtml(t("intake.done"))}</label>
+          <input id="revive-last-done" name="lastCompleted" class="revive-input" maxlength="240" required placeholder="${escapeHtml(t("intake.donePh"))}">
         </div>
         <div class="revive-field">
-          <label for="revive-blocker">问题 3：当前最大的阻力 *</label>
+          <label for="revive-blocker">${escapeHtml(t("intake.blocker"))}</label>
           <select id="revive-blocker" name="blocker" class="revive-select" required>
-            <option value="context">忘了做到哪里</option><option value="too_big">下一步太大</option><option value="tool">找不到文件或入口</option><option value="commitment">一个人容易继续拖</option><option value="unclear">不确定什么才算推进</option>
+            <option value="context">${escapeHtml(t("opt.context"))}</option><option value="too_big">${escapeHtml(t("opt.too_big"))}</option><option value="tool">${escapeHtml(t("opt.tool"))}</option><option value="commitment">${escapeHtml(t("opt.commitment"))}</option><option value="unclear">${escapeHtml(t("opt.unclear"))}</option>
           </select>
         </div>
         <div class="revive-field">
-          <label for="revive-obstacle">补充一句具体情况</label>
-          <input id="revive-obstacle" name="obstacle" class="revive-input" maxlength="240" placeholder="例如：一打开 Figma 就想重新设计全部页面">
+          <label for="revive-obstacle">${escapeHtml(t("intake.obstacle"))}</label>
+          <input id="revive-obstacle" name="obstacle" class="revive-input" maxlength="240" placeholder="${escapeHtml(t("intake.obstaclePh"))}">
         </div>
         <div class="revive-field full">
-          <label for="revive-decision">这次的决定</label>
+          <label for="revive-decision">${escapeHtml(t("intake.decision"))}</label>
           <select id="revive-decision" name="decision" class="revive-select">
-            <option value="continue">继续：给我一个现在能完成的动作</option>
-            <option value="shrink">缩小：保留价值，但先缩小目标</option>
-            <option value="pause">暂不继续：保存现场，之后再判断</option>
+            <option value="continue">${escapeHtml(t("intake.dCont"))}</option>
+            <option value="shrink">${escapeHtml(t("intake.dShrink"))}</option>
+            <option value="pause">${escapeHtml(t("intake.dPause"))}</option>
           </select>
         </div>
       </div>
       <div class="revive-form-actions">
-        <button type="button" class="revive-quiet-btn" onclick="reviveCancelConversation()">取消</button>
+        <button type="button" class="revive-quiet-btn" onclick="reviveCancelConversation()">${escapeHtml(t("intake.cancel"))}</button>
         <div class="revive-form-actions-right">
-          <button type="submit" class="revive-primary-btn">生成 Revival Brief</button>
+          <button type="submit" class="revive-primary-btn">${escapeHtml(t("intake.submit"))}</button>
         </div>
       </div>
     </form>`;
@@ -3491,7 +3493,7 @@ function reviveCreateProject(event) {
   const data = new FormData(form);
   const stalledDays = Number(data.get("stalledDays"));
   if (!Number.isFinite(stalledDays) || stalledDays < 7) {
-    showReviveNotice("Try Revive 只处理至少停滞 7 天的项目。若刚停下，先继续原计划。", "error");
+    showReviveNotice(t("n.days7Form"), "error");
     return;
   }
 
@@ -3520,7 +3522,7 @@ function reviveCreateProject(event) {
   };
 
   if (!project.name || !project.goal || !project.lastProgress || !project.whyContinue || !project.lastCompleted) {
-    showReviveNotice("请补齐必填信息，尤其是最后的真实进展与继续理由。", "error");
+    showReviveNotice(t("n.fillRequired"), "error");
     return;
   }
   project = reviveNormalizeProjectRecord(project);
@@ -3532,80 +3534,48 @@ function reviveCreateProject(event) {
   store.activeProjectId = project.id;
   state.reviveUiMode = "auto";
   recordReviveEvent(project.status === "paused" ? "project_paused" : "brief_created", project.id, { blocker: project.blocker });
-  reviveSaveAndRender(project.status === "paused" ? "已保存项目现场。暂停也是正确结果。" : "Revival Brief 已生成。先检查动作是否足够小。", "success");
+  reviveSaveAndRender(project.status === "paused" ? t("n.pausedCreate") : t("n.briefCreated"), "success");
 }
 
 function generateRevivalAction(project, variant, forceSmall) {
-  const name = project.name || "这个项目";
-  const goal = project.goal || "原目标";
-  const last = project.lastCompleted || project.lastProgress || "已有内容";
+  const name = project.name || (ReviveI18N.lang === "en" ? "this project" : "这个项目");
+  const goal = (project.goal || "").slice(0, 46) || (ReviveI18N.lang === "en" ? "the original goal" : "原目标");
+  const last = (project.lastCompleted || project.lastProgress || "").slice(0, 45) || (ReviveI18N.lang === "en" ? "what exists" : "已有内容");
   const blocker = project.blocker || "context";
   const contextSnapshot = reviveGetActiveContextSnapshot(project);
   const githubContext = contextSnapshot?.sourceType === "github" ? contextSnapshot.data : null;
-  const versions = {
-    context: [
-      `打开「${name}」最近的工作文件，在顶部写下“当前状态 / 卡点 / 下一步”各 1 句。`,
-      `只查看「${name}」最后一次产出，把仍然有效的内容复制到一份“复活草稿”。`,
-      `打开「${name}」的主要文件，标出一处最接近完成的内容，并写下它缺的最后一步。`
-    ],
-    too_big: [
-      `为「${name}」做一个 60 分版本：只完成“${goal.slice(0, 42)}”中最小可展示的一块。`,
-      `删掉「${name}」下一步中的非必要部分，只保留一个别人能看见的结果并做出第一版。`,
-      `复制现有内容做一份“粗糙但可展示”的草稿，只补上最明显的一个空缺。`
-    ],
-    tool: [
-      `找到并打开「${name}」的主要工作文件，把它固定到易访问位置，然后完成一个可见改动。`,
-      `只做入口恢复：找到「${last.slice(0, 45)}」所在文件，重命名为清晰标题并保存到固定位置。`,
-      `打开最接近成品的文件，在里面留下一行“下次从这里继续”的明确标记。`
-    ],
-    commitment: [
-      `打开「${name}」并完成一个可见改动；完成后在本页记录证据和下一次继续时间。`,
-      `给自己写一条只包含交付物与截止时间的承诺，然后立刻做出交付物的第一小块。`,
-      `先完成「${name}」里一个能截图的变化，再决定是否邀请同伴见证下一轮。`
-    ],
-    unclear: [
-      `把“${goal.slice(0, 46)}”改写成一个今天能展示的结果，并完成它的第一处可见内容。`,
-      `从「${last.slice(0, 45)}」继续，只做一个让页面、文档或原型明显发生变化的修改。`,
-      `写下「${name}」本轮的完成标准，然后先完成标准中的第一项。`
-    ]
-  };
-  const list = versions[blocker] || versions.context;
-  const index = Math.abs(Number(variant) || 0) % list.length;
+  const vars = { name, goal, last };
+  const index = Math.abs(Number(variant) || 0) % 3;
+  const blockerKey = ["context", "too_big", "tool", "commitment", "unclear"].includes(blocker) ? blocker : "context";
   const minutes = forceSmall ? 5 : Math.min(10, Math.max(5, Number(project.availableMinutes) || 10));
-  let text = list[index];
+  let text = t(`act.${blockerKey}.${index}`, vars);
   if (githubContext?.repository) {
     const repoName = githubContext.repository.fullName;
     const lastCommit = githubContext.lastCommit;
     const firstIssue = githubContext.openIssues?.[0];
     const githubVersions = {
       context: lastCommit
-        ? `打开「${repoName}」并查看最近提交 ${lastCommit.shortSha}（${lastCommit.message || "最近改动"}），在 README 或一个 Issue 中写下“当前状态 / 卡点 / 下一步”各 1 句。`
-        : `打开「${repoName}」，在 README 或一个 Issue 中写下“当前状态 / 卡点 / 下一步”各 1 句。`,
+        ? t("gh.context", { repo: repoName, sha: lastCommit.shortSha, msg: lastCommit.message || t("gh.recent") })
+        : t("gh.contextPlain", { repo: repoName }),
       too_big: firstIssue
-        ? `只推进「${repoName}」的 Issue #${firstIssue.number}：先提交一个可查看的 60 分版本，不展开新的 backlog。`
-        : `只为「${repoName}」完成一个能形成 commit 的 60 分改动，不新增第二个目标。`,
-      tool: `打开「${repoName}」默认分支 ${githubContext.repository.defaultBranch || "main"}，定位最近改动文件并保存一处可见变化。`,
-      commitment: `在「${repoName}」完成一处真实改动并形成 commit；完成后把 commit 链接作为本轮证据。`,
+        ? t("gh.tooBigIssue", { repo: repoName, n: firstIssue.number })
+        : t("gh.tooBigPlain", { repo: repoName }),
+      tool: t("gh.tool", { repo: repoName, branch: githubContext.repository.defaultBranch || "main" }),
+      commitment: t("gh.commitment", { repo: repoName }),
       unclear: firstIssue
-        ? `把 Issue #${firstIssue.number} 缩成一个今天能提交的改动，并先完成第一处可见内容。`
-        : `为「${repoName}」写下本轮唯一完成标准，并提交满足它的第一处可见改动。`
+        ? t("gh.unclearIssue", { n: firstIssue.number })
+        : t("gh.unclearPlain", { repo: repoName })
     };
-    text = githubVersions[blocker] || githubVersions.context;
+    text = githubVersions[blockerKey] || githubVersions.context;
   }
-  if (forceSmall && !text.startsWith("只")) text = `只做最小版：${text}`;
-  const doneDefinitions = {
-    context: "工作文件中出现 3 行状态说明，且你能明确指出下次从哪里继续。",
-    too_big: "出现一个可打开、可截图或可给别人看的 60 分草稿。",
-    tool: "主要文件已找到并固定，文件中至少保存了一处可见变化。",
-    commitment: "有一处真实改动，并在本页记录了证据与下一次继续时间。",
-    unclear: "完成标准已写清，并且已经产生第一处可见内容。"
-  };
+  if (forceSmall && !text.startsWith("只") && !text.startsWith("Minimal")) text = t("act.minPrefix") + text;
   const doneDefinition = githubContext?.repository
-    ? `${doneDefinitions[blocker] || doneDefinitions.context} 若产生代码改动，请使用该仓库的新 commit 或 PR 链接作为证据。`
-    : (doneDefinitions[blocker] || doneDefinitions.context);
+    ? t(`def.${blockerKey}`) + t("def.ghSuffix")
+    : t(`def.${blockerKey}`);
+  const blockerLabel = REVIVE_BLOCKER_LABELS[blocker] || t("blocker.fallback");
   const rationale = githubContext?.repository
-    ? `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。动作依据 ${githubContext.repository.fullName} 的公开上下文快照生成，不要求重做完整计划。`
-    : `你标记的主要阻力是“${REVIVE_BLOCKER_LABELS[blocker] || "启动摩擦"}”。这一步从已完成的“${last.slice(0, 64)}”继续，不要求重做完整计划。`;
+    ? t("rat.github", { b: blockerLabel, repo: githubContext.repository.fullName })
+    : t("rat.local", { b: blockerLabel, last: (project.lastCompleted || project.lastProgress || "").slice(0, 64) || last });
   const contract = {
     text,
     deliverable: text,
@@ -3643,36 +3613,36 @@ function reviveContextCardTemplate(project) {
       <section class="revive-context-card connected">
         <div class="revive-context-head">
           <div><span class="revive-eyebrow">CONTEXT SNAPSHOT · GITHUB</span><h3>${escapeHtml(repo.fullName)}</h3></div>
-          <span class="revive-trust-pill verified">公开上下文已读取</span>
+          <span class="revive-trust-pill verified">${escapeHtml(t("ctx.connected"))}</span>
         </div>
-        <p>${escapeHtml(repo.description || "该仓库没有公开说明。")}</p>
+        <p>${escapeHtml(repo.description || t("ctx.noDesc"))}</p>
         <div class="revive-context-facts">
-          <span>默认分支 ${escapeHtml(repo.defaultBranch || "main")}</span>
-          <span>${commit ? `最近提交 ${escapeHtml(commit.shortSha)}` : "未获取到提交"}</span>
-          <span>公开 Issue ${Number(repo.openIssueCount) || 0}</span>
+          <span>${escapeHtml(t("ctx.branch", { b: repo.defaultBranch || "main" }))}</span>
+          <span>${commit ? escapeHtml(t("ctx.commit", { s: commit.shortSha })) : escapeHtml(t("ctx.noCommit"))}</span>
+          <span>${escapeHtml(t("ctx.issues", { n: Number(repo.openIssueCount) || 0 }))}</span>
         </div>
-        ${commit ? `<a class="revive-context-link" href="${escapeHtml(commit.htmlUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(commit.message || "查看最近提交")} ↗</a>` : ""}
+        ${commit ? `<a class="revive-context-link" href="${escapeHtml(commit.htmlUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(commit.message || t("ctx.viewCommit"))} ↗</a>` : ""}
         ${issue ? `<a class="revive-context-link" href="${escapeHtml(issue.htmlUrl)}" target="_blank" rel="noopener noreferrer">Issue #${issue.number} · ${escapeHtml(issue.title)} ↗</a>` : ""}
         <div class="revive-context-actions">
-          <span>快照 ${escapeHtml(reviveFormatDateTime(snapshot.capturedAt))}</span>
-          <button class="revive-quiet-btn" onclick="reviveLoadGitHubContext()">刷新公开上下文</button>
+          <span>${escapeHtml(t("ctx.snapAt", { t: reviveFormatDateTime(snapshot.capturedAt) }))}</span>
+          <button class="revive-quiet-btn" onclick="reviveLoadGitHubContext()">${escapeHtml(t("ctx.refresh"))}</button>
         </div>
       </section>`;
   }
 
   const statusMessage = contextStatus.status === "loading"
-    ? "正在读取公开仓库上下文…"
-    : (contextStatus.status === "error" ? escapeHtml(contextStatus.error || "读取失败，请检查仓库是否公开。") : "当前仍使用手动填写的项目现场。");
+    ? t("ctx.loading")
+    : (contextStatus.status === "error" ? escapeHtml(contextStatus.error || t("ctx.error")) : t("ctx.manual"));
   return `
     <section class="revive-context-card">
       <div class="revive-context-head">
-        <div><span class="revive-eyebrow">CONTEXT SNAPSHOT</span><h3>连接一个公开 GitHub 仓库</h3></div>
-        <span class="revive-trust-pill claimed">只读</span>
+        <div><span class="revive-eyebrow">CONTEXT SNAPSHOT</span><h3>${escapeHtml(t("ctx.connectHead"))}</h3></div>
+        <span class="revive-trust-pill claimed">${escapeHtml(t("ctx.readonly"))}</span>
       </div>
-      <p>读取仓库说明、最近提交和公开 Issue，让下一步基于真实项目现场。不会创建 Issue、提交代码或获取私有仓库。</p>
+      <p>${escapeHtml(t("ctx.desc"))}</p>
       <div class="revive-context-connect">
         <input id="revive-github-url" class="revive-input" value="${escapeHtml(currentUrl)}" placeholder="https://github.com/owner/repo" ${contextStatus.status === "loading" ? "disabled" : ""}>
-        <button class="revive-secondary-btn" onclick="reviveConnectGitHubFromInput()" ${contextStatus.status === "loading" ? "disabled" : ""}>读取公开上下文</button>
+        <button class="revive-secondary-btn" onclick="reviveConnectGitHubFromInput()" ${contextStatus.status === "loading" ? "disabled" : ""}>${escapeHtml(t("ctx.readBtn"))}</button>
       </div>
       <small class="${contextStatus.status === "error" ? "revive-context-error" : ""}">${statusMessage}</small>
     </section>`;
@@ -3685,7 +3655,7 @@ async function reviveConnectGitHubFromInput() {
   if (!project || !REVIVAL_GITHUB) return;
   const repoRef = REVIVAL_GITHUB.parseGitHubRepoUrl(value);
   if (!repoRef) {
-    showReviveNotice("请输入公开 GitHub 仓库首页地址。", "error");
+    showReviveNotice(t("n.githubUrl"), "error");
     return;
   }
   project.toolLink = repoRef.htmlUrl;
@@ -3695,13 +3665,13 @@ async function reviveConnectGitHubFromInput() {
 async function reviveLoadGitHubContext(explicitUrl) {
   const project = getActiveReviveProject();
   if (!project || !REVIVAL_GITHUB) {
-    showReviveNotice("GitHub 只读连接器尚未加载。", "error");
+    showReviveNotice(t("n.githubNoLoader"), "error");
     return;
   }
   const url = explicitUrl || project.toolLink;
   const repoRef = REVIVAL_GITHUB.parseGitHubRepoUrl(url);
   if (!repoRef) {
-    showReviveNotice("当前工作入口不是公开 GitHub 仓库地址。", "error");
+    showReviveNotice(t("n.notRepo"), "error");
     return;
   }
 
@@ -3720,22 +3690,22 @@ async function reviveLoadGitHubContext(explicitUrl) {
       snapshotId: snapshot?.id || null,
       repository: snapshot?.data?.repository?.fullName || repoRef.fullName
     });
-    reviveSaveAndRender("已读取公开 GitHub 上下文，当前动作已重新基于真实仓库生成。", "success");
+    reviveSaveAndRender(t("n.githubRead"), "success");
   } catch (error) {
     project.contextStatus = {
       source: "github",
       status: "error",
-      error: error.message || "GitHub 上下文读取失败",
+      error: error.message || t("n.githubFail"),
       updatedAt: Date.now()
     };
-    reviveSaveAndRender(error.message || "GitHub 上下文读取失败。", "error");
+    reviveSaveAndRender(error.message || t("n.githubFail"), "error");
   }
 }
 
 function reviveBriefTemplate(project) {
   const action = project.action || generateRevivalAction(project, 0, false);
   if (!project.action) reviveAssignAction(project, action);
-  const toolButton = project.toolLink ? `<button class="revive-secondary-btn" onclick="reviveOpenTool()">打开工作入口 ↗</button>` : "";
+  const toolButton = project.toolLink ? `<button class="revive-secondary-btn" onclick="reviveOpenTool()">${escapeHtml(t("brief.openTool"))}</button>` : "";
   return `
     <div class="revive-brief-head">
       <div style="display:flex; align-items:center; gap: 0.9rem;">
@@ -3743,34 +3713,34 @@ function reviveBriefTemplate(project) {
         <div>
           <span class="revive-eyebrow">REVIVAL BRIEF</span>
           <h2>${escapeHtml(project.name)}</h2>
-          <div class="revive-brief-context">停滞 ${project.stalledDays} 天 · 当前阻力：${escapeHtml(REVIVE_BLOCKER_LABELS[project.blocker] || "启动摩擦")}</div>
+          <div class="revive-brief-context">${escapeHtml(t("brief.stalled", { n: project.stalledDays, b: REVIVE_BLOCKER_LABELS[project.blocker] || t("blocker.fallback") }))}</div>
         </div>
       </div>
-      <span class="revive-status-pill active">只做当前一步</span>
+      <span class="revive-status-pill active">${escapeHtml(t("brief.pill"))}</span>
     </div>
     ${reviveContextCardTemplate(project)}
     <div class="revive-action-card">
-      <div class="revive-action-meta"><span class="revive-mini-pill">${action.minutes} 分钟</span><span class="revive-mini-pill">60 分版本</span><span class="revive-mini-pill">需要真实结果</span></div>
+      <div class="revive-action-meta"><span class="revive-mini-pill">${escapeHtml(t("unit.min", { n: action.minutes }))}</span><span class="revive-mini-pill">${escapeHtml(t("pill.v60"))}</span><span class="revive-mini-pill">${escapeHtml(t("pill.real"))}</span></div>
       <h3>${escapeHtml(action.text)}</h3>
-      <div class="revive-done-definition"><strong>完成标准：</strong>${escapeHtml(action.doneDefinition)}</div>
-      <div class="revive-action-rationale"><strong>为什么建议这一步：</strong>${escapeHtml(action.rationale)}</div>
+      <div class="revive-done-definition"><strong>${escapeHtml(t("brief.doneLabel"))}</strong>${escapeHtml(action.doneDefinition)}</div>
+      <div class="revive-action-rationale"><strong>${escapeHtml(t("brief.whyLabel"))}</strong>${escapeHtml(action.rationale)}</div>
       <div id="revive-edit-box" class="revive-edit-box">
         <textarea id="revive-action-edit" class="revive-textarea">${escapeHtml(action.text)}</textarea>
         <textarea id="revive-definition-edit" class="revive-textarea">${escapeHtml(action.doneDefinition)}</textarea>
-        <div><button class="revive-secondary-btn" onclick="reviveSaveEditedAction()">保存修改</button></div>
+        <div><button class="revive-secondary-btn" onclick="reviveSaveEditedAction()">${escapeHtml(t("brief.saveEdit"))}</button></div>
       </div>
       <div class="revive-action-row">
         <div>
-          <button class="revive-secondary-btn" onclick="reviveChangeAction('smaller')">再缩小</button>
-          <button class="revive-secondary-btn" onclick="reviveChangeAction('next')">换一步</button>
-          <button class="revive-quiet-btn" onclick="document.getElementById('revive-edit-box')?.classList.toggle('open')">自己修改</button>
+          <button class="revive-secondary-btn" onclick="reviveChangeAction('smaller')">${escapeHtml(t("brief.smaller"))}</button>
+          <button class="revive-secondary-btn" onclick="reviveChangeAction('next')">${escapeHtml(t("brief.swap"))}</button>
+          <button class="revive-quiet-btn" onclick="document.getElementById('revive-edit-box')?.classList.toggle('open')">${escapeHtml(t("brief.self"))}</button>
         </div>
-        <div>${toolButton}<button class="revive-primary-btn" onclick="reviveStartNow()">Start now · ${action.minutes} 分钟</button></div>
+        <div>${toolButton}<button class="revive-primary-btn" onclick="reviveStartNow()">${escapeHtml(t("brief.start", { n: action.minutes }))}</button></div>
       </div>
     </div>
     <div class="revive-form-actions">
-      <button class="revive-quiet-btn danger" onclick="revivePauseProject()">暂不继续这个项目</button>
-      <span class="revive-form-progress">不会自动写入文件、发送消息或提交代码</span>
+      <button class="revive-quiet-btn danger" onclick="revivePauseProject()">${escapeHtml(t("brief.pause"))}</button>
+      <span class="revive-form-progress">${escapeHtml(t("brief.noWrite"))}</span>
     </div>`;
 }
 
@@ -3781,7 +3751,7 @@ function reviveChangeAction(mode) {
   reviveAssignAction(project, generateRevivalAction(project, project.actionVariant, mode === "smaller"));
   project.updatedAt = Date.now();
   recordReviveEvent("action_changed", project.id, { mode, minutes: project.action.minutes });
-  reviveSaveAndRender(mode === "smaller" ? "动作已缩到 5 分钟。" : "已换一个仍然产出真实结果的动作。", "success");
+  reviveSaveAndRender(mode === "smaller" ? t("n.shrunk") : t("n.swapped"), "success");
 }
 
 function reviveSaveEditedAction() {
@@ -3789,7 +3759,7 @@ function reviveSaveEditedAction() {
   const actionText = document.getElementById("revive-action-edit")?.value.trim();
   const doneDefinition = document.getElementById("revive-definition-edit")?.value.trim();
   if (!project || !actionText || !doneDefinition) {
-    showReviveNotice("动作和完成标准都不能为空。", "error");
+    showReviveNotice(t("n.editEmpty"), "error");
     return;
   }
   reviveAssignAction(project, {
@@ -3802,7 +3772,7 @@ function reviveSaveEditedAction() {
   });
   project.updatedAt = Date.now();
   recordReviveEvent("action_edited", project.id, {});
-  reviveSaveAndRender("已保存你的动作版本。", "success");
+  reviveSaveAndRender(t("n.editSaved"), "success");
 }
 
 function reviveStartNow() {
@@ -3838,18 +3808,18 @@ function reviveTimerTemplate(project) {
   }
   return `
     <div class="revive-timer-stage">
-      <div class="revive-timer-label">START NOW · 当前只做这一件</div>
+      <div class="revive-timer-label">${escapeHtml(t("timer.label"))}</div>
       <h2 class="revive-timer-action">${escapeHtml(project.action.text)}</h2>
       <div id="revive-timer-clock" class="revive-timer-clock">${reviveFormatRemaining(remaining)}</div>
       <div class="revive-timer-controls">
-        <button id="revive-pause-btn" class="revive-secondary-btn" onclick="reviveToggleTimer()">${project.timerRunning ? "暂停" : "继续"}</button>
-        <button class="revive-primary-btn" onclick="reviveCompleteAction()">我完成了</button>
-        <button class="revive-quiet-btn" onclick="reviveActionStillTooLarge()">动作仍然太大</button>
+        <button id="revive-pause-btn" class="revive-secondary-btn" onclick="reviveToggleTimer()">${project.timerRunning ? escapeHtml(t("timer.pause")) : escapeHtml(t("timer.resume"))}</button>
+        <button class="revive-primary-btn" onclick="reviveCompleteAction()">${escapeHtml(t("timer.done"))}</button>
+        <button class="revive-quiet-btn" onclick="reviveActionStillTooLarge()">${escapeHtml(t("timer.tooBig"))}</button>
       </div>
-      <button class="revive-focus-entry" onclick="reviveEnterFocusMode()">◐ 进入专注 · 回到上次离开的地方</button>
-      <div class="revive-focus-entry-hint">全屏只是一个仪式，Esc 随时离开，没有惩罚</div>
-      ${project.toolLink ? `<button class="revive-tool-link" onclick="reviveOpenTool()">打开真实工作入口 ↗</button>` : ""}
-      <div class="revive-done-definition"><strong>完成标准：</strong>${escapeHtml(project.action.doneDefinition)}</div>
+      <button class="revive-focus-entry" onclick="reviveEnterFocusMode()">${escapeHtml(t("focus.entry"))}</button>
+      <div class="revive-focus-entry-hint">${escapeHtml(t("focus.hint"))}</div>
+      ${project.toolLink ? `<button class="revive-tool-link" onclick="reviveOpenTool()">${escapeHtml(t("timer.openTool"))}</button>` : ""}
+      <div class="revive-done-definition"><strong>${escapeHtml(t("brief.doneLabel"))}</strong>${escapeHtml(project.action.doneDefinition)}</div>
     </div>`;
 }
 
@@ -3865,7 +3835,7 @@ function reviveFocusLastSceneText(project) {
   const lastEvidence = project.evidence?.[project.evidence.length - 1];
   if (lastEvidence?.note) return lastEvidence.note;
   if (project.lastProgress) return project.lastProgress;
-  return "你决定让这个项目重新动起来";
+  return t("focus.scene");
 }
 
 function reviveEnterFocusMode() {
@@ -3889,25 +3859,25 @@ function reviveEnterFocusMode() {
   overlay.innerHTML = `
     <div class="focus-stars" aria-hidden="true">${stars}</div>
     <div class="focus-phase" id="focus-phase-1">
-      <div class="focus-eyebrow">回到上次离开的地方${lastWhen ? ` · ${escapeHtml(lastWhen)}` : ""}</div>
+      <div class="focus-eyebrow">${escapeHtml(t("focus.back"))}${lastWhen ? ` · ${escapeHtml(lastWhen)}` : ""}</div>
       <p class="focus-serif">“${escapeHtml(lastScene)}”</p>
     </div>
     <div class="focus-phase" id="focus-phase-2">
-      <div class="focus-eyebrow">现在 · 只有这一步</div>
+      <div class="focus-eyebrow">${escapeHtml(t("focus.now"))}</div>
       <p class="focus-serif">${escapeHtml(project.action.text)}</p>
     </div>
     <div class="focus-phase focus-live" id="focus-phase-3">
       <div class="focus-eyebrow">${escapeHtml(project.name)}</div>
       <div id="revive-focus-clock" class="focus-clock">${reviveFormatRemaining(reviveGetRemainingSec(project))}</div>
       <div class="focus-action-line">${escapeHtml(project.action.text)}</div>
-      <div class="focus-done-line">完成标准：${escapeHtml(project.action.doneDefinition)}</div>
+      <div class="focus-done-line">${escapeHtml(t("brief.doneLabel"))}${escapeHtml(project.action.doneDefinition)}</div>
       <div class="focus-controls">
-        <button class="revive-secondary-btn" id="revive-focus-pause" onclick="reviveFocusTogglePause()">${project.timerRunning ? "暂停" : "继续"}</button>
-        <button class="revive-primary-btn" onclick="reviveFocusComplete()">我完成了</button>
-        <button class="revive-quiet-btn" onclick="reviveExitFocusMode()">离开专注</button>
+        <button class="revive-secondary-btn" id="revive-focus-pause" onclick="reviveFocusTogglePause()">${project.timerRunning ? escapeHtml(t("timer.pause")) : escapeHtml(t("timer.resume"))}</button>
+        <button class="revive-primary-btn" onclick="reviveFocusComplete()">${escapeHtml(t("timer.done"))}</button>
+        <button class="revive-quiet-btn" onclick="reviveExitFocusMode()">${escapeHtml(t("focus.leave"))}</button>
       </div>
     </div>
-    <button class="focus-skip" onclick="reviveFocusAdvance()">轻触任意处继续 →</button>`;
+    <button class="focus-skip" onclick="reviveFocusAdvance()">${escapeHtml(t("focus.skip"))}</button>`;
   document.body.appendChild(overlay);
   document.body.classList.add("focus-mode-active");
   overlay.addEventListener("click", event => {
@@ -3952,7 +3922,7 @@ function reviveFocusTogglePause() {
   reviveToggleTimer();
   const project = getActiveReviveProject();
   const button = document.getElementById("revive-focus-pause");
-  if (button && project) button.textContent = project.timerRunning ? "暂停" : "继续";
+  if (button && project) button.textContent = project.timerRunning ? t("timer.pause") : t("timer.resume");
 }
 
 function reviveFocusComplete() {
@@ -4006,8 +3976,8 @@ function beginReviveTimerLoop() {
       project.timerRemainingSec = 0;
       saveProfile();
       const button = document.getElementById("revive-pause-btn");
-      if (button) button.textContent = "继续";
-      showReviveNotice("时间到了。完成了就提交证据；没完成也可以再缩小动作。", "success");
+      if (button) button.textContent = t("timer.resume");
+      showReviveNotice(t("timer.up"), "success");
     }
   }, 1000);
 }
@@ -4039,7 +4009,7 @@ function reviveActionStillTooLarge() {
   reviveAssignAction(project, generateRevivalAction(project, project.actionVariant, true));
   project.updatedAt = Date.now();
   recordReviveEvent("action_too_large", project.id, {});
-  reviveSaveAndRender("已停止计时并把动作缩到 5 分钟。不是失败，是诊断结果。", "success");
+  reviveSaveAndRender(t("n.tooSmall5"), "success");
 }
 
 function reviveCompleteAction() {
@@ -4059,40 +4029,40 @@ function reviveEvidenceTemplate(project) {
   return `
     <form onsubmit="reviveSubmitEvidence(event)">
       <div class="revive-form-head">
-        <div><span class="revive-eyebrow">COMPLETION EVIDENCE</span><h2>留下足够轻的完成证据</h2></div>
-        <span class="revive-status-pill active">不会上传云端</span>
+        <div><span class="revive-eyebrow">COMPLETION EVIDENCE</span><h2>${escapeHtml(t("ev.head"))}</h2></div>
+        <span class="revive-status-pill active">${escapeHtml(t("ev.pill"))}</span>
       </div>
-      <p class="revive-evidence-intro">证据是为了让下次不用重新回忆，不是为了审查你。连接公开 GitHub 仓库后，新的 commit 或 PR 链接会自动核验；其余证据仍可保留为用户确认。</p>
+      <p class="revive-evidence-intro">${escapeHtml(t("ev.intro"))}</p>
       <div class="revive-form-grid">
         <div class="revive-field">
-          <label for="revive-evidence-type">证据方式</label>
+          <label for="revive-evidence-type">${escapeHtml(t("ev.type"))}</label>
           <select id="revive-evidence-type" name="type" class="revive-select">
-            <option value="text">文字说明</option><option value="link">成果链接</option><option value="file">截图 / 文件名</option><option value="self">仅自我确认</option>
+            <option value="text">${escapeHtml(t("ev.text"))}</option><option value="link">${escapeHtml(t("ev.link"))}</option><option value="file">${escapeHtml(t("ev.file"))}</option><option value="self">${escapeHtml(t("ev.self"))}</option>
           </select>
         </div>
         <div class="revive-field">
-          <label for="revive-reminder">下次什么时候继续</label>
+          <label for="revive-reminder">${escapeHtml(t("ev.when"))}</label>
           <select id="revive-reminder" name="reminder" class="revive-select">
-            <option value="1">24 小时后</option><option value="7">7 天后</option><option value="0">暂不提醒</option>
+            <option value="1">${escapeHtml(t("ev.24h"))}</option><option value="7">${escapeHtml(t("ev.7d"))}</option><option value="0">${escapeHtml(t("ev.none"))}</option>
           </select>
         </div>
         <div class="revive-field full">
-          <label for="revive-evidence-note">我具体完成了什么</label>
-          <textarea id="revive-evidence-note" name="note" class="revive-textarea" maxlength="800" placeholder="例如：作品集首页已经能展示三个项目，并完成移动端首屏。"></textarea>
+          <label for="revive-evidence-note">${escapeHtml(t("ev.what"))}</label>
+          <textarea id="revive-evidence-note" name="note" class="revive-textarea" maxlength="800" placeholder="${escapeHtml(t("ev.whatPh"))}"></textarea>
         </div>
         <div class="revive-field">
-          <label for="revive-evidence-link">成果链接（选填，可验证 commit / PR）</label>
+          <label for="revive-evidence-link">${escapeHtml(t("ev.linkLabel"))}</label>
           <input id="revive-evidence-link" name="link" class="revive-input" placeholder="https://github.com/owner/repo/commit/...">
         </div>
         <div class="revive-field">
-          <label for="revive-evidence-file">截图或文件（选填）</label>
+          <label for="revive-evidence-file">${escapeHtml(t("ev.fileLabel"))}</label>
           <input id="revive-evidence-file" name="file" type="file" class="revive-input revive-file-input">
-          <small>只记录文件名和大小；文件内容不会写入浏览器存档。</small>
+          <small>${escapeHtml(t("ev.fileNote"))}</small>
         </div>
       </div>
       <div class="revive-form-actions">
-        <button type="button" class="revive-quiet-btn" onclick="reviveReturnToAction()">返回动作</button>
-        <button type="submit" class="revive-primary-btn">保存证据并完成本轮</button>
+        <button type="button" class="revive-quiet-btn" onclick="reviveReturnToAction()">${escapeHtml(t("ev.back"))}</button>
+        <button type="submit" class="revive-primary-btn">${escapeHtml(t("ev.save"))}</button>
       </div>
     </form>`;
 }
@@ -4119,7 +4089,7 @@ async function reviveSubmitEvidence(event) {
   const link = reviveSafeUrl(data.get("link"));
   const file = form.querySelector('[name="file"]')?.files?.[0] || null;
   if (type !== "self" && !note && !link && !file) {
-    showReviveNotice("请留下一条文字、链接或文件名；也可以选择“仅自我确认”。", "error");
+    showReviveNotice(t("ev.needOne"), "error");
     if (submitButton) submitButton.disabled = false;
     return;
   }
@@ -4130,14 +4100,14 @@ async function reviveSubmitEvidence(event) {
     status: trust,
     validator: file ? "browser-file-metadata" : "self_report",
     checkedAt: now,
-    reason: file ? "浏览器观察到文件名和大小，未读取文件内容" : "用户自述，尚未连接外部验证器"
+    reason: file ? t("ev.reasonFile") : t("ev.reasonSelf")
   };
   const contextSnapshot = reviveGetActiveContextSnapshot(project);
   const expectedRepo = contextSnapshot?.sourceType === "github"
     ? contextSnapshot.data?.repository?.fullName
     : null;
   if (link && REVIVAL_GITHUB?.parseGitHubArtifactUrl(link)) {
-    showReviveNotice("正在通过 GitHub 公共 API 核验成果…", "success");
+    showReviveNotice(t("ev.verifying"), "success");
     try {
       verification = await REVIVAL_GITHUB.verifyArtifact(link, expectedRepo, project.sessionStartedAt);
       trust = verification.trust || "observed";
@@ -4154,7 +4124,7 @@ async function reviveSubmitEvidence(event) {
 
   const evidence = reviveAddEvidenceRecord(project, {
     type,
-    note: note || (type === "self" ? "用户确认本动作已完成" : ""),
+    note: note || (type === "self" ? t("ev.selfNote") : ""),
     link,
     file: file ? { name: file.name, size: file.size, type: file.type || "" } : null,
     trust,
@@ -4184,9 +4154,7 @@ async function reviveSubmitEvidence(event) {
   recordReviveEvent("action_completed", project.id, { evidenceType: type, evidenceTrust: trust, reminderDays });
   setAvatarState("white");
   reviveSaveAndRender(
-    trust === "verified"
-      ? "GitHub 成果已经验证。下一轮会从这份真实结果继续。"
-      : "你已经让项目重新动了一次。下一轮会从这份证据继续。",
+    trust === "verified" ? t("n.doneVerified") : t("n.donePlain"),
     "success"
   );
 }
@@ -4194,65 +4162,136 @@ async function reviveSubmitEvidence(event) {
 function reviveTimeAgoLabel(timestamp) {
   if (!timestamp) return "";
   const diff = Date.now() - Number(timestamp);
-  if (diff < 60 * 60 * 1000) return "刚刚";
-  if (diff < 24 * 60 * 60 * 1000) return `${Math.max(1, Math.round(diff / (60 * 60 * 1000)))} 小时前`;
-  return `${Math.max(1, Math.round(diff / (24 * 60 * 60 * 1000)))} 天前`;
+  if (diff < 60 * 60 * 1000) return t("time.now");
+  if (diff < 24 * 60 * 60 * 1000) return t("time.hours", { n: Math.max(1, Math.round(diff / (60 * 60 * 1000))) });
+  return t("time.days", { n: Math.max(1, Math.round(diff / (24 * 60 * 60 * 1000))) });
 }
 
 function reviveLetterTemplate(project, evidence) {
   const completedAt = evidence?.createdAt || project.completedAt;
   const isFresh = completedAt && (Date.now() - completedAt) < 60 * 60 * 1000;
   const when = reviveTimeAgoLabel(completedAt);
-  const note = evidence?.note || project.lastProgress || "上一轮的成果已经保存";
+  const note = evidence?.note || project.lastProgress || t("letter.fallback");
   const nextHint = project.reminderAt && project.reminderAt > Date.now()
-    ? `你们约好 ${reviveFormatDateTime(project.reminderAt)} 在这里见`
-    : "点「生成下一次微动作」，从这份成果直接继续";
+    ? t("letter.appoint", { t: reviveFormatDateTime(project.reminderAt) })
+    : t("letter.gen");
   return `
     <div class="revive-letter">
-      <div class="revive-letter-head">${isFresh ? "这句话会替你留给下次回来的自己" : `上次的你 · ${escapeHtml(when)}留下这句话`}</div>
+      <div class="revive-letter-head">${isFresh ? escapeHtml(t("letter.freshHead")) : escapeHtml(t("letter.head", { when }))}</div>
       <p class="revive-letter-body">“${escapeHtml(note)}”</p>
-      <div class="revive-letter-next">${isFresh ? "下次打开时，不需要重新回忆任何背景。" : escapeHtml(nextHint)}</div>
+      <div class="revive-letter-next">${isFresh ? escapeHtml(t("letter.freshNext")) : escapeHtml(nextHint)}</div>
     </div>`;
 }
 
 function reviveCompleteTemplate(project) {
   const evidence = project.evidence[project.evidence.length - 1];
-  const reminder = project.reminderAt ? reviveFormatDateTime(project.reminderAt) : "未安排提醒";
+  const reminder = project.reminderAt ? reviveFormatDateTime(project.reminderAt) : t("done.noReminder");
   const trust = evidence?.trust || "claimed";
-  const trustReason = evidence?.verification?.reason || "尚未连接外部验证器";
+  const trustReason = evidence?.verification?.reason || t("ev.reasonSelf");
   const justLit = !!(project.completedAt && Date.now() - project.completedAt < 60 * 60 * 1000);
   const sigil = window.TryReviveSigil
-    ? `<div class="revive-sigil-hero">
-         ${window.TryReviveSigil.render(project, 132, { justLit })}
+    ? `<div class="revive-sigil-hero" role="button" tabindex="0" onclick="reviveSigilReplay(this)" onkeydown="if(event.key==='Enter'){reviveSigilReplay(this)}" aria-label="${escapeHtml(t("sigil.replayAria"))}">
+         <div class="sigil-stage">${window.TryReviveSigil.render(project, 132, { justLit })}</div>
          <div class="revive-sigil-caption">${escapeHtml(window.TryReviveSigil.caption(project))}</div>
-         <div class="revive-sigil-note">这枚「复活年轮」由这个项目的真实成果一环环生成，独一无二</div>
+         <div class="revive-sigil-note">${escapeHtml(t("sigil.note"))}</div>
        </div>` : "";
   return `
     <div class="revive-complete-card">
       ${sigil || '<div class="revive-complete-mark">✓</div>'}
       <span class="revive-eyebrow">REAL PROGRESS RECORDED</span>
-      <h2>${justLit ? "项目已经重新动起来了" : "欢迎回来，它一直亮着"}</h2>
-      <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">证据 ${project.evidence.length} 条</span><span class="revive-mini-pill">完成会话 ${project.sessions.length} 次</span><span class="revive-trust-pill ${trust}">${reviveEvidenceTrustLabel(trust)}</span><span class="revive-mini-pill">下次：${escapeHtml(reminder)}</span></div>
+      <h2>${justLit ? escapeHtml(t("done.fresh")) : escapeHtml(t("done.return"))}</h2>
+      <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">${escapeHtml(t("done.evCount", { n: project.evidence.length }))}</span><span class="revive-mini-pill">${escapeHtml(t("done.sessions", { n: project.sessions.length }))}</span><span class="revive-trust-pill ${trust}">${reviveEvidenceTrustLabel(trust)}</span><span class="revive-mini-pill">${escapeHtml(t("done.next", { v: reminder }))}</span></div>
       <div class="revive-verification-note">${escapeHtml(trustReason)}</div>
       ${reviveLetterTemplate(project, evidence)}
       ${project.reminderAt ? `
         <div class="revive-return-actions">
-          <button class="revive-secondary-btn" onclick="reviveDownloadCalendarReminder()">添加到系统日历</button>
-          <button class="revive-quiet-btn" onclick="reviveEnableBrowserReminder()">允许页内通知</button>
-          <small>日历提醒可在关闭网页后送达；页内通知只在浏览器允许且页面打开时触发。</small>
+          <button class="revive-secondary-btn" onclick="reviveDownloadCalendarReminder()">${escapeHtml(t("done.cal"))}</button>
+          <button class="revive-quiet-btn" onclick="reviveEnableBrowserReminder()">${escapeHtml(t("done.notif"))}</button>
+          <small>${escapeHtml(t("done.calNote"))}</small>
         </div>` : ""}
       <div class="revive-next-card">
-        <h3>下一步只选一种</h3>
+        <h3>${escapeHtml(t("done.nextHead"))}</h3>
         <div class="revive-form-grid">
           <div class="revive-field full">
-            <label for="revive-sprint-deliverable">可选：进入 45 分钟短冲刺，每阶段只交付一件东西</label>
-            <input id="revive-sprint-deliverable" class="revive-input" placeholder="例如：完成项目详情页的 60 分版本">
+            <label for="revive-sprint-deliverable">${escapeHtml(t("done.sprintLabel"))}</label>
+            <input id="revive-sprint-deliverable" class="revive-input" placeholder="${escapeHtml(t("done.sprintPh"))}">
           </div>
         </div>
         <div class="revive-action-row">
-          <div><button class="revive-secondary-btn" onclick="reviveStartFollowUp()">生成下一次微动作</button></div>
-          <div><button class="revive-primary-btn" onclick="reviveStartShortSprint()">开始 45 分钟短冲刺</button></div>
+          <div><button class="revive-secondary-btn" onclick="reviveStartFollowUp()">${escapeHtml(t("done.micro"))}</button></div>
+          <div><button class="revive-primary-btn" onclick="reviveStartShortSprint()">${escapeHtml(t("done.sprint"))}</button></div>
         </div>
+        <div class="revive-graduate-row">
+          <button class="revive-quiet-btn" onclick="reviveMarkProjectFinished()">${escapeHtml(t("done.finish"))}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ==========================================================
+   项目毕业：整个项目真正完成时的最终状态
+   ========================================================== */
+function reviveMarkProjectFinished() {
+  const project = getActiveReviveProject();
+  if (!project || project.status !== "completed" || project.finished) return;
+  project.finished = true;
+  project.finishedAt = Date.now();
+  project.updatedAt = Date.now();
+  if (project.returnPlan) project.returnPlan.status = "completed";
+  project.reminderAt = null;
+  recordReviveEvent("project_finished", project.id, { sessions: project.sessions.length });
+  reviveSaveAndRender(t("n.finished"), "success");
+}
+
+function reviveReopenProject() {
+  const project = getActiveReviveProject();
+  if (!project || !project.finished) return;
+  project.finished = false;
+  project.updatedAt = Date.now();
+  recordReviveEvent("project_reopened", project.id, {});
+  reviveSaveAndRender(t("n.reopened"), "success");
+}
+
+function reviveDownloadBadge() {
+  const project = getActiveReviveProject();
+  if (!project || !window.TryReviveSigil?.download) return;
+  window.TryReviveSigil.download(project).catch(() => {
+    showReviveNotice(t("n.badgeFail"), "error");
+  });
+}
+
+function reviveFinishedTemplate(project) {
+  const totalMinutes = Math.round((project.sessions || []).reduce((sum, s) => sum + (Number(s.durationSec) || 0), 0) / 60);
+  const journeyDays = Math.max(1, Math.round((Number(project.finishedAt) - Number(project.createdAt)) / (24 * 60 * 60 * 1000)));
+  const evidence = project.evidence?.[project.evidence.length - 1];
+  return `
+    <div class="revive-complete-card revive-finished-card">
+      <div class="revive-sigil-hero" role="button" tabindex="0" onclick="reviveSigilReplay(this)" onkeydown="if(event.key==='Enter'){reviveSigilReplay(this)}" aria-label="${escapeHtml(t("sigil.tap"))}">
+        <div class="sigil-stage">${window.TryReviveSigil ? window.TryReviveSigil.render(project, 168) : ""}</div>
+        <div class="revive-sigil-caption">${escapeHtml(window.TryReviveSigil ? window.TryReviveSigil.caption(project) : "")}</div>
+        <div class="revive-sigil-note">${escapeHtml(t("sigil.tap"))}</div>
+      </div>
+      <span class="revive-eyebrow">PROJECT GRADUATED</span>
+      <h2>${escapeHtml(t("fin.title", { name: project.name }))}</h2>
+      <div class="revive-action-meta" style="justify-content:center;">
+        <span class="revive-mini-pill">${escapeHtml(t("fin.rounds", { n: project.sessions.length }))}</span>
+        <span class="revive-mini-pill">${escapeHtml(t("fin.minutes", { n: totalMinutes }))}</span>
+        <span class="revive-mini-pill">${escapeHtml(t("fin.journey", { n: journeyDays }))}</span>
+      </div>
+      ${evidence?.note ? `
+      <div class="revive-letter">
+        <div class="revive-letter-head">${escapeHtml(t("fin.lastWords"))}</div>
+        <p class="revive-letter-body">“${escapeHtml(evidence.note)}”</p>
+        <div class="revive-letter-next">${escapeHtml(t("fin.note"))}</div>
+      </div>` : ""}
+      <div class="revive-action-row" style="justify-content:center; margin-top:1.2rem;">
+        <div>
+          <button class="revive-primary-btn" onclick="reviveDownloadBadge()">${escapeHtml(t("fin.download"))}</button>
+          <button class="revive-secondary-btn" onclick="startNewRevive()">${escapeHtml(t("fin.next"))}</button>
+        </div>
+      </div>
+      <div class="revive-graduate-row">
+        <button class="revive-quiet-btn" onclick="reviveReopenProject()">${escapeHtml(t("fin.reopen"))}</button>
       </div>
     </div>`;
 }
@@ -4364,7 +4403,7 @@ function reviveCheckDueReturns() {
   });
   const active = getActiveReviveProject();
   if (active?.returnPlan?.status === "due" && active.status === "completed") {
-    showReviveNotice(`“${active.name}”已经到继续时间。你可以生成下一次微动作。`, "success");
+    showReviveNotice(t("n.due", { name: active.name }), "success");
   }
   if (changed) saveProfile();
 }
@@ -4379,22 +4418,22 @@ function reviveStartFollowUp() {
   project.reminderAt = null;
   project.updatedAt = Date.now();
   recordReviveEvent("followup_brief_created", project.id, {});
-  reviveSaveAndRender("下一轮动作已从最新证据继续生成。", "success");
+  reviveSaveAndRender(t("n.followup"), "success");
 }
 
 function reviveStartShortSprint() {
   const project = getActiveReviveProject();
   if (!project) return;
   const input = document.getElementById("revive-sprint-deliverable");
-  const deliverable = input?.value.trim() || `完成「${project.name}」下一阶段的一个可展示版本`;
+  const deliverable = input?.value.trim() || t("sprint.deliverable", { name: project.name });
   reviveAssignAction(project, {
     text: deliverable,
     deliverable,
     minutes: 45,
     timeboxMinutes: 45,
-    rationale: "你已经完成首个微动作。短冲刺只保留一个交付物，避免重新展开完整 backlog。",
-    doneDefinition: "45 分钟结束时有一个可打开、可截图或可展示的阶段交付物。",
-    doneCriteria: ["45 分钟结束时有一个可打开、可截图或可展示的阶段交付物。"],
+    rationale: t("sprint.rationale"),
+    doneDefinition: t("sprint.done"),
+    doneCriteria: [t("sprint.done")],
     sourceSnapshotId: project.activeContextSnapshotId || null,
     createdBy: { type: "user", id: "short-sprint" },
     executor: { kind: "human", capability: "focused_sprint" },
@@ -4406,7 +4445,7 @@ function reviveStartShortSprint() {
   project.reminderAt = null;
   project.updatedAt = Date.now();
   recordReviveEvent("short_sprint_created", project.id, {});
-  reviveSaveAndRender("短冲刺已准备好；开始后页面只显示当前交付物。", "success");
+  reviveSaveAndRender(t("n.sprintReady"), "success");
 }
 
 function revivePausedTemplate(project) {
@@ -4415,9 +4454,9 @@ function revivePausedTemplate(project) {
       <div>
         <div class="revive-empty-symbol">Ⅱ</div>
         <span class="revive-eyebrow">PAUSED WITH CONTEXT</span>
-        <h2>${escapeHtml(project.name)} 已暂停</h2>
-        <p>现场已经保存：${escapeHtml(project.lastProgress)}。不继续也是正确结果；想回来时不用重新解释项目。</p>
-        <button class="revive-primary-btn" onclick="reviveResumeProject()">重新判断并继续</button>
+        <h2>${escapeHtml(t("paused.title", { name: project.name }))}</h2>
+        <p>${escapeHtml(t("paused.desc", { p: project.lastProgress }))}</p>
+        <button class="revive-primary-btn" onclick="reviveResumeProject()">${escapeHtml(t("paused.btn"))}</button>
       </div>
     </div>`;
 }
@@ -4430,7 +4469,7 @@ function revivePauseProject() {
   project.timerEndAt = null;
   project.updatedAt = Date.now();
   recordReviveEvent("project_paused", project.id, {});
-  reviveSaveAndRender("已保存现场，没有制造虚假的待办压力。", "success");
+  reviveSaveAndRender(t("n.pausedSaved"), "success");
 }
 
 function reviveResumeProject() {
@@ -4440,13 +4479,13 @@ function reviveResumeProject() {
   reviveAssignAction(project, generateRevivalAction(project, project.actionVariant || 0, true));
   project.updatedAt = Date.now();
   recordReviveEvent("project_resumed", project.id, {});
-  reviveSaveAndRender("欢迎回来。先从 5 分钟最小版开始。", "success");
+  reviveSaveAndRender(t("n.welcomeBack"), "success");
 }
 
 function reviveOpenTool() {
   const project = getActiveReviveProject();
   if (!project?.toolLink) {
-    showReviveNotice("这个项目还没有设置工作入口。你可以修改项目或直接打开本地文件。", "error");
+    showReviveNotice(t("n.noTool"), "error");
     return;
   }
   recordReviveEvent("tool_opened", project.id, { host: new URL(project.toolLink).hostname });
@@ -4461,17 +4500,17 @@ function renderReviveProjectList() {
   const store = getReviveStore();
   count.textContent = String(store.projects.length);
   if (!store.projects.length) {
-    list.innerHTML = '<div class="revive-project-empty">还没有项目。第一次复活会自动保存在这里。</div>';
+    list.innerHTML = `<div class="revive-project-empty">${escapeHtml(t("list.empty"))}</div>`;
     return;
   }
   list.innerHTML = store.projects.map(project => {
     const due = project.status === "completed" && project.reminderAt && project.reminderAt <= Date.now();
-    const status = due ? "该继续了" : (REVIVE_STATUS_LABELS[project.status] || "待处理");
+    const status = project.finished ? t("status.finished") : (due ? t("status.due") : (REVIVE_STATUS_LABELS[project.status] || t("status.default")));
     return `
-      <div class="revive-project-item ${project.id === store.activeProjectId ? "selected" : ""}" role="button" tabindex="0" onclick="reviveSelectProject('${project.id}')" onkeydown="if(event.key==='Enter'){reviveSelectProject('${project.id}')}" aria-label="打开项目 ${escapeHtml(project.name)}">
+      <div class="revive-project-item ${project.id === store.activeProjectId ? "selected" : ""}" role="button" tabindex="0" onclick="reviveSelectProject('${project.id}')" onkeydown="if(event.key==='Enter'){reviveSelectProject('${project.id}')}" aria-label="${escapeHtml(project.name)}">
         ${window.TryReviveSigil ? `<span class="revive-sigil-mini">${window.TryReviveSigil.render(project, 30)}</span>` : ""}
-        <div><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(status)} · ${project.sessions.length} 次完成</small></div>
-        <button class="revive-project-delete" onclick="event.stopPropagation(); reviveDeleteProject('${project.id}')" aria-label="删除 ${escapeHtml(project.name)}">×</button>
+        <div><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(status)} · ${escapeHtml(t("list.sessions", { n: project.sessions.length }))}</small></div>
+        <button class="revive-project-delete" onclick="event.stopPropagation(); reviveDeleteProject('${project.id}')" aria-label="× ${escapeHtml(project.name)}">×</button>
       </div>`;
   }).join("");
 }
@@ -4498,10 +4537,10 @@ function renderReviveMetrics() {
   });
   const d7Rate = d7Eligible ? Math.round((d7Success / d7Eligible) * 100) : 0;
   box.innerHTML = `
-    <div class="revive-metric"><strong>${started}</strong><span>启动真实动作</span></div>
-    <div class="revive-metric"><strong>${successRate}%</strong><span>复活会话成功率</span></div>
-    <div class="revive-metric"><strong>${d7Rate}%</strong><span>D7 二次推进率</span></div>
-    <div class="revive-metric"><strong>${verified}/${completed}</strong><span>已验证 / 总完成</span></div>`;
+    <div class="revive-metric"><strong>${started}</strong><span>${escapeHtml(t("m.started"))}</span></div>
+    <div class="revive-metric"><strong>${successRate}%</strong><span>${escapeHtml(t("m.rate"))}</span></div>
+    <div class="revive-metric"><strong>${d7Rate}%</strong><span>${escapeHtml(t("m.d7"))}</span></div>
+    <div class="revive-metric"><strong>${verified}/${completed}</strong><span>${escapeHtml(t("m.verified"))}</span></div>`;
 }
 
 function renderReviveWeeklyReport() {

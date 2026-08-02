@@ -105,47 +105,47 @@
     <!-- 1. NARRATIVE ENTRANCE SCREEN -->
     <section id="view-narrative" class="view-screen narrative-paper active">
       <canvas id="narrative-sprout-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;"></canvas>
-      <button onclick="skipNarrative()" class="skip-narrative-btn">跳过叙事 ➜</button>
-      
+      <button onclick="skipNarrative()" class="skip-narrative-btn" data-i18n="narr.skip">跳过叙事 ➜</button>
+
       <div class="narrative-content">
-        <p class="narrative-line" id="narrative-1">你没有放弃那个项目。</p>
-        <p class="narrative-line" id="narrative-2">只是停得太久，重新打开它变得很重。</p>
-        <p class="narrative-line" id="narrative-3">旧文件、旧决定、没做完的下一步，全都挤在入口。</p>
-        <p class="narrative-line" id="narrative-4">Try Revive 不会再给你一张更长的计划。</p>
-        <p class="narrative-line" id="narrative-5">它会帮你找回现场，只留下一个 5–10 分钟动作。</p>
-        <p class="narrative-line" id="narrative-6">先做出一个看得见的变化。</p>
-        <p class="narrative-line" id="narrative-7">然后，让项目重新拥有下一次。</p>
+        <p class="narrative-line" id="narrative-1" data-i18n="narr.1">你没有放弃那个项目。</p>
+        <p class="narrative-line" id="narrative-2" data-i18n="narr.2">只是停得太久，重新打开它变得很重。</p>
+        <p class="narrative-line" id="narrative-3" data-i18n="narr.3">旧文件、旧决定、没做完的下一步，全都挤在入口。</p>
+        <p class="narrative-line" id="narrative-4" data-i18n="narr.4">Try Revive 不会再给你一张更长的计划。</p>
+        <p class="narrative-line" id="narrative-5" data-i18n="narr.5">它会帮你找回现场，只留下一个 5–10 分钟动作。</p>
+        <p class="narrative-line" id="narrative-6" data-i18n="narr.6">先做出一个看得见的变化。</p>
+        <p class="narrative-line" id="narrative-7" data-i18n="narr.7">然后，让项目重新拥有下一次。</p>
       </div>
 
       <footer id="narrative-footer" style="width: 100%; opacity: 0; transition: opacity 0.8s ease;">
-        <button onclick="skipNarrative()" class="btn-primary" style="width: 100%;">开始复活一个项目</button>
+        <button onclick="skipNarrative()" class="btn-primary" style="width: 100%;" data-i18n="narr.start">开始复活一个项目</button>
       </footer>
     </section>
 
     <!-- 2. LOGIN / ARCHIVE REGISTRATION SCREEN -->
     <section id="view-login" class="view-screen">
       <header>
-        <h1 class="title-lg">你的本地项目存档</h1>
-        <p class="desc-md">直接试用即可开始；注册只用于在当前浏览器区分多个存档。</p>
+        <h1 class="title-lg" data-i18n="login.title">你的本地项目存档</h1>
+        <p class="desc-md" data-i18n="login.desc">直接试用即可开始；注册只用于在当前浏览器区分多个存档。</p>
       </header>
 
       <div class="glass-card" style="margin-top: 1.5rem;">
         <div class="form-group">
-          <label class="input-label" for="login-username">存档账号</label>
-          <input type="text" id="login-username" class="text-input" placeholder="输入存档名（如: Rowan）" autocomplete="off">
+          <label class="input-label" for="login-username" data-i18n="login.userLabel">存档账号</label>
+          <input type="text" id="login-username" class="text-input" data-i18n-ph="login.userPh" placeholder="输入存档名（如: Rowan）" autocomplete="off">
         </div>
 
         <div class="form-group">
-          <label class="input-label" for="login-password">存档密码</label>
-          <input type="password" id="login-password" class="text-input" placeholder="设定存档钥匙" autocomplete="off">
+          <label class="input-label" for="login-password" data-i18n="login.passLabel">存档密码</label>
+          <input type="password" id="login-password" class="text-input" data-i18n-ph="login.passPh" placeholder="设定存档钥匙" autocomplete="off">
         </div>
       </div>
 
       <footer>
         <div style="display: flex; flex-direction: column; gap: 0.8rem; width: 100%;">
-          <button onclick="startGuestMode()" class="btn-primary">直接试用 Try Revive</button>
-          <button onclick="handleRegister()" class="btn-sec" style="text-align: center;">建立独立项目存档</button>
-          <button onclick="handleLogin()" class="btn-sec" style="text-align: center;">载入旧存档</button>
+          <button onclick="startGuestMode()" class="btn-primary" data-i18n="login.guest">直接试用 Try Revive</button>
+          <button onclick="handleRegister()" class="btn-sec" style="text-align: center;" data-i18n="login.register">建立独立项目存档</button>
+          <button onclick="handleLogin()" class="btn-sec" style="text-align: center;" data-i18n="login.load">载入旧存档</button>
         </div>
       </footer>
     </section>
@@ -271,15 +271,16 @@
           <span class="revive-brand-mark" aria-hidden="true">↗</span>
           <div>
             <div class="revive-brand-name">Try Revive</div>
-            <div class="revive-brand-caption">从停滞，到一个真实动作</div>
+            <div class="revive-brand-caption" data-i18n="nav.caption">从停滞，到一个真实动作</div>
           </div>
         </div>
         <nav class="revive-tabs" aria-label="当前版本">
-          <span id="revive-tab-workspace" class="revive-tab active" aria-current="page">项目复活版</span>
+          <span id="revive-tab-workspace" class="revive-tab active" aria-current="page" data-i18n="nav.tab">项目复活版</span>
         </nav>
         <div class="revive-account-actions">
-          <button onclick="toggleReviveInsights()" class="revive-icon-btn revive-insights-btn">项目与复盘</button>
-          <button onclick="handleLogout()" class="revive-icon-btn">登出</button>
+          <button id="revive-lang-btn" onclick="ReviveI18N.toggle()" class="revive-icon-btn" aria-label="Switch language">EN</button>
+          <button onclick="toggleReviveInsights()" class="revive-icon-btn revive-insights-btn" data-i18n="nav.insights">项目与复盘</button>
+          <button onclick="handleLogout()" class="revive-icon-btn" data-i18n="nav.logout">登出</button>
         </div>
       </header>
 
@@ -288,10 +289,10 @@
           <section class="revive-hero">
             <div>
               <span class="revive-eyebrow">ONE QUIET CONVERSATION</span>
-              <h1>从一句话开始，<br>让项目重新动起来。</h1>
-              <p>我会一次只问一个问题，并把答案自动整理成 Revival Brief。你不需要先准备完整计划。</p>
+              <h1 data-i18n="hero.title" data-i18n-html>从一句话开始，<br>让项目重新动起来。</h1>
+              <p data-i18n="hero.desc">我会一次只问一个问题，并把答案自动整理成 Revival Brief。你不需要先准备完整计划。</p>
             </div>
-            <button class="revive-primary-btn revive-new-btn" onclick="startNewRevive()">开始复活对话</button>
+            <button class="revive-primary-btn revive-new-btn" onclick="startNewRevive()" data-i18n="hero.cta">开始复活对话</button>
           </section>
 
           <div id="revive-notice" class="revive-notice" role="status" aria-live="polite"></div>
@@ -300,14 +301,14 @@
 
         <aside class="revive-sidebar" aria-hidden="true" inert>
           <div class="revive-drawer-head">
-            <div><span class="revive-eyebrow">YOUR REVIVAL LOG</span><strong>项目与复盘</strong></div>
-            <button onclick="toggleReviveInsights(false)" aria-label="关闭项目与复盘">×</button>
+            <div><span class="revive-eyebrow">YOUR REVIVAL LOG</span><strong data-i18n="drawer.title">项目与复盘</strong></div>
+            <button onclick="toggleReviveInsights(false)" aria-label="×">×</button>
           </div>
           <section class="revive-side-card">
             <div class="revive-section-head">
               <div>
                 <span class="revive-eyebrow">PROJECTS</span>
-                <h2>项目存档</h2>
+                <h2 data-i18n="side.projects">项目存档</h2>
               </div>
               <span id="revive-project-count" class="revive-count-pill">0</span>
             </div>
@@ -318,7 +319,7 @@
             <div class="revive-section-head">
               <div>
                 <span class="revive-eyebrow">WEEKLY REVIEW</span>
-                <h2>本周复盘</h2>
+                <h2 data-i18n="side.weekly">本周复盘</h2>
               </div>
             </div>
             <div id="revive-weekly-report" class="revive-weekly-report"></div>
@@ -328,7 +329,7 @@
             <div class="revive-section-head">
               <div>
                 <span class="revive-eyebrow">VALIDATION</span>
-                <h2>行为验证</h2>
+                <h2 data-i18n="side.validation">行为验证</h2>
               </div>
             </div>
             <div id="revive-metrics" class="revive-metrics"></div>
@@ -336,13 +337,13 @@
 
           <section class="revive-side-card revive-data-card">
             <div>
-              <strong>数据在本地</strong>
-              <p>项目、证据与会话只保存在当前浏览器。不会自动修改文件或发送消息。</p>
+              <strong data-i18n="side.dataTitle">数据在本地</strong>
+              <p data-i18n="side.dataDesc">项目、证据与会话只保存在当前浏览器。不会自动修改文件或发送消息。</p>
             </div>
             <div class="revive-data-actions">
-              <button onclick="reviveExportData()">导出 JSON</button>
-              <button onclick="document.getElementById('revive-import-input')?.click()">导入并合并</button>
-              <button class="danger" onclick="reviveClearAllData()">清空数据</button>
+              <button onclick="reviveExportData()" data-i18n="side.export">导出 JSON</button>
+              <button onclick="document.getElementById('revive-import-input')?.click()" data-i18n="side.import">导入并合并</button>
+              <button class="danger" onclick="reviveClearAllData()" data-i18n="side.clear">清空数据</button>
               <input id="revive-import-input" type="file" accept="application/json,.json" hidden onchange="reviveImportData(event)">
             </div>
           </section>
@@ -515,6 +516,7 @@
 
   </main>
 
+  <script src="revive-i18n.js"></script>
   <script src="revival-core.js"></script>
   <script src="revival-github.js"></script>
   <script src="revival-sigil.js"></script>
