@@ -3738,10 +3738,13 @@ function reviveBriefTemplate(project) {
   const toolButton = project.toolLink ? `<button class="revive-secondary-btn" onclick="reviveOpenTool()">打开工作入口 ↗</button>` : "";
   return `
     <div class="revive-brief-head">
-      <div>
-        <span class="revive-eyebrow">REVIVAL BRIEF</span>
-        <h2>${escapeHtml(project.name)}</h2>
-        <div class="revive-brief-context">停滞 ${project.stalledDays} 天 · 当前阻力：${escapeHtml(REVIVE_BLOCKER_LABELS[project.blocker] || "启动摩擦")}</div>
+      <div style="display:flex; align-items:center; gap: 0.9rem;">
+        ${window.TryReviveSigil ? `<div class="revive-sigil-inline" title="${escapeHtml(window.TryReviveSigil.caption(project))}">${window.TryReviveSigil.render(project, 52)}</div>` : ""}
+        <div>
+          <span class="revive-eyebrow">REVIVAL BRIEF</span>
+          <h2>${escapeHtml(project.name)}</h2>
+          <div class="revive-brief-context">停滞 ${project.stalledDays} 天 · 当前阻力：${escapeHtml(REVIVE_BLOCKER_LABELS[project.blocker] || "启动摩擦")}</div>
+        </div>
       </div>
       <span class="revive-status-pill active">只做当前一步</span>
     </div>
@@ -3843,9 +3846,145 @@ function reviveTimerTemplate(project) {
         <button class="revive-primary-btn" onclick="reviveCompleteAction()">我完成了</button>
         <button class="revive-quiet-btn" onclick="reviveActionStillTooLarge()">动作仍然太大</button>
       </div>
+      <button class="revive-focus-entry" onclick="reviveEnterFocusMode()">◐ 进入专注 · 回到上次离开的地方</button>
+      <div class="revive-focus-entry-hint">全屏只是一个仪式，Esc 随时离开，没有惩罚</div>
       ${project.toolLink ? `<button class="revive-tool-link" onclick="reviveOpenTool()">打开真实工作入口 ↗</button>` : ""}
       <div class="revive-done-definition"><strong>完成标准：</strong>${escapeHtml(project.action.doneDefinition)}</div>
     </div>`;
+}
+
+/* ==========================================================
+   专注模式 · 平静的时空回溯
+   自愿开启，随时可退，没有锁定，没有惩罚。
+   序列：上次的现场 → 现在只有这一步 → 专注计时
+   尊重 prefers-reduced-motion：直接进入计时，不播放回溯。
+   ========================================================== */
+const focusState = { open: false, phaseTimers: [], phase: 0 };
+
+function reviveFocusLastSceneText(project) {
+  const lastEvidence = project.evidence?.[project.evidence.length - 1];
+  if (lastEvidence?.note) return lastEvidence.note;
+  if (project.lastProgress) return project.lastProgress;
+  return "你决定让这个项目重新动起来";
+}
+
+function reviveEnterFocusMode() {
+  const project = getActiveReviveProject();
+  if (!project || project.status !== "running" || focusState.open) return;
+  focusState.open = true;
+
+  const stars = PREFERS_REDUCED_MOTION ? "" : Array.from({ length: 26 }, () => {
+    const left = (Math.random() * 100).toFixed(1);
+    const delay = (Math.random() * 18).toFixed(1);
+    const duration = (16 + Math.random() * 14).toFixed(1);
+    const size = (Math.random() < 0.8 ? 2 : 3);
+    const alpha = (0.12 + Math.random() * 0.25).toFixed(2);
+    return `<span class="focus-star" style="left:${left}%; width:${size}px; height:${size}px; opacity:${alpha}; animation-duration:${duration}s; animation-delay:-${delay}s;"></span>`;
+  }).join("");
+
+  const lastScene = reviveFocusLastSceneText(project);
+  const lastWhen = reviveTimeAgoLabel(project.evidence?.[project.evidence.length - 1]?.createdAt || project.updatedAt);
+  const overlay = document.createElement("div");
+  overlay.id = "revive-focus-overlay";
+  overlay.innerHTML = `
+    <div class="focus-stars" aria-hidden="true">${stars}</div>
+    <div class="focus-phase" id="focus-phase-1">
+      <div class="focus-eyebrow">回到上次离开的地方${lastWhen ? ` · ${escapeHtml(lastWhen)}` : ""}</div>
+      <p class="focus-serif">“${escapeHtml(lastScene)}”</p>
+    </div>
+    <div class="focus-phase" id="focus-phase-2">
+      <div class="focus-eyebrow">现在 · 只有这一步</div>
+      <p class="focus-serif">${escapeHtml(project.action.text)}</p>
+    </div>
+    <div class="focus-phase focus-live" id="focus-phase-3">
+      <div class="focus-eyebrow">${escapeHtml(project.name)}</div>
+      <div id="revive-focus-clock" class="focus-clock">${reviveFormatRemaining(reviveGetRemainingSec(project))}</div>
+      <div class="focus-action-line">${escapeHtml(project.action.text)}</div>
+      <div class="focus-done-line">完成标准：${escapeHtml(project.action.doneDefinition)}</div>
+      <div class="focus-controls">
+        <button class="revive-secondary-btn" id="revive-focus-pause" onclick="reviveFocusTogglePause()">${project.timerRunning ? "暂停" : "继续"}</button>
+        <button class="revive-primary-btn" onclick="reviveFocusComplete()">我完成了</button>
+        <button class="revive-quiet-btn" onclick="reviveExitFocusMode()">离开专注</button>
+      </div>
+    </div>
+    <button class="focus-skip" onclick="reviveFocusAdvance()">轻触任意处继续 →</button>`;
+  document.body.appendChild(overlay);
+  document.body.classList.add("focus-mode-active");
+  overlay.addEventListener("click", event => {
+    if (focusState.phase < 3 && !event.target.closest("button")) reviveFocusAdvance();
+  });
+
+  // 全屏是仪式，不是牢笼：失败也照常进入，Esc 退出即结束专注
+  try {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } catch (error) { /* iOS Safari 等环境静默降级 */ }
+  document.addEventListener("fullscreenchange", reviveFocusFullscreenWatch);
+  document.addEventListener("keydown", reviveFocusKeyWatch);
+
+  recordReviveEvent("focus_mode_entered", project.id, { reducedMotion: PREFERS_REDUCED_MOTION });
+
+  if (PREFERS_REDUCED_MOTION) {
+    reviveFocusShowPhase(3);
+    return;
+  }
+  reviveFocusShowPhase(1);
+  focusState.phaseTimers.push(setTimeout(() => reviveFocusShowPhase(2), 4600));
+  focusState.phaseTimers.push(setTimeout(() => reviveFocusShowPhase(3), 8600));
+}
+
+function reviveFocusShowPhase(n) {
+  focusState.phase = n;
+  for (let i = 1; i <= 3; i++) {
+    document.getElementById(`focus-phase-${i}`)?.classList.toggle("visible", i === n);
+  }
+  const skip = document.querySelector("#revive-focus-overlay .focus-skip");
+  if (skip) skip.style.display = n >= 3 ? "none" : "";
+}
+
+function reviveFocusAdvance() {
+  if (!focusState.open || focusState.phase >= 3) return;
+  focusState.phaseTimers.forEach(clearTimeout);
+  focusState.phaseTimers = [];
+  reviveFocusShowPhase(3);
+}
+
+function reviveFocusTogglePause() {
+  reviveToggleTimer();
+  const project = getActiveReviveProject();
+  const button = document.getElementById("revive-focus-pause");
+  if (button && project) button.textContent = project.timerRunning ? "暂停" : "继续";
+}
+
+function reviveFocusComplete() {
+  reviveExitFocusMode();
+  reviveCompleteAction();
+}
+
+function reviveFocusFullscreenWatch() {
+  if (!document.fullscreenElement && focusState.open) reviveExitFocusMode(true);
+}
+
+function reviveFocusKeyWatch(event) {
+  if (!focusState.open) return;
+  if (event.key === "Enter" && focusState.phase < 3) reviveFocusAdvance();
+}
+
+function reviveExitFocusMode(fromFullscreenExit) {
+  if (!focusState.open) return;
+  focusState.open = false;
+  focusState.phase = 0;
+  focusState.phaseTimers.forEach(clearTimeout);
+  focusState.phaseTimers = [];
+  document.removeEventListener("fullscreenchange", reviveFocusFullscreenWatch);
+  document.removeEventListener("keydown", reviveFocusKeyWatch);
+  document.getElementById("revive-focus-overlay")?.remove();
+  document.body.classList.remove("focus-mode-active");
+  if (!fromFullscreenExit && document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  }
+  const project = getActiveReviveProject();
+  if (project) recordReviveEvent("focus_mode_exited", project.id, {});
+  renderReviveWorkspace();
 }
 
 function beginReviveTimerLoop() {
@@ -3860,6 +3999,8 @@ function beginReviveTimerLoop() {
     const remaining = reviveGetRemainingSec(project);
     const clock = document.getElementById("revive-timer-clock");
     if (clock) clock.textContent = reviveFormatRemaining(remaining);
+    const focusClock = document.getElementById("revive-focus-clock");
+    if (focusClock) focusClock.textContent = reviveFormatRemaining(remaining);
     if (remaining <= 0 && project.timerRunning) {
       project.timerRunning = false;
       project.timerRemainingSec = 0;
@@ -4050,21 +4191,50 @@ async function reviveSubmitEvidence(event) {
   );
 }
 
+function reviveTimeAgoLabel(timestamp) {
+  if (!timestamp) return "";
+  const diff = Date.now() - Number(timestamp);
+  if (diff < 60 * 60 * 1000) return "刚刚";
+  if (diff < 24 * 60 * 60 * 1000) return `${Math.max(1, Math.round(diff / (60 * 60 * 1000)))} 小时前`;
+  return `${Math.max(1, Math.round(diff / (24 * 60 * 60 * 1000)))} 天前`;
+}
+
+function reviveLetterTemplate(project, evidence) {
+  const completedAt = evidence?.createdAt || project.completedAt;
+  const isFresh = completedAt && (Date.now() - completedAt) < 60 * 60 * 1000;
+  const when = reviveTimeAgoLabel(completedAt);
+  const note = evidence?.note || project.lastProgress || "上一轮的成果已经保存";
+  const nextHint = project.reminderAt && project.reminderAt > Date.now()
+    ? `你们约好 ${reviveFormatDateTime(project.reminderAt)} 在这里见`
+    : "点「生成下一次微动作」，从这份成果直接继续";
+  return `
+    <div class="revive-letter">
+      <div class="revive-letter-head">${isFresh ? "这句话会替你留给下次回来的自己" : `上次的你 · ${escapeHtml(when)}留下这句话`}</div>
+      <p class="revive-letter-body">“${escapeHtml(note)}”</p>
+      <div class="revive-letter-next">${isFresh ? "下次打开时，不需要重新回忆任何背景。" : escapeHtml(nextHint)}</div>
+    </div>`;
+}
+
 function reviveCompleteTemplate(project) {
   const evidence = project.evidence[project.evidence.length - 1];
   const reminder = project.reminderAt ? reviveFormatDateTime(project.reminderAt) : "未安排提醒";
   const trust = evidence?.trust || "claimed";
   const trustReason = evidence?.verification?.reason || "尚未连接外部验证器";
-  const resumePacket = REVIVAL_CORE ? REVIVAL_CORE.buildResumePacket(project) : null;
+  const justLit = !!(project.completedAt && Date.now() - project.completedAt < 60 * 60 * 1000);
+  const sigil = window.TryReviveSigil
+    ? `<div class="revive-sigil-hero">
+         ${window.TryReviveSigil.render(project, 132, { justLit })}
+         <div class="revive-sigil-caption">${escapeHtml(window.TryReviveSigil.caption(project))}</div>
+         <div class="revive-sigil-note">这枚「复活年轮」由这个项目的真实成果一环环生成，独一无二</div>
+       </div>` : "";
   return `
     <div class="revive-complete-card">
-      <div class="revive-complete-mark">✓</div>
+      ${sigil || '<div class="revive-complete-mark">✓</div>'}
       <span class="revive-eyebrow">REAL PROGRESS RECORDED</span>
-      <h2>项目已经重新动起来了</h2>
-      <p>${escapeHtml(evidence?.note || "本轮动作已完成")} 下一次不需要从头回忆，直接从这份结果继续。</p>
+      <h2>${justLit ? "项目已经重新动起来了" : "欢迎回来，它一直亮着"}</h2>
       <div class="revive-action-meta" style="justify-content:center;"><span class="revive-mini-pill">证据 ${project.evidence.length} 条</span><span class="revive-mini-pill">完成会话 ${project.sessions.length} 次</span><span class="revive-trust-pill ${trust}">${reviveEvidenceTrustLabel(trust)}</span><span class="revive-mini-pill">下次：${escapeHtml(reminder)}</span></div>
       <div class="revive-verification-note">${escapeHtml(trustReason)}</div>
-      ${resumePacket ? `<div class="revive-resume-packet"><strong>恢复包：</strong>${escapeHtml(resumePacket.lastKnownProgress || "本轮成果已保存")} · 下次从当前项目状态继续</div>` : ""}
+      ${reviveLetterTemplate(project, evidence)}
       ${project.reminderAt ? `
         <div class="revive-return-actions">
           <button class="revive-secondary-btn" onclick="reviveDownloadCalendarReminder()">添加到系统日历</button>
@@ -4299,6 +4469,7 @@ function renderReviveProjectList() {
     const status = due ? "该继续了" : (REVIVE_STATUS_LABELS[project.status] || "待处理");
     return `
       <div class="revive-project-item ${project.id === store.activeProjectId ? "selected" : ""}" role="button" tabindex="0" onclick="reviveSelectProject('${project.id}')" onkeydown="if(event.key==='Enter'){reviveSelectProject('${project.id}')}" aria-label="打开项目 ${escapeHtml(project.name)}">
+        ${window.TryReviveSigil ? `<span class="revive-sigil-mini">${window.TryReviveSigil.render(project, 30)}</span>` : ""}
         <div><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml(status)} · ${project.sessions.length} 次完成</small></div>
         <button class="revive-project-delete" onclick="event.stopPropagation(); reviveDeleteProject('${project.id}')" aria-label="删除 ${escapeHtml(project.name)}">×</button>
       </div>`;
