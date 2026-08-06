@@ -30,9 +30,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - run: npm run test:e2e:desktop
       - run: npm run dist:win
+      - run: npm run verify:dist:win
+      - run: npm run test:e2e:packaged
       - uses: actions/upload-artifact@v4
         with:
           name: tryrevive-windows-unsigned
-          path: release/*
+          path: |
+            release/TryRevive-Setup-*-x64.exe
+            release/TryRevive-Portable-*-x64.exe
+            release/SHA256SUMS.txt

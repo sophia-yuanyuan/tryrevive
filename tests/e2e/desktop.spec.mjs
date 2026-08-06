@@ -8,8 +8,15 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 test("desktop app launches with an isolated bridge and persists state across restart", async () => {
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-e2e-"));
-  const args = [`--user-data-dir=${userData}`, projectRoot];
-  let desktop = await electron.launch({ args, cwd: projectRoot });
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  let desktop = await electron.launch(launchOptions);
 
   try {
     let window = await desktop.firstWindow();
@@ -24,7 +31,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     ).toBeVisible();
 
     await desktop.close();
-    desktop = await electron.launch({ args, cwd: projectRoot });
+    desktop = await electron.launch(launchOptions);
     window = await desktop.firstWindow();
     await expect(
       window.getByRole("heading", { name: "先找回「桌面端课程项目」的现场" })

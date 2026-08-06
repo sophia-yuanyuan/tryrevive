@@ -43,14 +43,23 @@ npm run test:e2e
 Desktop development and validation:
 
 ```powershell
+npm run electron:install
 npm run dev:desktop
 npm run test:e2e:desktop
 npm run dist:win
+npm run verify:dist:win
+npm run test:e2e:packaged
 ```
 
-`dist:win` writes an x64 NSIS installer and portable executable to `release/`. These artifacts are
-unsigned until a Windows code-signing identity is configured. Do not publish unsigned artifacts as
-a trusted public release.
+`electron:install` downloads the locked official Windows x64 Electron archive, verifies it against
+Electron's package checksum, and extracts it with Windows PowerShell. Both local validation and CI
+use this path so Electron installation does not depend on an implicit Visual C++ runtime.
+
+`dist:win` writes `TryRevive-Setup-<version>-x64.exe` and
+`TryRevive-Portable-<version>-x64.exe` to `release/`. These artifacts are unsigned until a Windows
+code-signing identity is configured. Do not publish unsigned artifacts as a trusted public release.
+`verify:dist:win` validates both PE files and writes their SHA256 hashes to
+`release/SHA256SUMS.txt`.
 
 ## Data and migration
 
@@ -71,5 +80,7 @@ Before cutover or release, require all of the following:
 - Desktop and 390 px mobile web E2E pass.
 - Electron E2E passes on Windows with the locked official Electron runtime.
 - `npm run dist:win` produces both configured artifacts.
+- `npm run verify:dist:win` validates both artifacts and their distinct hashes.
+- Packaged Electron E2E passes against `release/win-unpacked/TryRevive.exe`.
 - A human checks the full first-use flow, keyboard navigation, Chinese copy, and data restore.
 - The product owner explicitly approves replacing the legacy entrypoint and publishing artifacts.

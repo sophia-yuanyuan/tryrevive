@@ -137,7 +137,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: "#f4f1e8",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, "../preload/preload.mjs"),
+      preload: path.join(__dirname, "../preload/preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

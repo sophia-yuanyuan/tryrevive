@@ -8,7 +8,6 @@ directories:
 files:
   - out/**
   - package.json
-artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 win:
   target:
     - target: nsis
@@ -18,7 +17,10 @@ win:
       arch:
         - x64
 nsis:
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
+portable:
+  artifactName: ${productName}-Portable-${version}-${arch}.${ext}

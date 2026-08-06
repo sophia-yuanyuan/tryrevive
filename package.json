@@ -16,13 +16,15 @@
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "electron:install": "install-electron",
+    "electron:install": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-electron.ps1",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:e2e": "playwright test --config playwright.config.mjs tests/e2e/web.spec.mjs",
     "test:e2e:desktop": "npm run electron:install && npm run build:desktop && playwright test --config playwright.config.mjs tests/e2e/desktop.spec.mjs --project electron",
+    "test:e2e:packaged": "set \"ELECTRON_EXECUTABLE_PATH=release\\win-unpacked\\TryRevive.exe\" && playwright test --config playwright.config.mjs tests/e2e/desktop.spec.mjs --project electron",
     "build:web": "npm run typecheck && vite build",
     "build:desktop": "npm run typecheck && electron-vite build",
     "dist:win": "npm run electron:install && npm run build:desktop && electron-builder --win",
+    "verify:dist:win": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-artifacts.ps1",
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run build:web && npm run build:desktop"
   },
   "dependencies": {
