@@ -1,0 +1,44 @@
+import { expect, test } from "@playwright/test";
+
+async function completeRevivalLoop(page) {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "哪个项目，最近总在等你回来？" })).toBeVisible();
+
+  await page.getByLabel("项目名").fill("课程作品集");
+  await page.getByRole("button", { name: "找回上次进度" }).click();
+
+  await page.getByLabel("上次最后完成了什么？").fill("完成了首页布局");
+  await page.getByLabel("具体卡在哪里？").fill("移动端导航无法收起");
+  await page.getByLabel("最近的时间节点（可选）").fill("周五课堂展示");
+  await page.getByRole("button", { name: "现场找回来了" }).click();
+
+  await page.getByRole("button", { name: /缩小/ }).click();
+  await expect(page.getByRole("heading", { name: "把它缩成今天能完成的一步" })).toBeVisible();
+  await page.getByRole("button", { name: "就做这一步" }).click();
+
+  await page.getByRole("button", { name: "开始这一小步" }).click();
+  await page.getByRole("button", { name: "我留下了一个结果" }).click();
+
+  await page.getByLabel("我实际完成了").fill("导航已经可以在 390px 下打开和关闭");
+  await page.getByLabel("结果链接或文件位置（可选）").fill("src/components/Nav.vue");
+  await page.getByRole("button", { name: "把真实进度留下" }).click();
+
+  await page.getByRole("button", { name: "保存，下次从这里继续" }).click();
+  await expect(page.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
+  await expect(page.getByText("导航已经可以在 390px 下打开和关闭")).toBeVisible();
+}
+
+test("student can complete the P0 loop and resume after reload", async ({ page }) => {
+  await completeRevivalLoop(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
+  await expect(page.getByText("课程作品集")).toBeVisible();
+});
+
+test("settings exposes local backup controls without requiring an account", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "打开项目与数据设置" }).click();
+  await expect(page.getByRole("dialog")).toContainText("备份与恢复");
+  await expect(page.getByRole("button", { name: "导出备份" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+});

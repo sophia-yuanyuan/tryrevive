@@ -12,6 +12,13 @@ desktop.ini
 # Node (如果将来添加)
 node_modules/
 npm-debug.log*
+dist/
+out/
+release/
+coverage/
+playwright-report/
+test-results/
+.cache/
 
 # 日志
 *.log
