@@ -20,12 +20,17 @@ test("desktop app launches with an isolated bridge and persists state across res
 
   try {
     let window = await desktop.firstWindow();
+    await expect
+      .poll(() =>
+        desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
+      )
+      .toBe(true);
     await expect(window.getByText("桌面版")).toBeVisible();
     await expect(
-      window.getByRole("heading", { name: "哪个项目，最近总在等你回来？" })
+      window.getByRole("heading", { name: "你不需要先决定从哪一个开始。" })
     ).toBeVisible();
-    await window.getByLabel("项目名").fill("桌面端课程项目");
-    await window.getByRole("button", { name: "找回上次进度" }).click();
+    await window.getByLabel("所有还在心里的项目").fill("桌面端课程项目");
+    await window.getByRole("button", { name: "收下这 1 个项目" }).click();
     await expect(
       window.getByRole("heading", { name: "先找回「桌面端课程项目」的现场" })
     ).toBeVisible();

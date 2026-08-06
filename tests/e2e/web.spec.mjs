@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 
 async function completeRevivalLoop(page) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "哪个项目，最近总在等你回来？" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "你不需要先决定从哪一个开始。" })).toBeVisible();
 
-  await page.getByLabel("项目名").fill("课程作品集");
-  await page.getByRole("button", { name: "找回上次进度" }).click();
+  await page.getByLabel("所有还在心里的项目").fill("课程作品集");
+  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
 
   await page.getByLabel("上次最后完成了什么？").fill("完成了首页布局");
   await page.getByLabel("具体卡在哪里？").fill("移动端导航无法收起");
@@ -16,8 +16,12 @@ async function completeRevivalLoop(page) {
   await expect(page.getByRole("heading", { name: "把它缩成今天能完成的一步" })).toBeVisible();
   await page.getByRole("button", { name: "就做这一步" }).click();
 
-  await page.getByRole("button", { name: "开始这一小步" }).click();
-  await page.getByRole("button", { name: "我留下了一个结果" }).click();
+  await page.getByRole("button", { name: "直接进入全屏专注" }).click();
+  const focus = page.getByRole("dialog", { name: "专注界面" });
+  await expect(focus.getByText("完成了首页布局", { exact: false })).toBeVisible();
+  await focus.getByText("完成了首页布局", { exact: false }).click();
+  await focus.getByRole("heading").click();
+  await focus.getByRole("button", { name: "我留下了一个结果" }).click();
 
   await page.getByLabel("我实际完成了").fill("导航已经可以在 390px 下打开和关闭");
   await page.getByLabel("结果链接或文件位置（可选）").fill("src/components/Nav.vue");
@@ -32,7 +36,7 @@ test("student can complete the P0 loop and resume after reload", async ({ page }
   await completeRevivalLoop(page);
   await page.reload();
   await expect(page.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
-  await expect(page.getByText("课程作品集")).toBeVisible();
+  await expect(page.getByText(/课程作品集 · 计划回来时间/)).toBeVisible();
 });
 
 test("settings exposes local backup controls without requiring an account", async ({ page }) => {
@@ -41,4 +45,18 @@ test("settings exposes local backup controls without requiring an account", asyn
   await expect(page.getByRole("dialog")).toContainText("备份与恢复");
   await expect(page.getByRole("button", { name: "导出备份" })).toBeVisible();
   await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+});
+
+test("multiple unfinished projects can be collected in one local intake", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByLabel("所有还在心里的项目")
+    .fill("申请黑客松\n报名英语考试；完成 TryRevive 桌面版");
+  await expect(page.getByText("识别到 3 个项目")).toBeVisible();
+  await page.getByRole("button", { name: "收下这 3 个项目" }).click();
+  await page.getByRole("button", { name: "打开项目与数据设置" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("申请黑客松", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("报名英语考试", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("完成 TryRevive 桌面版", { exact: true })).toBeVisible();
 });

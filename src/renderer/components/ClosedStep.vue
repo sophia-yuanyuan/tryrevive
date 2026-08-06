@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RevivalProject } from "@/shared/domain/model";
 import StageShell from "./StageShell.vue";
+import VinylArtifact from "./VinylArtifact.vue";
 
 defineProps<{ project: RevivalProject }>();
 </script>
@@ -15,9 +16,6 @@ defineProps<{ project: RevivalProject }>();
         : '明确放弃不是失败。它不会再占用当前项目列表，记录仍保留在本地。'
     "
   >
-    <div class="rounded-3xl border border-[var(--line)] bg-white/60 p-6">
-      <p class="text-sm text-[var(--muted)]">项目</p>
-      <p class="mt-2 text-xl font-semibold text-[var(--ink)]">{{ project.title }}</p>
-    </div>
+    <VinylArtifact :project="project" />
   </StageShell>
 </template>

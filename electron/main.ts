@@ -63,13 +63,16 @@ function isAllowedExternalUrl(input: unknown): input is string {
   }
 }
 
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
-  const senderUrl = event.senderFrame?.url ?? "";
+function isTrustedRendererUrl(senderUrl: string): boolean {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
-  const trusted = developmentUrl
+  return developmentUrl
     ? senderUrl.startsWith(new URL(developmentUrl).origin)
     : senderUrl.startsWith(`${APP_SCHEME}://renderer/`);
-  if (!trusted) throw new Error("拒绝来自非受信页面的请求");
+}
+
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  const senderUrl = event.senderFrame?.url ?? "";
+  if (!isTrustedRendererUrl(senderUrl)) throw new Error("拒绝来自非受信页面的请求");
 }
 
 function registerIpc(): void {
@@ -133,6 +136,7 @@ function createWindow(): BrowserWindow {
     height: 780,
     minWidth: 360,
     minHeight: 640,
+    fullscreen: true,
     show: false,
     backgroundColor: "#f4f1e8",
     autoHideMenuBar: true,
@@ -151,11 +155,7 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    const developmentUrl = process.env.ELECTRON_RENDERER_URL;
-    const isInternal = developmentUrl
-      ? url.startsWith(new URL(developmentUrl).origin)
-      : url.startsWith(`${APP_SCHEME}://renderer/`);
-    if (!isInternal) event.preventDefault();
+    if (!isTrustedRendererUrl(url)) event.preventDefault();
   });
   window.once("ready-to-show", () => window.show());
 
@@ -170,9 +170,19 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   registerAppProtocol();
   registerIpc();
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false);
-  });
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      if (!isTrustedRendererUrl(webContents.getURL())) return callback(false);
+      if (permission === "fullscreen") return callback(true);
+      if (permission === "media") {
+        const requestedMedia = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
+        const audioOnly =
+          requestedMedia.length > 0 && requestedMedia.every((type) => type === "audio");
+        return callback(audioOnly);
+      }
+      callback(false);
+    }
+  );
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

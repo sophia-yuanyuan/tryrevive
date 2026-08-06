@@ -77,9 +77,28 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function newProject(title: string): Promise<void> {
-    const project = createProject(title);
-    data.value.projects.unshift(project);
-    data.value.activeProjectId = project.id;
+    await newProjects([title]);
+  }
+
+  async function newProjects(titles: string[]): Promise<void> {
+    const existing = new Set(
+      data.value.projects.map((project) => project.title.toLocaleLowerCase("zh-CN"))
+    );
+    const available = Math.max(0, 100 - data.value.projects.length);
+    const projects = titles
+      .map((title) => title.trim().slice(0, 80))
+      .filter(Boolean)
+      .filter((title) => {
+        const key = title.toLocaleLowerCase("zh-CN");
+        if (existing.has(key)) return false;
+        existing.add(key);
+        return true;
+      })
+      .slice(0, available)
+      .map((title) => createProject(title));
+    if (!projects.length) throw new Error("没有发现可新建的项目，可能都已经在本地存档中。");
+    data.value.projects.unshift(...projects);
+    data.value.activeProjectId = projects[0]?.id ?? null;
     await persist();
   }
 
@@ -183,6 +202,7 @@ export const useRevivalStore = defineStore("revival", () => {
     platformKind: platform.kind,
     initialize,
     newProject,
+    newProjects,
     selectProject,
     prepareNewProject,
     recordRestore,
