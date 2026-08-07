@@ -116,6 +116,22 @@ const webPlatform: AppPlatform = {
     return downloadAudio(request);
   },
   importState: pickJsonFile,
+  async fullScreenState() {
+    return Boolean(document.fullscreenElement);
+  },
+  async setFullScreen(enabled) {
+    if (enabled && !document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+    } else if (!enabled && document.fullscreenElement) {
+      await document.exitFullscreen();
+    }
+    return Boolean(document.fullscreenElement);
+  },
+  onFullScreenChanged(listener) {
+    const handler = () => listener(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  },
   async openExternal(url) {
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) return false;
@@ -182,6 +198,9 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     exportState: (state) => bridge.exportState(state),
     exportAudio: (request) => bridge.exportAudio(request),
     importState: () => bridge.importState(),
+    fullScreenState: () => bridge.fullScreenState(),
+    setFullScreen: (enabled) => bridge.setFullScreen(enabled),
+    onFullScreenChanged: (listener) => bridge.onFullScreenChanged(listener),
     openExternal: (url) => bridge.openExternal(url),
     cloudStatus: () => bridge.cloudStatus(),
     disconnectCloud: () => bridge.disconnectCloud(),

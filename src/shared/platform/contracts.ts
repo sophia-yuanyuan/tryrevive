@@ -40,6 +40,9 @@ export interface AppPlatform {
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
+  fullScreenState(): Promise<boolean>;
+  setFullScreen(enabled: boolean): Promise<boolean>;
+  onFullScreenChanged(listener: (enabled: boolean) => void): () => void;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
   disconnectCloud(): Promise<CloudDisconnectResult>;
@@ -59,6 +62,9 @@ export interface DesktopBridge {
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
+  fullScreenState(): Promise<boolean>;
+  setFullScreen(enabled: boolean): Promise<boolean>;
+  onFullScreenChanged(listener: (enabled: boolean) => void): () => void;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
   disconnectCloud(): Promise<CloudDisconnectResult>;

@@ -127,6 +127,19 @@ test("desktop app launches with an isolated bridge and persists state across res
         desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
       )
       .toBe(true);
+    await expect(window.getByRole("button", { name: "退出全屏" })).toBeVisible();
+    await window.keyboard.press("Escape");
+    await expect
+      .poll(() =>
+        desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
+      )
+      .toBe(false);
+    await window.getByRole("button", { name: "进入全屏" }).click();
+    await expect
+      .poll(() =>
+        desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
+      )
+      .toBe(true);
     await expect(window.getByText("桌面版")).toBeVisible();
     await expect(
       window.getByRole("heading", { name: "你不需要先决定从哪一个开始。" })

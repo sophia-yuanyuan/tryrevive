@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import {
   DialogClose,
@@ -12,12 +12,15 @@ import {
   DialogTrigger
 } from "reka-ui";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import { platform } from "@/renderer/platform/web";
 
 const store = useRevivalStore();
 const { activeProject, data, errorMessage, recoveryNotice, recoveryRequired, saveStatus } =
   storeToRefs(store);
 const settingsOpen = ref(false);
 const notice = ref("");
+const isFullScreen = ref(false);
+let unsubscribeFullScreen: () => void = () => undefined;
 
 const saveLabel = computed(() => {
   if (saveStatus.value === "saving") return "正在保存";
@@ -26,7 +29,34 @@ const saveLabel = computed(() => {
   return "本地优先";
 });
 
-onMounted(() => store.initialize());
+async function setFullScreen(enabled: boolean): Promise<void> {
+  isFullScreen.value = await platform.setFullScreen(enabled);
+}
+
+function handleWindowKeydown(event: KeyboardEvent): void {
+  if (
+    event.key === "Escape" &&
+    store.platformKind === "desktop" &&
+    isFullScreen.value &&
+    !document.body.classList.contains("focus-mode-active")
+  ) {
+    void setFullScreen(false);
+  }
+}
+
+onMounted(async () => {
+  void store.initialize();
+  isFullScreen.value = await platform.fullScreenState().catch(() => false);
+  unsubscribeFullScreen = platform.onFullScreenChanged((enabled) => {
+    isFullScreen.value = enabled;
+  });
+  window.addEventListener("keydown", handleWindowKeydown);
+});
+
+onBeforeUnmount(() => {
+  unsubscribeFullScreen();
+  window.removeEventListener("keydown", handleWindowKeydown);
+});
 
 async function runDataAction(action: "export" | "import"): Promise<void> {
   notice.value = "";
@@ -67,6 +97,14 @@ async function startNewProject(): Promise<void> {
         <span class="hidden text-xs text-[var(--muted)] sm:inline-flex" aria-live="polite">
           {{ saveLabel }} · {{ store.platformKind === "desktop" ? "桌面版" : "网页版" }}
         </span>
+        <button
+          v-if="store.platformKind === 'desktop'"
+          class="fullscreen-toggle"
+          type="button"
+          @click="setFullScreen(!isFullScreen)"
+        >
+          {{ isFullScreen ? "退出全屏" : "进入全屏" }}
+        </button>
         <DialogRoot v-model:open="settingsOpen">
           <DialogTrigger class="icon-button" aria-label="打开项目与数据设置">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">

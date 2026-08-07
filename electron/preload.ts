@@ -10,6 +10,13 @@ const bridge: DesktopBridge = {
   exportState: (state: AppState) => ipcRenderer.invoke(IPC_CHANNELS.exportState, state),
   exportAudio: (request) => ipcRenderer.invoke(IPC_CHANNELS.exportAudio, request),
   importState: () => ipcRenderer.invoke(IPC_CHANNELS.importState),
+  fullScreenState: () => ipcRenderer.invoke(IPC_CHANNELS.fullScreenState),
+  setFullScreen: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setFullScreen, enabled),
+  onFullScreenChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, enabled: boolean) => listener(enabled);
+    ipcRenderer.on(IPC_CHANNELS.fullScreenChanged, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.fullScreenChanged, handler);
+  },
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   cloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.cloudStatus),
   disconnectCloud: () => ipcRenderer.invoke(IPC_CHANNELS.disconnectCloud),

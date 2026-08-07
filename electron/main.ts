@@ -162,6 +162,16 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
   if (!isTrustedRendererUrl(senderUrl)) throw new Error("拒绝来自非受信页面的请求");
 }
 
+async function applyFullScreen(window: BrowserWindow, enabled: boolean): Promise<boolean> {
+  if (window.isFullScreen() !== enabled) window.setFullScreen(enabled);
+  for (let attempt = 0; attempt < 60 && window.isFullScreen() !== enabled; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
+  const actual = window.isFullScreen();
+  window.webContents.send(IPC_CHANNELS.fullScreenChanged, actual);
+  return actual;
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC_CHANNELS.loadState, async (event) => {
     assertTrustedSender(event);
@@ -215,6 +225,17 @@ function registerIpc(): void {
       return { canceled: false, state: imported, persisted: true };
     }
     return { canceled: false, state: raw };
+  });
+  ipcMain.handle(IPC_CHANNELS.fullScreenState, (event) => {
+    assertTrustedSender(event);
+    return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
+  });
+  ipcMain.handle(IPC_CHANNELS.setFullScreen, async (event, enabled: unknown) => {
+    assertTrustedSender(event);
+    if (typeof enabled !== "boolean") throw new Error("全屏状态无效");
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error("找不到当前 TryRevive 窗口");
+    return applyFullScreen(window, enabled);
   });
   ipcMain.handle(IPC_CHANNELS.openExternal, async (event, url: unknown) => {
     assertTrustedSender(event);
@@ -294,6 +315,13 @@ function createWindow(): BrowserWindow {
       devTools: !app.isPackaged
     }
   });
+  const notifyFullScreen = () => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.fullScreenChanged, window.isFullScreen());
+    }
+  };
+  window.on("enter-full-screen", notifyFullScreen);
+  window.on("leave-full-screen", notifyFullScreen);
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) void shell.openExternal(url);

@@ -405,6 +405,27 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.fullscreen-toggle {
+  min-height: 2.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.fullscreen-toggle:hover {
+  border-color: rgba(35, 40, 35, 0.24);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+}
+
 .recovery-banner {
   width: min(46rem, calc(100% - 2rem));
   margin: 1rem auto 0;
