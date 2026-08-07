@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import type { ProjectAnalysis } from "@/shared/domain/model";
-import type {
-  CloudQuote,
-  CloudSourcePayload,
-  CloudStatus
-} from "@/shared/cloud/contracts";
+import type { CloudQuote, CloudSourcePayload, CloudStatus } from "@/shared/cloud/contracts";
 import { MAX_CLOUD_SOURCE_BYTES } from "@/shared/cloud/contracts";
 import { platform } from "@/renderer/platform/web";
 
@@ -90,6 +86,20 @@ async function redeem(): Promise<void> {
     status.value = await platform.cloudStatus();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "算力兑换失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function disconnectAccount(): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    const result = await platform.disconnectCloud();
+    notice.value = result.message;
+    status.value = await platform.cloudStatus();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "无法退出云端算力";
   } finally {
     busy.value = false;
   }
@@ -264,6 +274,15 @@ onBeforeUnmount(() => {
       <div v-else-if="status && !status.available" class="rounded-xl bg-black/[0.035] p-4">
         <strong class="text-sm">当前不会上传任何内容</strong>
         <p class="mt-2 text-sm leading-6 text-[var(--muted)]">{{ status.message }}</p>
+        <button
+          v-if="status.authenticated"
+          class="text-button mt-3"
+          type="button"
+          :disabled="busy"
+          @click="disconnectAccount"
+        >
+          退出这台设备的云端算力
+        </button>
       </div>
 
       <form
@@ -291,7 +310,34 @@ onBeforeUnmount(() => {
       </form>
 
       <div v-else-if="status?.authenticated" class="space-y-4">
-        <p class="text-xs font-semibold text-[var(--focus)]">{{ balanceLabel }}</p>
+        <div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <p class="text-xs font-semibold text-[var(--focus)]">{{ balanceLabel }}</p>
+          <button
+            class="text-button shrink-0"
+            type="button"
+            :disabled="busy"
+            @click="disconnectAccount"
+          >
+            退出云端算力
+          </button>
+        </div>
+
+        <form class="rounded-xl bg-black/[0.025] p-3" @submit.prevent="redeem">
+          <label class="field-label" for="cloud-top-up-code">补充算力兑换码</label>
+          <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              id="cloud-top-up-code"
+              v-model="redeemCode"
+              class="field-input"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="输入新的 TryRevive 算力码"
+            />
+            <button class="secondary-button shrink-0" type="submit" :disabled="busy">
+              {{ busy ? "正在处理…" : "补充到当前账户" }}
+            </button>
+          </div>
+        </form>
 
         <div v-if="!source" class="grid gap-3 sm:grid-cols-2">
           <button
@@ -328,7 +374,10 @@ onBeforeUnmount(() => {
             <button
               class="text-button shrink-0"
               type="button"
-              @click="source = null; clearQuote()"
+              @click="
+                source = null;
+                clearQuote();
+              "
             >
               换一个
             </button>
@@ -344,7 +393,10 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="quote && !draft" class="rounded-xl border border-[var(--focus)]/20 bg-[var(--focus)]/[0.045] p-4">
+        <div
+          v-if="quote && !draft"
+          class="rounded-xl border border-[var(--focus)]/20 bg-[var(--focus)]/[0.045] p-4"
+        >
           <p class="summary-label">上传确认</p>
           <p class="mt-3 text-sm leading-6">{{ quote.uploadNotice }}</p>
           <p class="mt-2 text-xs leading-5 text-[var(--muted)]">{{ quote.retentionNotice }}</p>
@@ -371,7 +423,10 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="draft" class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4">
+        <div
+          v-if="draft"
+          class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4"
+        >
           <div>
             <p class="summary-label">待你确认的草稿</p>
             <p class="mt-2 text-xs leading-5 text-[var(--muted)]">
@@ -385,7 +440,11 @@ onBeforeUnmount(() => {
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <label class="field-label" for="draft-completed">上次做到哪里</label>
-              <textarea id="draft-completed" v-model="draft.lastCompleted" class="field-input min-h-20" />
+              <textarea
+                id="draft-completed"
+                v-model="draft.lastCompleted"
+                class="field-input min-h-20"
+              />
             </div>
             <div>
               <label class="field-label" for="draft-stuck">现在停在哪里</label>

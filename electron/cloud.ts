@@ -3,6 +3,8 @@ import path from "node:path";
 import { app, safeStorage } from "electron";
 import { z } from "zod";
 import {
+  CloudDisconnectResultSchema,
+  type CloudDisconnectResult,
   CloudAnalysisResultSchema,
   type CloudAnalysisResult,
   type CloudAnalyzeRequest,
@@ -27,6 +29,21 @@ const AccountResponseSchema = z.object({
     projectAnalyses: z.number().int().min(0)
   })
 });
+const CatalogResponseSchema = z.object({
+  service: z.literal("tryrevive-cloud"),
+  available: z.literal(true),
+  analysisAvailable: z.boolean()
+});
+
+class CloudRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "CloudRequestError";
+  }
+}
 
 function configuredBaseUrl(): string | null {
   const configured = process.env.TRYREVIVE_CLOUD_URL?.trim();
@@ -64,8 +81,22 @@ async function saveSessionToken(token: string): Promise<void> {
     throw new Error("当前系统无法安全保存云端会话，请先完成系统登录后重试");
   }
   const destination = sessionPath();
+  const temporary = `${destination}.${process.pid}.tmp`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
-  await fs.writeFile(destination, safeStorage.encryptString(token));
+  try {
+    await fs.writeFile(temporary, safeStorage.encryptString(token));
+    await fs.rename(temporary, destination);
+  } finally {
+    await fs.unlink(temporary).catch(() => undefined);
+  }
+}
+
+async function clearSessionToken(): Promise<void> {
+  try {
+    await fs.unlink(sessionPath());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
 
 async function readError(response: Response): Promise<string> {
@@ -105,7 +136,7 @@ async function requestJson<T>(
   } catch {
     throw new Error("无法连接 TryRevive 云端；本地项目没有受到影响");
   }
-  if (!response.ok) throw new Error(await readError(response));
+  if (!response.ok) throw new CloudRequestError(response.status, await readError(response));
   return schema.parse(await response.json());
 }
 
@@ -120,13 +151,28 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       message: "此版本尚未接通经过验证的云端服务；不会上传你的项目内容。"
     };
   }
+  if (!secureSessionStorage) {
+    return {
+      available: false,
+      authenticated: false,
+      balance: null,
+      secureSessionStorage,
+      message: "当前系统无法安全保存云端凭据，因此不会使用兑换码或上传项目内容。"
+    };
+  }
   const token = await loadSessionToken();
   try {
+    const catalog = await requestJson("/v1/cloud/catalog", CatalogResponseSchema);
+    if (!catalog.analysisAvailable) {
+      return {
+        available: false,
+        authenticated: Boolean(token),
+        balance: null,
+        secureSessionStorage,
+        message: "云端账本已就绪，但真实语音和附件处理尚未启用；不会上传你的内容。"
+      };
+    }
     if (!token) {
-      await requestJson(
-        "/v1/cloud/catalog",
-        z.object({ service: z.literal("tryrevive-cloud"), available: z.literal(true) })
-      );
       return {
         available: true,
         authenticated: false,
@@ -144,6 +190,16 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       message: "算力已连接。每次上传前都会再次显示预计消耗。"
     };
   } catch (error) {
+    if (error instanceof CloudRequestError && error.status === 401) {
+      await clearSessionToken();
+      return {
+        available: true,
+        authenticated: false,
+        balance: null,
+        secureSessionStorage,
+        message: "算力凭据已失效，请重新兑换。原有项目仍保存在本机。"
+      };
+    }
     return {
       available: false,
       authenticated: Boolean(token),
@@ -155,13 +211,47 @@ export async function getCloudStatus(): Promise<CloudStatus> {
 }
 
 export async function redeemCloudCode(input: unknown): Promise<CloudRedeemResult> {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("当前系统无法安全保存云端凭据，因此没有使用这枚兑换码");
+  }
   const code = z.string().trim().min(6).max(80).parse(input);
-  const response = await requestJson("/v1/cloud/redeem", RedeemResponseSchema, {
-    method: "POST",
-    body: JSON.stringify({ code })
-  });
+  const token = await loadSessionToken();
+  const response = await requestJson(
+    "/v1/cloud/redeem",
+    RedeemResponseSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ code })
+    },
+    token
+  );
   await saveSessionToken(response.sessionToken);
   return CloudRedeemResultSchema.parse(response);
+}
+
+export async function disconnectCloud(): Promise<CloudDisconnectResult> {
+  const token = await loadSessionToken();
+  let remoteRevoked = !token;
+  if (token && configuredBaseUrl()) {
+    try {
+      const result = await requestJson(
+        "/v1/cloud/session/revoke",
+        CloudDisconnectResultSchema,
+        { method: "POST" },
+        token
+      );
+      remoteRevoked = result.remoteRevoked;
+    } catch {
+      remoteRevoked = false;
+    }
+  }
+  await clearSessionToken();
+  return CloudDisconnectResultSchema.parse({
+    remoteRevoked,
+    message: remoteRevoked
+      ? "这台设备已经退出云端算力；本地项目仍可继续使用。"
+      : "本机凭据已移除，但暂时无法确认云端撤销；请勿在共享设备上继续使用旧凭据。"
+  });
 }
 
 export async function quoteCloudContext(input: unknown): Promise<CloudQuote> {
@@ -180,7 +270,9 @@ export async function quoteCloudContext(input: unknown): Promise<CloudQuote> {
   );
 }
 
-export async function analyzeCloudContext(input: CloudAnalyzeRequest): Promise<CloudAnalysisResult> {
+export async function analyzeCloudContext(
+  input: CloudAnalyzeRequest
+): Promise<CloudAnalysisResult> {
   const token = await loadSessionToken();
   if (!token) throw new Error("先兑换算力，再开始云端理解");
   const idempotencyKey = z.string().trim().min(12).max(120).parse(input.idempotencyKey);

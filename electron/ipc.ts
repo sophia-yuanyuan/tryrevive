@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   importState: "state:import",
   openExternal: "shell:open-external",
   cloudStatus: "cloud:status",
+  disconnectCloud: "cloud:disconnect",
   redeemCloudCode: "cloud:redeem-code",
   quoteCloudContext: "cloud:quote-context",
   analyzeCloudContext: "cloud:analyze-context",

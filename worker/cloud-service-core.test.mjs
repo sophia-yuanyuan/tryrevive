@@ -52,6 +52,10 @@ class MemoryCloudRepository {
     return this.accountResult(session.accountId);
   }
 
+  async revokeSession(input) {
+    this.sessions.delete(input.tokenHash);
+  }
+
   async redeem(input) {
     const code = this.codes.get(input.codeHash);
     if (!code || code.redeemed) return null;
@@ -293,6 +297,38 @@ test("redeem codes create hashed sessions, cannot be reused, and can top up one 
   assert.equal(topUp.response.status, 200);
   assert.deepEqual(topUp.body.balance, { speechMinutes: 8, projectAnalyses: 3 });
   assert.equal(repository.accounts.size, 1);
+});
+
+test("session revocation is idempotent and preserves the prepaid account", async () => {
+  const { repository, service } = createHarness();
+  const account = await redeem(service, repository, "LOGOUT-CODE", {
+    speechMinutes: 5,
+    projectAnalyses: 2
+  });
+
+  const first = await request(service, "/v1/cloud/session/revoke", {
+    method: "POST",
+    token: account.sessionToken
+  });
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.remoteRevoked, true);
+
+  const rejected = await request(service, "/v1/cloud/account", {
+    token: account.sessionToken
+  });
+  assert.equal(rejected.response.status, 401);
+  assert.equal(repository.accounts.size, 1);
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 5,
+    projectAnalyses: 2
+  });
+
+  const second = await request(service, "/v1/cloud/session/revoke", {
+    method: "POST",
+    token: account.sessionToken
+  });
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.remoteRevoked, true);
 });
 
 test("quotes store redacted metadata only and never need content or an API key", async () => {

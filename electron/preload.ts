@@ -12,6 +12,7 @@ const bridge: DesktopBridge = {
   importState: () => ipcRenderer.invoke(IPC_CHANNELS.importState),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   cloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.cloudStatus),
+  disconnectCloud: () => ipcRenderer.invoke(IPC_CHANNELS.disconnectCloud),
   redeemCloudCode: (code: string) => ipcRenderer.invoke(IPC_CHANNELS.redeemCloudCode, code),
   quoteCloudContext: (source) => ipcRenderer.invoke(IPC_CHANNELS.quoteCloudContext, source),
   analyzeCloudContext: (request) => ipcRenderer.invoke(IPC_CHANNELS.analyzeCloudContext, request),

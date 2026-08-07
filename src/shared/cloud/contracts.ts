@@ -8,7 +8,12 @@ export const CloudSourceMetadataSchema = z.object({
   name: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().min(1).max(120),
   sizeBytes: z.number().int().min(0).max(MAX_CLOUD_SOURCE_BYTES),
-  durationSeconds: z.number().min(1).max(60 * 60).nullable().default(null)
+  durationSeconds: z
+    .number()
+    .min(1)
+    .max(60 * 60)
+    .nullable()
+    .default(null)
 });
 
 export const CloudBalanceSchema = z.object({
@@ -40,6 +45,11 @@ export const CloudRedeemResultSchema = z.object({
   message: z.string().trim().min(1).max(300)
 });
 
+export const CloudDisconnectResultSchema = z.object({
+  remoteRevoked: z.boolean(),
+  message: z.string().trim().min(1).max(300)
+});
+
 export const CloudAnalysisResultSchema = z.object({
   draft: ProjectAnalysisSchema,
   balance: CloudBalanceSchema,
@@ -52,6 +62,7 @@ export type CloudBalance = z.infer<typeof CloudBalanceSchema>;
 export type CloudStatus = z.infer<typeof CloudStatusSchema>;
 export type CloudQuote = z.infer<typeof CloudQuoteSchema>;
 export type CloudRedeemResult = z.infer<typeof CloudRedeemResultSchema>;
+export type CloudDisconnectResult = z.infer<typeof CloudDisconnectResultSchema>;
 export type CloudAnalysisResult = z.infer<typeof CloudAnalysisResultSchema>;
 
 export interface CloudSourcePayload {
@@ -77,7 +88,6 @@ export function estimateCloudCost(source: CloudSourceMetadata): CloudBalance {
 
 export function canAffordCloudQuote(balance: CloudBalance, cost: CloudBalance): boolean {
   return (
-    balance.speechMinutes >= cost.speechMinutes &&
-    balance.projectAnalyses >= cost.projectAnalyses
+    balance.speechMinutes >= cost.speechMinutes && balance.projectAnalyses >= cost.projectAnalyses
   );
 }

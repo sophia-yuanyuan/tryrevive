@@ -161,6 +161,13 @@ export function createCloudD1Repository(db) {
       return account ? { id: account.id, balance: balanceFrom(account) } : null;
     },
 
+    async revokeSession(input) {
+      await db
+        .prepare("DELETE FROM cloud_sessions WHERE token_hash = ?")
+        .bind(input.tokenHash)
+        .run();
+    },
+
     async redeem(input) {
       const accountId = input.existingAccountId || input.newAccountId;
       await db.batch([

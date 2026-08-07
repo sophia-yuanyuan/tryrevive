@@ -243,6 +243,17 @@ export function createCloudService({
     return json({ balance: account.balance });
   }
 
+  async function handleSessionRevoke(request) {
+    const token = parseBearer(request);
+    if (token) {
+      await repository.revokeSession({ tokenHash: await sha256Hex(token), now: now() });
+    }
+    return json({
+      remoteRevoked: true,
+      message: "这台设备的云端算力凭据已经撤销；本地项目没有受到影响。"
+    });
+  }
+
   async function handleQuote(request) {
     const timestamp = now();
     const account = await requireAccount(request, repository, timestamp);
@@ -417,6 +428,9 @@ export function createCloudService({
       }
       if (request.method === "GET" && url.pathname === "/v1/cloud/account") {
         return await handleAccount(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/session/revoke") {
+        return await handleSessionRevoke(request);
       }
       if (request.method === "POST" && url.pathname === "/v1/cloud/quote") {
         return await handleQuote(request);

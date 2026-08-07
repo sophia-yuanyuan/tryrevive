@@ -290,6 +290,26 @@ test("a D1 provider failure returns the reservation exactly once", async (t) => 
   );
 });
 
+test("D1 session revocation removes only the presented device session", async (t) => {
+  const { database, service } = await createHarness(t);
+  const account = await redeem(service, database, "D1-LOGOUT-CODE", {
+    speechMinutes: 7,
+    projectAnalyses: 3
+  });
+
+  const revoked = await request(service, "/v1/cloud/session/revoke", {
+    method: "POST",
+    token: account.sessionToken
+  });
+  assert.equal(revoked.response.status, 200);
+  assert.equal(revoked.body.remoteRevoked, true);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_sessions").get().count, 0);
+  assert.deepEqual(
+    { ...database.prepare("SELECT speech_minutes, project_analyses FROM cloud_accounts").get() },
+    { speech_minutes: 7, project_analyses: 3 }
+  );
+});
+
 test("an abandoned D1 reservation is returned after expiry without a second charge", async (t) => {
   const start = 1_800_000_000_000;
   const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };

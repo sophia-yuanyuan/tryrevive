@@ -131,6 +131,12 @@ const webPlatform: AppPlatform = {
       message: "云端理解当前仅在桌面版内测；网页版仍可完成全部本地流程。"
     };
   },
+  async disconnectCloud() {
+    return {
+      remoteRevoked: true,
+      message: "网页版没有保存云端算力凭据。"
+    };
+  },
   async redeemCloudCode() {
     throw new Error("云端理解当前仅在桌面版内测");
   },
@@ -178,6 +184,7 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     importState: () => bridge.importState(),
     openExternal: (url) => bridge.openExternal(url),
     cloudStatus: () => bridge.cloudStatus(),
+    disconnectCloud: () => bridge.disconnectCloud(),
     redeemCloudCode: (code) => bridge.redeemCloudCode(code),
     quoteCloudContext: (source) => bridge.quoteCloudContext(source),
     analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),

@@ -1,10 +1,82 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test } from "@playwright/test";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+async function startCloudSessionHarness() {
+  const calls = [];
+  const sessions = new Map();
+  let redeemCount = 0;
+  let rejectAccounts = false;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const rawBody = Buffer.concat(chunks).toString("utf8");
+    const body = rawBody ? JSON.parse(rawBody) : null;
+    const authorization = request.headers.authorization ?? "";
+    calls.push({ method: request.method, path: request.url, authorization, body });
+    const send = (status, value) => {
+      response.writeHead(status, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      });
+      response.end(JSON.stringify(value));
+    };
+
+    if (request.method === "GET" && request.url === "/v1/cloud/catalog") {
+      return send(200, {
+        service: "tryrevive-cloud",
+        available: true,
+        analysisAvailable: true
+      });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/redeem") {
+      redeemCount += 1;
+      const sessionToken = `session_token_${String(redeemCount).padStart(40, "0")}`;
+      const balance =
+        redeemCount === 1
+          ? { speechMinutes: 2, projectAnalyses: 1 }
+          : redeemCount === 2
+            ? { speechMinutes: 5, projectAnalyses: 3 }
+            : { speechMinutes: 1, projectAnalyses: 1 };
+      sessions.set(sessionToken, balance);
+      return send(200, { sessionToken, balance, message: "测试算力已加入账户。" });
+    }
+    const token = authorization.replace(/^Bearer\s+/i, "");
+    if (request.method === "GET" && request.url === "/v1/cloud/account") {
+      if (rejectAccounts || !sessions.has(token)) {
+        return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      }
+      return send(200, { balance: sessions.get(token) });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/session/revoke") {
+      sessions.delete(token);
+      return send(200, {
+        remoteRevoked: true,
+        message: "测试凭据已撤销。"
+      });
+    }
+    return send(404, { error: "not_found", message: "测试接口不存在" });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("cloud harness did not start");
+  return {
+    calls,
+    url: `http://127.0.0.1:${address.port}`,
+    rejectAccounts(value) {
+      rejectAccounts = value;
+    },
+    close: () => new Promise((resolve) => server.close(resolve))
+  };
+}
 
 test("desktop app launches with an isolated bridge and persists state across restart", async () => {
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-e2e-"));
@@ -133,6 +205,61 @@ test("desktop camera gestures stay off by default and load the packaged local mo
     await expect(window.getByText("摄像头已关闭")).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop cloud sessions top up one account, recover from expiry, and revoke on exit", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  const harness = await startCloudSessionHarness();
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-session-e2e-"));
+  const launchOptions = {
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  };
+  let desktop = await electron.launch(launchOptions);
+
+  try {
+    let window = await desktop.firstWindow();
+    await window.getByLabel("所有还在心里的项目").fill("云端会话验收项目");
+    await window.getByRole("button", { name: "收下这 1 个项目" }).click();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await window.getByLabel("算力兑换码").fill("FIRST-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+
+    await window.getByLabel("补充算力兑换码").fill("TOP-UP-CODE");
+    await window.getByRole("button", { name: "补充到当前账户" }).click();
+    await expect(window.getByText("还可使用 5 分钟语音、3 次项目理解")).toBeVisible();
+    const secondRedeem = harness.calls.filter(
+      (call) => call.method === "POST" && call.path === "/v1/cloud/redeem"
+    )[1];
+    expect(secondRedeem.authorization).toMatch(/^Bearer session_token_/);
+
+    await desktop.close();
+    harness.rejectAccounts(true);
+    desktop = await electron.launch(launchOptions);
+    window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await expect(window.getByLabel("算力兑换码")).toBeVisible();
+
+    harness.rejectAccounts(false);
+    await window.getByLabel("算力兑换码").fill("RECOVERY-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 1 分钟语音、1 次项目理解")).toBeVisible();
+    await window.getByRole("button", { name: "退出云端算力", exact: true }).click();
+    await expect(window.getByLabel("算力兑换码")).toBeVisible();
+    const revoke = harness.calls.find(
+      (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
+    );
+    expect(revoke.authorization).toMatch(/^Bearer session_token_/);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });
   }
 });

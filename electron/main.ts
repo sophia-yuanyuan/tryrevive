@@ -14,7 +14,13 @@ import {
 } from "electron";
 import { AppStateSchema } from "../src/shared/domain/model";
 import { parseAudioExportRequest } from "../src/shared/audio/export";
-import { analyzeCloudContext, getCloudStatus, quoteCloudContext, redeemCloudCode } from "./cloud";
+import {
+  analyzeCloudContext,
+  disconnectCloud,
+  getCloudStatus,
+  quoteCloudContext,
+  redeemCloudCode
+} from "./cloud";
 import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
 
@@ -133,6 +139,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC_CHANNELS.cloudStatus, async (event) => {
     assertTrustedSender(event);
     return getCloudStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.disconnectCloud, async (event) => {
+    assertTrustedSender(event);
+    return disconnectCloud();
   });
   ipcMain.handle(IPC_CHANNELS.redeemCloudCode, async (event, code: unknown) => {
     assertTrustedSender(event);

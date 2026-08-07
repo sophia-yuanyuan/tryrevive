@@ -3,6 +3,7 @@ import type { AudioExportRequest } from "../audio/export";
 import type {
   CloudAnalysisResult,
   CloudAnalyzeRequest,
+  CloudDisconnectResult,
   CloudQuote,
   CloudRedeemResult,
   CloudSourceMetadata,
@@ -34,6 +35,7 @@ export interface AppPlatform {
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
+  disconnectCloud(): Promise<CloudDisconnectResult>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
@@ -52,6 +54,7 @@ export interface DesktopBridge {
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
+  disconnectCloud(): Promise<CloudDisconnectResult>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
