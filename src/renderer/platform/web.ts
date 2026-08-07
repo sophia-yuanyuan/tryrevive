@@ -116,6 +116,12 @@ const webPlatform: AppPlatform = {
     return downloadAudio(request);
   },
   importState: pickJsonFile,
+  async chooseRepository() {
+    throw new Error("项目文件夹安全扫描当前仅在 TryRevive Windows 桌面版提供");
+  },
+  async rescanRepository() {
+    throw new Error("项目文件夹安全扫描当前仅在 TryRevive Windows 桌面版提供");
+  },
   async fullScreenState() {
     return Boolean(document.fullscreenElement);
   },
@@ -198,6 +204,8 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     exportState: (state) => bridge.exportState(state),
     exportAudio: (request) => bridge.exportAudio(request),
     importState: () => bridge.importState(),
+    chooseRepository: () => bridge.chooseRepository(),
+    rescanRepository: (bindingId) => bridge.rescanRepository(bindingId),
     fullScreenState: () => bridge.fullScreenState(),
     setFullScreen: (enabled) => bridge.setFullScreen(enabled),
     onFullScreenChanged: (listener) => bridge.onFullScreenChanged(listener),

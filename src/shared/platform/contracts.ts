@@ -15,6 +15,7 @@ import type {
   FocusEvent,
   FocusSessionRequest
 } from "../focus/contracts";
+import type { RepositoryScanResult } from "../domain/repository-inference";
 
 export interface ExportResult {
   canceled: boolean;
@@ -40,6 +41,8 @@ export interface AppPlatform {
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
+  chooseRepository(): Promise<RepositoryScanResult>;
+  rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
   fullScreenState(): Promise<boolean>;
   setFullScreen(enabled: boolean): Promise<boolean>;
   onFullScreenChanged(listener: (enabled: boolean) => void): () => void;
@@ -62,6 +65,8 @@ export interface DesktopBridge {
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
+  chooseRepository(): Promise<RepositoryScanResult>;
+  rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
   fullScreenState(): Promise<boolean>;
   setFullScreen(enabled: boolean): Promise<boolean>;
   onFullScreenChanged(listener: (enabled: boolean) => void): () => void;

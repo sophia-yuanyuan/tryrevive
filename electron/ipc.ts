@@ -4,6 +4,8 @@ export const IPC_CHANNELS = {
   exportState: "state:export",
   exportAudio: "audio:export",
   importState: "state:import",
+  chooseRepository: "repository:choose",
+  rescanRepository: "repository:rescan",
   fullScreenState: "window:fullscreen-state",
   setFullScreen: "window:set-fullscreen",
   fullScreenChanged: "window:fullscreen-changed",

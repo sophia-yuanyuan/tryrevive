@@ -25,6 +25,8 @@ import {
 } from "./cloud";
 import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
+import { isTrustedRendererUrl } from "./renderer-trust";
+import { chooseLocalRepository, rescanLocalRepository } from "./repository";
 
 const APP_SCHEME = "app";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -150,16 +152,11 @@ function isAllowedExternalUrl(input: unknown): input is string {
   }
 }
 
-function isTrustedRendererUrl(senderUrl: string): boolean {
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL;
-  return developmentUrl
-    ? senderUrl.startsWith(new URL(developmentUrl).origin)
-    : senderUrl.startsWith(`${APP_SCHEME}://renderer/`);
-}
-
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
   const senderUrl = event.senderFrame?.url ?? "";
-  if (!isTrustedRendererUrl(senderUrl)) throw new Error("拒绝来自非受信页面的请求");
+  if (!isTrustedRendererUrl(senderUrl, process.env.ELECTRON_RENDERER_URL)) {
+    throw new Error("拒绝来自非受信页面的请求");
+  }
 }
 
 async function applyFullScreen(window: BrowserWindow, enabled: boolean): Promise<boolean> {
@@ -225,6 +222,16 @@ function registerIpc(): void {
       return { canceled: false, state: imported, persisted: true };
     }
     return { canceled: false, state: raw };
+  });
+  ipcMain.handle(IPC_CHANNELS.chooseRepository, async (event) => {
+    assertTrustedSender(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error("找不到当前 TryRevive 窗口");
+    return chooseLocalRepository(window);
+  });
+  ipcMain.handle(IPC_CHANNELS.rescanRepository, async (event, bindingId: unknown) => {
+    assertTrustedSender(event);
+    return rescanLocalRepository(bindingId);
   });
   ipcMain.handle(IPC_CHANNELS.fullScreenState, (event) => {
     assertTrustedSender(event);
@@ -328,7 +335,7 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (!isTrustedRendererUrl(url)) event.preventDefault();
+    if (!isTrustedRendererUrl(url, process.env.ELECTRON_RENDERER_URL)) event.preventDefault();
   });
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => focusGuardian.stop(false));
@@ -346,7 +353,9 @@ app.whenReady().then(() => {
   registerIpc();
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback, details) => {
-      if (!isTrustedRendererUrl(webContents.getURL())) return callback(false);
+      if (!isTrustedRendererUrl(webContents.getURL(), process.env.ELECTRON_RENDERER_URL)) {
+        return callback(false);
+      }
       if (permission === "fullscreen") return callback(true);
       if (permission === "media") {
         const requestedMedia = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
