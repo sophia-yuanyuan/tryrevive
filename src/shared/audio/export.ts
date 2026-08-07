@@ -9,6 +9,21 @@ function header(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.slice(start, start + length));
 }
 
+export function sanitizeWavFileName(rawName: string): string {
+  const forbidden = '<>:"/\\|?*';
+  const baseName = [...rawName.normalize("NFKC")]
+    .map((character) =>
+      character.charCodeAt(0) <= 31 || forbidden.includes(character) ? "-" : character
+    )
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[.\s-]+/g, "")
+    .replace(/\.+$/g, "")
+    .slice(0, 80);
+  return `${baseName.replace(/\.wav$/i, "") || "TryRevive-项目唱片"}.wav`;
+}
+
 export function parseAudioExportRequest(input: unknown): AudioExportRequest {
   if (!input || typeof input !== "object") throw new Error("音乐导出请求无效");
   const source = input as Record<string, unknown>;
@@ -27,14 +42,6 @@ export function parseAudioExportRequest(input: unknown): AudioExportRequest {
   }
 
   const rawName = typeof source.fileName === "string" ? source.fileName : "";
-  const baseName = rawName
-    .normalize("NFKC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[.\s-]+/g, "")
-    .replace(/\.+$/g, "")
-    .slice(0, 80);
-  const fileName = `${baseName.replace(/\.wav$/i, "") || "TryRevive-项目唱片"}.wav`;
+  const fileName = sanitizeWavFileName(rawName);
   return { fileName, bytes };
 }

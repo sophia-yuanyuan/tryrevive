@@ -1,4 +1,5 @@
 import type { ProjectMood, RevivalAction, RevivalProject } from "../domain/model";
+import { sanitizeWavFileName } from "./export";
 
 export const PROJECT_MOOD_LABELS: Record<ProjectMood, string> = {
   calm: "平静",
@@ -179,11 +180,5 @@ export function renderProjectWav(project: RevivalProject): Uint8Array {
 }
 
 export function projectWavFileName(project: RevivalProject): string {
-  const safeTitle = project.title
-    .normalize("NFKC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 48);
-  return `${safeTitle || "TryRevive-项目唱片"}.wav`;
+  return sanitizeWavFileName(project.title.slice(0, 48));
 }
