@@ -12,6 +12,24 @@ $portablePath = Join-Path $releaseDir "TryRevive-Portable-$version-x64.exe"
 $foregroundMonitorSource = Join-Path $repoRoot 'resources\windows\foreground-monitor.ps1'
 $foregroundMonitorPackaged = Join-Path $releaseDir 'win-unpacked\resources\foreground-monitor.ps1'
 
+function Get-Sha256Hex {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+      $hashBytes = $sha256.ComputeHash($stream)
+    } finally {
+      $sha256.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+
+  return ([BitConverter]::ToString($hashBytes) -replace '-', '').ToLowerInvariant()
+}
+
 function Assert-WindowsArtifact {
   param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -33,28 +51,28 @@ function Assert-WindowsArtifact {
     $stream.Dispose()
   }
 
-  return Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256
+  return Get-Sha256Hex -Path $file.FullName
 }
 
 $setupHash = Assert-WindowsArtifact -Path $setupPath
 $portableHash = Assert-WindowsArtifact -Path $portablePath
 
-if ($setupHash.Hash -eq $portableHash.Hash) {
+if ($setupHash -eq $portableHash) {
   throw 'Setup and portable artifacts unexpectedly have the same SHA256 hash.'
 }
 
 if (-not (Test-Path -LiteralPath $foregroundMonitorPackaged -PathType Leaf)) {
   throw "Packaged foreground monitor is missing: $foregroundMonitorPackaged"
 }
-$foregroundMonitorSourceHash = Get-FileHash -LiteralPath $foregroundMonitorSource -Algorithm SHA256
-$foregroundMonitorPackagedHash = Get-FileHash -LiteralPath $foregroundMonitorPackaged -Algorithm SHA256
-if ($foregroundMonitorSourceHash.Hash -ne $foregroundMonitorPackagedHash.Hash) {
+$foregroundMonitorSourceHash = Get-Sha256Hex -Path $foregroundMonitorSource
+$foregroundMonitorPackagedHash = Get-Sha256Hex -Path $foregroundMonitorPackaged
+if ($foregroundMonitorSourceHash -ne $foregroundMonitorPackagedHash) {
   throw 'Packaged foreground monitor does not match the reviewed source.'
 }
 
 $checksumLines = @(
-  "$($setupHash.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($setupPath))",
-  "$($portableHash.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($portablePath))"
+  "$setupHash  $([IO.Path]::GetFileName($setupPath))",
+  "$portableHash  $([IO.Path]::GetFileName($portablePath))"
 )
 $checksumsPath = Join-Path $releaseDir 'SHA256SUMS.txt'
 [IO.File]::WriteAllLines($checksumsPath, $checksumLines, [Text.UTF8Encoding]::new($false))

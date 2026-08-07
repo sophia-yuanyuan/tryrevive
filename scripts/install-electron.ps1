@@ -58,7 +58,19 @@ function Test-ArchiveHash {
     return $false
   }
 
-  $actualHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+      $hashBytes = $sha256.ComputeHash($stream)
+    } finally {
+      $sha256.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+
+  $actualHash = ([BitConverter]::ToString($hashBytes) -replace '-', '').ToLowerInvariant()
   return $actualHash -eq $expectedHash.ToLowerInvariant()
 }
 
