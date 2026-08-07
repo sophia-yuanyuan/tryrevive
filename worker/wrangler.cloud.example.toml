@@ -2,6 +2,13 @@ name = "tryrevive-cloud"
 main = "cloud-service.js"
 compatibility_date = "2026-08-07"
 
+[vars]
+CLOUD_PROVIDER_ENABLED = "false"
+OPENAI_ANALYSIS_MODEL = "REPLACE_WITH_APPROVED_MODEL"
+OPENAI_TRANSCRIPTION_MODEL = "gpt-transcribe"
+
+# OPENAI_API_KEY must be configured as a Wrangler secret, never committed here.
+
 [[d1_databases]]
 binding = "CLOUD_DB"
 database_name = "tryrevive-cloud"

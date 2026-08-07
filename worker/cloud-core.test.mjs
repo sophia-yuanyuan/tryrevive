@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   estimateCost,
   extractResponseText,
+  isAcceptedAttachment,
   normalizeAnalysis,
   parseSourceMetadata,
   sha256Hex
@@ -30,6 +31,29 @@ test("metadata rejects oversized sources before any provider call", () => {
       sizeBytes: 26 * 1024 * 1024,
       durationSeconds: null
     })
+  );
+});
+
+test("cloud intake accepts only transcription formats supported by the configured provider", () => {
+  assert.equal(
+    isAcceptedAttachment({
+      kind: "audio",
+      name: "项目说明.webm",
+      mimeType: "audio/webm",
+      sizeBytes: 1024,
+      durationSeconds: 20
+    }),
+    true
+  );
+  assert.equal(
+    isAcceptedAttachment({
+      kind: "audio",
+      name: "项目说明.flac",
+      mimeType: "audio/flac",
+      sizeBytes: 1024,
+      durationSeconds: 20
+    }),
+    false
   );
 });
 
