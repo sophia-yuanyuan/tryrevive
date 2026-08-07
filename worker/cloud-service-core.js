@@ -402,7 +402,7 @@ export function createCloudService({
         now: now()
       });
       throw new HttpError(502, "analysis_failed", "云端处理失败，预留算力已经归还。", {
-        refunded: true,
+        refunded: refunded.refunded !== false,
         balance: refunded.balance
       });
     }

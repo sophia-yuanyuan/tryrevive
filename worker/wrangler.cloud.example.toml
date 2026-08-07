@@ -1,0 +1,12 @@
+name = "tryrevive-cloud"
+main = "cloud-service.js"
+compatibility_date = "2026-08-07"
+
+[[d1_databases]]
+binding = "CLOUD_DB"
+database_name = "tryrevive-cloud"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/10 * * * *"]

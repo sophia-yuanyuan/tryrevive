@@ -151,7 +151,11 @@ class MemoryCloudRepository {
 
   async claim(input) {
     const operation = this.operations.get(input.idempotencyKey);
-    if (operation?.status === "succeeded") {
+    if (
+      operation?.status === "succeeded" &&
+      operation.accountId === input.accountId &&
+      operation.sourceFingerprint === input.sourceFingerprint
+    ) {
       return { status: "succeeded", result: structuredClone(operation.result) };
     }
     if (
@@ -212,7 +216,7 @@ class MemoryCloudRepository {
     }
     operation.status = "failed";
     operation.errorCode = input.errorCode;
-    return { balance: copyBalance(account.balance) };
+    return { balance: copyBalance(account.balance), refunded: true };
   }
 }
 
