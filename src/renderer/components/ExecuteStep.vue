@@ -57,7 +57,6 @@ async function enterFocus(): Promise<void> {
   error.value = "";
   try {
     await document.documentElement.requestFullscreen?.().catch(() => undefined);
-    if (!started.value) await store.beginAction();
     focusOpen.value = true;
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "专注界面启动失败";
@@ -109,7 +108,7 @@ async function finishFromFocus(): Promise<void> {
         </button>
         <div v-else class="grid gap-3 sm:grid-cols-2">
           <button class="primary-button w-full" type="button" :disabled="busy" @click="enterFocus">
-            进入全屏专注
+            以唱针进入全屏专注
           </button>
           <button class="secondary-button w-full" type="button" :disabled="busy" @click="finish">
             我已经留下结果
@@ -122,7 +121,7 @@ async function finishFromFocus(): Promise<void> {
           :disabled="busy"
           @click="enterFocus"
         >
-          直接进入全屏专注
+          以唱针进入全屏专注
         </button>
       </div>
     </StageShell>
@@ -130,6 +129,7 @@ async function finishFromFocus(): Promise<void> {
       v-if="focusOpen"
       :project="project"
       :clock="clock"
+      :started="started"
       @close="focusOpen = false"
       @finish="finishFromFocus"
     />

@@ -16,11 +16,25 @@ async function completeRevivalLoop(page) {
   await expect(page.getByRole("heading", { name: "把它缩成今天能完成的一步" })).toBeVisible();
   await page.getByRole("button", { name: "就做这一步" }).click();
 
-  await page.getByRole("button", { name: "直接进入全屏专注" }).click();
+  await page.getByRole("button", { name: "以唱针进入全屏专注" }).click();
   const focus = page.getByRole("dialog", { name: "专注界面" });
   await expect(focus.getByText("完成了首页布局", { exact: false })).toBeVisible();
   await focus.getByText("完成了首页布局", { exact: false }).click();
-  await focus.getByRole("heading").click();
+  const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
+  await expect(dropNeedle).toBeVisible();
+  if ((page.viewportSize()?.width ?? 1440) <= 500) {
+    await dropNeedle.dispatchEvent("pointerdown", {
+      pointerId: 1,
+      pointerType: "touch",
+      isPrimary: true,
+      button: 0,
+      buttons: 1
+    });
+    await page.waitForTimeout(900);
+  } else {
+    await dropNeedle.press("Space", { delay: 900 });
+  }
+  await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
   await focus.getByRole("button", { name: "我留下了一个结果" }).click();
 
   await page.getByLabel("我实际完成了").fill("导航已经可以在 390px 下打开和关闭");

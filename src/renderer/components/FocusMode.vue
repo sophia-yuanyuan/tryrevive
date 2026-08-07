@@ -2,11 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
 import { platform } from "@/renderer/platform/web";
+import { useRevivalStore } from "@/renderer/stores/revival";
 import type { FocusEvent } from "@/shared/focus/contracts";
+import { stylusHoldProgress, stylusReadyToDrop } from "@/shared/focus/stylus";
 
 const props = defineProps<{
   project: RevivalProject;
   clock: string;
+  started: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -14,8 +17,9 @@ const emit = defineEmits<{
   finish: [];
 }>();
 
+const store = useRevivalStore();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const phase = ref(reducedMotion ? 3 : 1);
+const phase = ref(props.started ? 3 : reducedMotion ? 2 : 1);
 const resetOpen = ref(false);
 const resetCause = ref<"manual" | "guardian">("manual");
 const guardianAvailable = ref(false);
@@ -25,8 +29,16 @@ const guardianMessage = ref("");
 const guardianEvent = ref<FocusEvent | null>(null);
 const selectedApps = ref<string[]>([]);
 const customApps = ref("");
+const entryHolding = ref(false);
+const entryProgress = ref(0);
+const entryBusy = ref(false);
+const entryError = ref("");
+const finishing = ref(false);
 const phaseTimers: number[] = [];
 let unsubscribeFocus: () => void = () => undefined;
+let entryAnimationFrame = 0;
+let entryStartedAt = 0;
+let completionTimer = 0;
 const quickApps = [
   { label: "Chrome", value: "chrome" },
   { label: "Edge", value: "msedge" },
@@ -43,9 +55,55 @@ const lastScene = computed(
 const anchor = computed(
   () => props.project.restore.whyMatters || "你可以先回到眼前这一个可见结果。"
 );
+const entryStyle = computed(() => ({
+  "--entry-progress": `${Math.round(entryProgress.value * 360)}deg`
+}));
 
 function advance(): void {
-  if (phase.value < 3) phase.value += 1;
+  if (phase.value === 1) phase.value = 2;
+}
+
+function cancelEntryHold(reset = true): void {
+  if (entryAnimationFrame) cancelAnimationFrame(entryAnimationFrame);
+  entryAnimationFrame = 0;
+  entryHolding.value = false;
+  entryStartedAt = 0;
+  if (reset && !entryBusy.value) entryProgress.value = 0;
+}
+
+async function dropNeedle(): Promise<void> {
+  if (entryBusy.value || phase.value !== 2) return;
+  cancelEntryHold(false);
+  entryBusy.value = true;
+  entryError.value = "";
+  try {
+    if (!props.project.action?.startedAt) await store.beginAction();
+    entryProgress.value = 1;
+    phase.value = 3;
+  } catch (error) {
+    entryProgress.value = 0;
+    entryError.value = error instanceof Error ? error.message : "这一小步暂时无法开始";
+  } finally {
+    entryBusy.value = false;
+  }
+}
+
+function updateEntryHold(timestamp: number): void {
+  if (!entryHolding.value) return;
+  entryProgress.value = stylusHoldProgress(entryStartedAt, timestamp);
+  if (stylusReadyToDrop(entryStartedAt, timestamp)) {
+    void dropNeedle();
+    return;
+  }
+  entryAnimationFrame = requestAnimationFrame(updateEntryHold);
+}
+
+function beginEntryHold(): void {
+  if (entryHolding.value || entryBusy.value || phase.value !== 2) return;
+  entryHolding.value = true;
+  entryProgress.value = 0;
+  entryStartedAt = performance.now();
+  entryAnimationFrame = requestAnimationFrame(updateEntryHold);
 }
 
 function toggleApp(value: string): void {
@@ -127,13 +185,15 @@ async function close(): Promise<void> {
 }
 
 async function finish(): Promise<void> {
+  if (finishing.value) return;
+  finishing.value = true;
   await stopGuardian();
-  emit("finish");
+  completionTimer = window.setTimeout(() => emit("finish"), reducedMotion ? 0 : 700);
 }
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") void close();
-  if (event.key === "Enter" && phase.value < 3) advance();
+  if (event.key === "Enter" && phase.value === 1) advance();
 }
 
 onMounted(() => {
@@ -150,9 +210,8 @@ onMounted(() => {
     .catch((error: unknown) => {
       guardianMessage.value = error instanceof Error ? error.message : "无法读取偏离提醒状态";
     });
-  if (!reducedMotion) {
+  if (!props.started && !reducedMotion) {
     phaseTimers.push(window.setTimeout(() => (phase.value = 2), 3_200));
-    phaseTimers.push(window.setTimeout(() => (phase.value = 3), 6_400));
   }
 });
 
@@ -160,6 +219,8 @@ onBeforeUnmount(() => {
   document.body.classList.remove("focus-mode-active");
   window.removeEventListener("keydown", onKeydown);
   unsubscribeFocus();
+  cancelEntryHold();
+  if (completionTimer) window.clearTimeout(completionTimer);
   if (guardianActive.value) void platform.stopFocusGuardian().catch(() => undefined);
   phaseTimers.forEach(window.clearTimeout);
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -187,14 +248,56 @@ onBeforeUnmount(() => {
           <p class="focus-hint">轻触或按 Enter 继续</p>
         </div>
 
-        <div v-else-if="phase === 2" key="action" class="focus-phase-card" @click="advance">
+        <div v-else-if="phase === 2" key="action" class="focus-phase-card focus-entry-card">
           <p class="focus-eyebrow">现在 · 只做这一步</p>
           <h2 class="focus-action">{{ project.action?.text }}</h2>
-          <p class="focus-hint">不需要处理整个项目</p>
+          <p class="focus-entry-done">完成标准：{{ project.action?.doneDefinition }}</p>
+
+          <div
+            class="focus-entry-scene"
+            :class="{ 'focus-entry-scene-holding': entryHolding || entryBusy }"
+            aria-hidden="true"
+          >
+            <div class="focus-entry-record"><span /></div>
+            <div class="focus-entry-stylus"><i /></div>
+          </div>
+
+          <button
+            class="focus-entry-hold"
+            type="button"
+            :style="entryStyle"
+            :disabled="entryBusy"
+            aria-label="按住 0.8 秒，让唱针落下并开始这一小步"
+            @pointerdown.prevent="beginEntryHold"
+            @pointerup.prevent="cancelEntryHold()"
+            @pointerleave="cancelEntryHold()"
+            @pointercancel="cancelEntryHold()"
+            @keydown.space.prevent="beginEntryHold"
+            @keyup.space.prevent="cancelEntryHold()"
+            @keydown.enter.prevent="dropNeedle"
+            @click.prevent
+          >
+            <span>{{ entryBusy ? "正在落针…" : "按住 0.8 秒，让唱针落下" }}</span>
+            <small>
+              {{ entryHolding ? `${Math.round(entryProgress * 100)}%` : "鼠标、触摸或空格" }}
+            </small>
+          </button>
+          <p v-if="entryError" class="focus-entry-error" role="alert">{{ entryError }}</p>
+          <p class="focus-hint">松开即取消；不需要处理整个项目</p>
         </div>
 
-        <div v-else key="live" class="focus-live-card">
+        <div
+          v-else
+          key="live"
+          class="focus-live-card"
+          :class="{ 'focus-live-card-finishing': finishing }"
+        >
           <p class="focus-project">{{ project.title }}</p>
+          <div class="focus-presence" aria-hidden="true">
+            <div class="focus-presence-record"><span /></div>
+            <div class="focus-presence-stylus"><i /></div>
+            <span class="focus-presence-piece" />
+          </div>
           <time class="focus-clock" aria-label="当前时间盒剩余时间">{{ clock }}</time>
           <h2 class="focus-live-action">{{ project.action?.text }}</h2>
           <p class="focus-done">完成标准：{{ project.action?.doneDefinition }}</p>
@@ -301,7 +404,9 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="focus-controls">
-            <button class="focus-complete" type="button" @click="finish">我留下了一个结果</button>
+            <button class="focus-complete" type="button" :disabled="finishing" @click="finish">
+              {{ finishing ? "正在把这一块留下…" : "我留下了一个结果" }}
+            </button>
             <button
               v-if="!(resetOpen && resetCause === 'guardian')"
               class="focus-secondary"

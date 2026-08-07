@@ -716,6 +716,193 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.focus-entry-card {
+  display: grid;
+  justify-items: center;
+}
+
+.focus-entry-done {
+  max-width: 38rem;
+  margin: 0.85rem auto 0;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+.focus-entry-scene {
+  position: relative;
+  width: 13rem;
+  height: 9rem;
+  margin: 1.6rem auto 0.7rem;
+}
+
+.focus-entry-record,
+.focus-presence-record {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.19);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #c9a470 0 5%, #11151a 5.5% 14%, transparent 14.5%),
+    repeating-radial-gradient(circle, #101318 0 3px, #1c2128 4px 5px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1.3rem 3rem rgba(0, 0, 0, 0.42);
+}
+
+.focus-entry-record {
+  left: 1.2rem;
+  bottom: 0;
+  width: 8rem;
+  aspect-ratio: 1;
+}
+
+.focus-entry-record span,
+.focus-presence-record span {
+  position: absolute;
+  inset: 38%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+}
+
+.focus-entry-stylus,
+.focus-presence-stylus {
+  position: absolute;
+  z-index: 2;
+  width: 1.1rem;
+  border-radius: 999px 999px 0.25rem 0.25rem;
+  background: linear-gradient(90deg, #b8b4ab, #f0ede5 50%, #777970);
+  box-shadow: 0 0.7rem 1.5rem rgba(0, 0, 0, 0.32);
+  transform-origin: 50% 0;
+  transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.focus-entry-stylus {
+  top: 0.15rem;
+  right: 2.2rem;
+  height: 7.7rem;
+  transform: rotate(-18deg);
+}
+
+.focus-entry-stylus i,
+.focus-presence-stylus i {
+  position: absolute;
+  right: -0.18rem;
+  bottom: -0.25rem;
+  width: 1.45rem;
+  height: 0.75rem;
+  border-radius: 0.15rem 0.15rem 0.4rem 0.4rem;
+  background: #d2a36f;
+}
+
+.focus-entry-scene-holding .focus-entry-stylus {
+  transform: rotate(7deg);
+}
+
+.focus-entry-hold {
+  --entry-progress: 0deg;
+  display: grid;
+  min-width: min(22rem, 100%);
+  min-height: 4.15rem;
+  touch-action: none;
+  user-select: none;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 0.72rem 1.4rem;
+  color: rgba(255, 255, 255, 0.94);
+  background:
+    linear-gradient(#0c1116, #0c1116) padding-box,
+    conic-gradient(
+        from -90deg,
+        #d7ad78 0 var(--entry-progress),
+        rgba(255, 255, 255, 0.15) var(--entry-progress) 360deg
+      )
+      border-box;
+  cursor: pointer;
+  place-items: center;
+}
+
+.focus-entry-hold:focus-visible {
+  outline: 3px solid rgba(217, 181, 133, 0.38);
+  outline-offset: 4px;
+}
+
+.focus-entry-hold span {
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.focus-entry-hold small {
+  margin-top: 0.2rem;
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 0.66rem;
+}
+
+.focus-entry-error {
+  margin: 0.7rem 0 0;
+  color: #ffc0b8;
+  font-size: 0.74rem;
+}
+
+.focus-entry-card .focus-hint {
+  margin-top: 1rem;
+}
+
+.focus-presence {
+  position: relative;
+  width: 7.5rem;
+  height: 3.6rem;
+  margin: 0.8rem auto -0.4rem;
+}
+
+.focus-presence-record {
+  left: 0.6rem;
+  bottom: 0;
+  width: 3.5rem;
+  aspect-ratio: 1;
+  animation: focus-record-spin 7s linear infinite;
+}
+
+.focus-presence-stylus {
+  top: 0;
+  right: 1.2rem;
+  width: 0.62rem;
+  height: 3.35rem;
+  transform: rotate(14deg);
+}
+
+.focus-presence-stylus i {
+  right: -0.1rem;
+  bottom: -0.15rem;
+  width: 0.85rem;
+  height: 0.42rem;
+}
+
+.focus-presence-piece {
+  position: absolute;
+  z-index: 4;
+  left: 1.6rem;
+  bottom: 1.05rem;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 0.16rem;
+  opacity: 0;
+  background: #d5aa74;
+  transform: translateY(-1.2rem) rotate(12deg) scale(0.5);
+}
+
+.focus-live-card-finishing .focus-presence-record {
+  animation-duration: 14s;
+}
+
+.focus-live-card-finishing .focus-presence-stylus {
+  transform: rotate(-18deg);
+}
+
+.focus-live-card-finishing .focus-presence-piece {
+  animation: focus-piece-settle 650ms ease-out both;
+}
+
 .focus-clock {
   display: block;
   margin-top: 1.2rem;
@@ -954,6 +1141,11 @@ button:disabled {
 
 body.focus-mode-active {
   overflow: hidden;
+  background: #030507;
+}
+
+body.focus-mode-active #app {
+  visibility: hidden;
 }
 
 .vinyl-artifact {
@@ -1724,6 +1916,24 @@ body.focus-mode-active {
 @keyframes focus-orbit-reverse {
   to {
     transform: rotate(-384deg) scaleY(0.62);
+  }
+}
+
+@keyframes focus-record-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes focus-piece-settle {
+  55% {
+    opacity: 1;
+    transform: translateY(-0.2rem) rotate(4deg) scale(1.08);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scale(1);
   }
 }
 

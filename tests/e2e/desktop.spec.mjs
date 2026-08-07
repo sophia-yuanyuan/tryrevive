@@ -50,11 +50,14 @@ test("desktop app launches with an isolated bridge and persists state across res
     await window.getByRole("button", { name: "现场找回来了" }).click();
     await window.getByRole("button", { name: /缩小/ }).click();
     await window.getByRole("button", { name: "就做这一步" }).click();
-    await window.getByRole("button", { name: "直接进入全屏专注" }).click();
+    await window.getByRole("button", { name: "以唱针进入全屏专注" }).click();
 
     const focus = window.getByRole("dialog", { name: "专注界面" });
     await focus.getByText("完成了项目入口", { exact: false }).click();
-    await focus.getByRole("heading").click();
+    const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
+    await expect(dropNeedle).toBeVisible();
+    await dropNeedle.press("Space", { delay: 900 });
+    await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
     await expect(focus.getByText("Windows 偏离提醒", { exact: true })).toBeVisible();
     await expect(focus.getByText(/不读取按键、窗口标题或网页/)).toBeVisible();
     await focus.getByRole("button", { name: "Chrome" }).click();

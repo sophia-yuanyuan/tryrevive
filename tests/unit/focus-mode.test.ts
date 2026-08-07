@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createProject } from "@/shared/domain/model";
@@ -44,6 +45,7 @@ const startingEvent: FocusEvent = {
 
 describe("FocusMode guardian controls", () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockReturnValue({ matches: true })
@@ -82,7 +84,7 @@ describe("FocusMode guardian controls", () => {
     };
 
     const wrapper = mount(FocusMode, {
-      props: { project, clock: "09:59" },
+      props: { project, clock: "09:59", started: true },
       global: { stubs: { Teleport: true } }
     });
     await flushPromises();
