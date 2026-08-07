@@ -71,7 +71,7 @@ const MBTI_COACH_TEMPLATES = {
       "不要在脑中进行无意义的项目评估。现在就开始行动，用实质的做功来终结焦虑。"
     ],
     V: [
-      "琐碎噪音正在消耗你的计算力。请立刻切回 Tryrevive，隔绝外界烦躁，捍卫『{motivation}』。",
+      "琐碎噪音正在消耗你的计算力。请立刻切回 TryRevive，隔绝外界烦躁，捍卫『{motivation}』。",
       "情绪波动时，行动是最好的稳定器。专注于你刚才定下的步骤『{step2}』。",
       "让脑海里的噪音平息。现在退出社交软件，重新夺回你对生活的目标掌控。",
       "琐碎的信息和无意义的争执是对心智资源的低效占用。关闭它，回到有确定性的轨道上来。",
@@ -96,7 +96,7 @@ const MBTI_COACH_TEMPLATES = {
     V: [
       "社交与交际的消耗应当在这里被洗涤。请深呼吸，用宁静色包裹自己，捍卫初心『{motivation}』。",
       "接纳当下的焦躁，将视线收回到你对生活的规划『{step2}』中，世界会安静下来。",
-      "安静待在你的 Tryrevive 起始页中，不要让外界的声音撕裂了你原本的梦想。",
+      "安静待在你的 TryRevive 起始页中，不要让外界的声音撕裂了你原本的梦想。",
       "外界的喧嚣是他们未被疗愈的焦虑，不要让它传染给你。回到你精心布置的宁静角落。",
       "如果人际关系让你感到沉重和疲惫，请暂时切断与外界的连接，在这里安顿你的心神。"
     ]
@@ -118,7 +118,7 @@ const MBTI_COACH_TEMPLATES = {
       "不要试图一次性解决所有难题。把你的大系统拆解开，先切入第一步『{step2}』。"
     ],
     V: [
-      "外界的莫名烦躁只是低维数据污染。切回 Tryrevive 起始页进行低噪重构。",
+      "外界的莫名烦躁只是低维数据污染。切回 TryRevive 起始页进行低噪重构。",
       "计划被打乱了也没关系，TP 擅长弹性修正。关注当下的第二步『{step2}』。",
       "关闭低价值信息源。你的头脑极其宝贵，只留给真正有智识增量的事物『{motivation}』。",
       "面对混乱和噪音，不要情绪化，用分析的眼光看待它，然后冷静地把它们从视野里过滤掉。",
@@ -2496,7 +2496,7 @@ function confirmRedirect() {
   
   cancelRedirect();
 
-  // 在新标签打开目标站点（Tryrevive 保留在原标签继续计时与回访检测）
+  // 在新标签打开目标站点（TryRevive 保留在原标签继续计时与回访检测）
   openExternal(state.blockerTargetUrl);
 
   setAvatarState("black");
@@ -2542,7 +2542,7 @@ function extendFocusTimer(seconds) {
   if (state.blockerTimerActive) {
     state.blockerTimeLimitSec += seconds;
     stopHeartbeatLoop();
-    document.title = "Try Revive — 让停滞项目重新动起来";
+    document.title = "TryRevive — 让停滞项目重新动起来";
     
     const overlay = document.getElementById("alert-blocking");
     if (overlay) overlay.classList.remove("active");
@@ -2554,7 +2554,7 @@ function enterMeditationFromBlocker() {
   if (overlay) overlay.classList.remove("active");
   
   stopHeartbeatLoop();
-  document.title = "Try Revive — 让停滞项目重新动起来";
+  document.title = "TryRevive — 让停滞项目重新动起来";
   
   state.blockerTimerActive = false;
   if (state.blockerInterval) clearInterval(state.blockerInterval);
@@ -2911,7 +2911,7 @@ function triggerBlockerWarning(overtimeSeconds) {
   const text = document.getElementById("blocking-warning-text");
   const quote = document.getElementById("blocking-mbti-quote");
 
-  if (title) title.textContent = `⚠️ Tryrevive / 专注防线偏差警告`;
+  if (title) title.textContent = `⚠️ TryRevive / 专注防线偏差警告`;
   if (text) text.textContent = "🔍 AI 自律教练正在透视分析你的防线偏差状态...";
   if (quote) quote.textContent = `"${state.userProfile.motivation}"`;
 
@@ -2924,7 +2924,7 @@ function triggerBlockerWarning(overtimeSeconds) {
   });
 }
 
-// --- 18. Try Revive：停滞项目复活闭环 ---
+// --- 18. TryRevive：停滞项目复活闭环 ---
 // 标签通过 i18n 代理动态取词；缺 key 时返回 undefined 以保留 "||" 回退逻辑
 const REVIVE_BLOCKER_LABELS = new Proxy({}, {
   get: (_, key) => (window.ReviveI18N?.has(`blocker.${String(key)}`) ? t(`blocker.${String(key)}`) : undefined)
@@ -4597,7 +4597,7 @@ function reviveDeleteProject(projectId) {
 function reviveExportData() {
   const payload = {
     exportedAt: new Date().toISOString(),
-    product: "Try Revive",
+    product: "TryRevive",
     user: state.currentUser,
     data: getReviveStore()
   };
@@ -4646,12 +4646,12 @@ async function reviveImportData(event) {
 }
 
 function reviveClearAllData() {
-  if (!confirm("确定清空全部 Try Revive 项目、会话与证据吗？注意力工具设置会保留。")) return;
+  if (!confirm("确定清空全部 TryRevive 项目、会话与证据吗？注意力工具设置会保留。")) return;
   state.userProfile.revive = createDefaultReviveState();
   state.reviveUiMode = "auto";
   saveProfile();
   renderReviveWorkspace();
-  showReviveNotice("Try Revive 项目数据已全部清空。", "success");
+  showReviveNotice("TryRevive 项目数据已全部清空。", "success");
 }
 
 // --- 19. Initial Boot Up & DOM Events binding ---

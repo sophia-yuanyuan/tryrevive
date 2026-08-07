@@ -177,7 +177,7 @@
     s += '<path d="' + spec.border + '" fill="none" stroke="' + INK + '" stroke-width="2.6"/>';
     if (full) {
       s += '<text font-family="Caveat, cursive" font-weight="700" font-size="10.5" letter-spacing="1.2" fill="' + INK + '">' +
-        '<textPath href="#sg-top-' + u + '" startOffset="50%" text-anchor="middle">TRY REVIVE · ' + spec.year + '</textPath></text>';
+        '<textPath href="#sg-top-' + u + '" startOffset="50%" text-anchor="middle">TRYREVIVE · ' + spec.year + '</textPath></text>';
       var nameFont = spec.zhName ? "'Ma Shan Zheng', cursive" : "Caveat, cursive";
       var nameSize = spec.zhName ? 11 : 12.5;
       s += '<text font-family="' + nameFont + '" font-size="' + nameSize + '" letter-spacing="' + (spec.zhName ? 1.5 : 0.8) + '" fill="' + INK + '">' +
@@ -235,7 +235,7 @@
       }
       ctx.strokeStyle = INK; ctx.lineWidth = 2.6; ctx.stroke(new Path2D(spec.border));
       // 弧形文字
-      drawArcText(ctx, "TRY REVIVE · " + spec.year, 60, 60, 42.5, -90, true, '700 10.5px Caveat', 6.2);
+      drawArcText(ctx, "TRYREVIVE · " + spec.year, 60, 60, 42.5, -90, true, '700 10.5px Caveat', 6.2);
       var nameFont = spec.zhName ? "11px 'Ma Shan Zheng'" : "12.5px Caveat";
       drawArcText(ctx, spec.name, 60, 60, 41, 90, false, nameFont, spec.zhName ? 15 : 7.6);
       if (isZh()) {

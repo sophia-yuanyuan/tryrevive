@@ -64,7 +64,7 @@ A clean, premium AI platform focused on developer tools and data ownership.
 
 ## Colors
 
-High-contrast neutrals with Tryrevive Warm Coral reserved for primary actions, selection and focus.
+High-contrast neutrals with TryRevive Warm Coral reserved for primary actions, selection and focus.
 
 - **Background (`#FFFFFF`)** — uses `bg` token
 - **Primary brand (`#FF8A65`)** — uses `primary` token

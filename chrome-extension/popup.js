@@ -1,4 +1,4 @@
-// Tryrevive Chrome Extension Popup logic
+// TryRevive Chrome Extension Popup logic
 // 读取本地存储中的监测网站累计时间，并渲染到浮层，同时提供快捷键唤醒主界面入口。
 
 // 与 background.js 的受限域名列表保持一致
@@ -19,7 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (openBtn) {
     openBtn.addEventListener("click", () => {
       chrome.tabs.query({}, (tabs) => {
-        // Look for existing Tryrevive tab
+        // Look for existing TryRevive tab
         const target = tabs.find(t => t.url && (
           t.url.startsWith("https://tryrevive.online") ||
           t.url.startsWith("https://www.tryrevive.online") ||

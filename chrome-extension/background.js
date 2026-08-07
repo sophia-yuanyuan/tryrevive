@@ -1,4 +1,4 @@
-// Tryrevive Chrome Extension Background Worker
+// TryRevive Chrome Extension Background Worker
 // 监听活动标签页，累计受限社交站时间，并在超时后触发系统通知和跨页面冷静跳转，同时代理 Anthropic API 避开 CORS。
 
 let activeTabId = null;
@@ -94,14 +94,14 @@ function triggerTimeoutWarning(domain) {
   chrome.notifications.create({
     type: "basic",
     iconUrl: "icon128.png",
-    title: "⚠️ Tryrevive 注意力设防警报",
-    message: `检测到您在 ${domain} 上的时间已超额！请立即回到 Tryrevive 禅修冷静。`,
+    title: "⚠️ TryRevive 注意力设防警报",
+    message: `检测到您在 ${domain} 上的时间已超额！请立即回到 TryRevive 禅修冷静。`,
     priority: 2
   });
 
-  // 尝试寻找 Tryrevive 页面并激活
+  // 尝试寻找 TryRevive 页面并激活
   chrome.tabs.query({}, (tabs) => {
-    const target = tabs.find(t => t.url && t.url.includes("Tryrevive/index.html"));
+    const target = tabs.find(t => t.url && t.url.includes("tryrevive/index.html"));
     if (target) {
       chrome.tabs.update(target.id, { active: true });
       // 跨页面发送指令让主程序弹出超时冷静框

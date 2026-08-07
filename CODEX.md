@@ -1,8 +1,8 @@
-# Tryrevive Codex Notes
+# TryRevive Codex Notes
 
 ## 项目定位
 
-Tryrevive 是一个本地静态前端应用，用来帮助用户从推荐流和娱乐应用里收回注意力。核心体验包括：
+TryRevive 是一个本地静态前端应用，用来帮助用户从推荐流和娱乐应用里收回注意力。核心体验包括：
 
 - 首页专注入口：搜索直达、设防 App Dock、目标第一步记录。
 - 桌宠状态：黑色代表沉迷/失守，灰色代表正常疗愈，白色代表自律重生。
@@ -11,7 +11,7 @@ Tryrevive 是一个本地静态前端应用，用来帮助用户从推荐流和�
 
 ## Design System / Primary Color
 
-- 唯一主色：**Tryrevive Warm Coral `#FF8A65`**，与 `style.css` 的 `--accent` 保持一致。
+- 唯一主色：**TryRevive Warm Coral `#FF8A65`**，与 `style.css` 的 `--accent` 保持一致。
 - 主色只用于主按钮、当前选中、关键链接和键盘焦点；每屏最多一个主按钮。
 - 黑、灰、白负责背景和文字层级；桌宠黑/灰/白属于产品状态，不应被新的装饰色覆盖。
 - 新增 UI 时优先复用现有 token，不要再写一套临时颜色。

@@ -1,4 +1,4 @@
-// Tryrevive 内容桥接脚本
+// TryRevive 内容桥接脚本
 // 背景 worker 通过 chrome.tabs.sendMessage 发来的消息只有 content script 能收到，
 // 这里把"超时"指令转成页面可监听的 CustomEvent，打通 后台 → 页面 的核心闭环。
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -22,7 +22,7 @@ function isWechatArticlePage() {
   return location.hostname === "mp.weixin.qq.com" && location.pathname.startsWith("/s");
 }
 
-function isTryrevivePage() {
+function isTryRevivePage() {
   return [
     "tryrevive.online",
     "www.tryrevive.online",
@@ -78,7 +78,7 @@ function addWechatCaptureButton() {
   const button = document.createElement("button");
   button.id = "tryrevive-wechat-capture";
   button.type = "button";
-  button.textContent = "📚 收录到 Tryrevive";
+  button.textContent = "📚 收录到 TryRevive";
   Object.assign(button.style, {
     position: "fixed",
     right: "18px",
@@ -111,7 +111,7 @@ function addWechatCaptureButton() {
 }
 
 function publishWechatKnowledgeToPage() {
-  if (!isTryrevivePage()) return;
+  if (!isTryRevivePage()) return;
   chrome.storage.local.get({ [TRYREVIVE_WECHAT_KNOWLEDGE_KEY]: [] }, (result) => {
     if (chrome.runtime.lastError) return;
     window.postMessage({
@@ -124,7 +124,7 @@ function publishWechatKnowledgeToPage() {
 
 if (isWechatArticlePage()) addWechatCaptureButton();
 
-if (isTryrevivePage()) {
+if (isTryRevivePage()) {
   publishWechatKnowledgeToPage();
   window.addEventListener("message", (event) => {
     if (event.source !== window || !event.data || event.data.source !== "tryrevive-page") return;
