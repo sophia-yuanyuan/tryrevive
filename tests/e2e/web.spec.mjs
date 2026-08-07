@@ -61,6 +61,30 @@ test("settings exposes local backup controls without requiring an account", asyn
   await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
 });
 
+test("an unreadable JSON backup cannot replace existing local projects", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("所有还在心里的项目").fill("必须保留的现有项目");
+  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
+  await page.getByRole("button", { name: "打开项目与数据设置" }).click();
+
+  const chooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "导入备份" }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "broken-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{not-valid-json", "utf8")
+  });
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/无法读取这个 JSON 备份/)).toBeVisible();
+  await expect(dialog.getByText("必须保留的现有项目", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "先找回「必须保留的现有项目」的现场" })
+  ).toBeVisible();
+});
+
 test("multiple unfinished projects can be collected in one local intake", async ({ page }) => {
   await page.goto("/");
   await page

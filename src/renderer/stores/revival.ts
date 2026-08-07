@@ -35,6 +35,8 @@ export const useRevivalStore = defineStore("revival", () => {
   const ready = ref(false);
   const saveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
   const errorMessage = ref("");
+  const recoveryRequired = ref(false);
+  const recoveryNotice = ref("");
 
   const activeProject = computed(
     () => data.value.projects.find((project) => project.id === data.value.activeProjectId) ?? null
@@ -44,6 +46,9 @@ export const useRevivalStore = defineStore("revival", () => {
   );
 
   async function persist(): Promise<void> {
+    if (recoveryRequired.value) {
+      throw new Error("本地存档正在等待恢复；为防止覆盖原文件，请先导入有效的 JSON 备份");
+    }
     data.value.updatedAt = Date.now();
     const snapshot = AppStateSchema.parse(JSON.parse(JSON.stringify(data.value)));
     saveStatus.value = "saving";
@@ -61,13 +66,23 @@ export const useRevivalStore = defineStore("revival", () => {
 
   async function initialize(): Promise<void> {
     try {
-      const raw = await platform.loadState();
-      data.value = migrateState(raw);
+      const loaded = await platform.loadState();
+      recoveryNotice.value = loaded.recoveryMessage ?? "";
+      if (loaded.recoveryRequired) {
+        recoveryRequired.value = true;
+        errorMessage.value = loaded.recoveryMessage ?? "本地存档需要恢复；TryRevive 没有覆盖原文件";
+        saveStatus.value = "error";
+        return;
+      }
+      data.value = migrateState(loaded.state);
       data.value.legacyMigrationCompleted = true;
       await persist();
     } catch (error) {
       data.value = createEmptyState();
-      errorMessage.value = error instanceof Error ? error.message : "无法载入本地进度";
+      recoveryRequired.value = true;
+      recoveryNotice.value =
+        "TryRevive 已停止自动保存，原存档没有被空白数据覆盖。请导入有效的 JSON 备份。";
+      errorMessage.value = error instanceof Error ? error.message : "无法安全载入本地进度";
       saveStatus.value = "error";
     } finally {
       ready.value = true;
@@ -196,6 +211,9 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function exportData(): Promise<string> {
+    if (recoveryRequired.value) {
+      throw new Error("当前存档尚未安全载入，不能导出空白数据；请先导入有效备份");
+    }
     const result = await platform.exportState(data.value);
     return result.canceled ? "已取消导出" : result.path ? `已导出到 ${result.path}` : "已导出备份";
   }
@@ -203,10 +221,24 @@ export const useRevivalStore = defineStore("revival", () => {
   async function importData(): Promise<string> {
     const result = await platform.importState();
     if (result.canceled) return "已取消导入";
+    if (result.state == null) throw new Error("无法读取这个 JSON 备份；现有项目没有被替换");
     const imported = migrateState(result.state);
     if (!imported.projects.length && result.state) throw new Error("备份中没有可导入的项目");
     data.value = { ...imported, legacyMigrationCompleted: true };
-    await persist();
+    const wasRecoveryRequired = recoveryRequired.value;
+    recoveryRequired.value = false;
+    try {
+      if (result.persisted) {
+        saveStatus.value = "saved";
+      } else {
+        await persist();
+      }
+    } catch (error) {
+      recoveryRequired.value = wasRecoveryRequired;
+      throw error;
+    }
+    errorMessage.value = "";
+    recoveryNotice.value = "有效备份已导入，本地自动保存已经恢复";
     return "备份已导入";
   }
 
@@ -215,6 +247,8 @@ export const useRevivalStore = defineStore("revival", () => {
     ready,
     saveStatus,
     errorMessage,
+    recoveryRequired,
+    recoveryNotice,
     activeProject,
     openProjects,
     platformKind: platform.kind,

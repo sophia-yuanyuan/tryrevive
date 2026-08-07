@@ -119,4 +119,56 @@ describe("state migrations", () => {
     expect(extractLegacyReviveState(profile)).toEqual({ projects: [{ id: "one" }] });
     expect(extractLegacyReviveState("not-json")).toBeNull();
   });
+
+  it("refuses a future schema instead of rebuilding and overwriting it as legacy", () => {
+    expect(() =>
+      migrateState({
+        schemaVersion: 6,
+        activeProjectId: "future-project",
+        projects: [{ id: "future-project", title: "未来版本项目" }],
+        legacyMigrationCompleted: true,
+        updatedAt: 1_800_000_000_000
+      })
+    ).toThrow(/更新版本/);
+  });
+
+  it("refuses a damaged current schema instead of dropping its progress fields", () => {
+    expect(() =>
+      migrateState({
+        schemaVersion: 5,
+        activeProjectId: "damaged-project",
+        projects: [
+          {
+            id: "damaged-project",
+            schemaVersion: 5,
+            title: "不能被静默重建的项目",
+            evidence: [{ id: "evidence-1", note: "真实成果不能丢" }]
+          }
+        ],
+        legacyMigrationCompleted: true,
+        updatedAt: 1_800_000_000_000
+      })
+    ).toThrow(/没有覆盖/);
+  });
+
+  it.each([
+    ["a JSON string", "not-a-project-save"],
+    ["a JSON array", []],
+    ["an empty object", {}],
+    ["a damaged version 2 save", { schemaVersion: 2, projects: "not-an-array" }]
+  ])("refuses %s instead of turning it into an empty save", (_label, raw) => {
+    expect(() => migrateState(raw)).toThrow(/没有覆盖/);
+  });
+
+  it("refuses the whole legacy save when one project cannot be migrated", () => {
+    expect(() =>
+      migrateState({
+        schemaVersion: 2,
+        projects: [
+          { id: "valid", title: "应该保留的项目" },
+          { id: "damaged", evidence: [{ note: "不能悄悄丢掉" }] }
+        ]
+      })
+    ).toThrow(/没有静默丢弃/);
+  });
 });

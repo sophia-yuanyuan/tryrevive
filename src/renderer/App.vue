@@ -14,7 +14,8 @@ import {
 import { useRevivalStore } from "@/renderer/stores/revival";
 
 const store = useRevivalStore();
-const { activeProject, data, errorMessage, saveStatus } = storeToRefs(store);
+const { activeProject, data, errorMessage, recoveryNotice, recoveryRequired, saveStatus } =
+  storeToRefs(store);
 const settingsOpen = ref(false);
 const notice = ref("");
 
@@ -93,8 +94,11 @@ async function startNewProject(): Promise<void> {
 
               <div class="mt-7">
                 <p class="summary-label">本地项目</p>
+                <p v-if="recoveryRequired" class="mt-3 text-sm leading-6 text-[var(--muted)]">
+                  项目暂未载入；有效备份导入前不会显示空白列表，也不会覆盖原存档。
+                </p>
                 <div
-                  v-if="data.projects.length"
+                  v-else-if="data.projects.length"
                   class="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
                 >
                   <button
@@ -125,7 +129,12 @@ async function startNewProject(): Promise<void> {
                   </button>
                 </div>
                 <p v-else class="mt-3 text-sm text-[var(--muted)]">还没有本地项目。</p>
-                <button class="secondary-button mt-4 w-full" type="button" @click="startNewProject">
+                <button
+                  class="secondary-button mt-4 w-full"
+                  type="button"
+                  :disabled="recoveryRequired"
+                  @click="startNewProject"
+                >
                   新建另一个项目
                 </button>
               </div>
@@ -133,7 +142,12 @@ async function startNewProject(): Promise<void> {
               <div class="mt-7 border-t border-[var(--line)] pt-6">
                 <p class="summary-label">备份与恢复</p>
                 <div class="mt-3 grid grid-cols-2 gap-3">
-                  <button class="secondary-button" type="button" @click="runDataAction('export')">
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    :disabled="recoveryRequired"
+                    @click="runDataAction('export')"
+                  >
                     导出备份
                   </button>
                   <button class="secondary-button" type="button" @click="runDataAction('import')">
@@ -167,7 +181,29 @@ async function startNewProject(): Promise<void> {
     </header>
 
     <p v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</p>
-    <RouterView />
+    <p v-else-if="recoveryNotice" class="recovery-banner" role="status">
+      {{ recoveryNotice }}
+    </p>
+    <main
+      v-if="recoveryRequired"
+      class="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8"
+    >
+      <section class="stage-card" aria-labelledby="recovery-title">
+        <p class="eyebrow">本地数据保护</p>
+        <h1 id="recovery-title" class="stage-title">先恢复存档，再继续工作</h1>
+        <p class="stage-copy">
+          {{ recoveryNotice || "TryRevive 没有用空白项目覆盖无法验证的原存档。" }}
+        </p>
+        <button class="primary-button mt-7" type="button" @click="runDataAction('import')">
+          导入 JSON 备份
+        </button>
+        <p class="mt-4 text-sm leading-6 text-[var(--muted)]">
+          导入成功前，所有页面都会保持在这里；新建、修改和导出均已关闭，原存档保持不变。
+        </p>
+        <p v-if="notice" class="mt-4 text-sm" role="status">{{ notice }}</p>
+      </section>
+    </main>
+    <RouterView v-else />
     <footer class="px-4 pb-7 text-center text-xs leading-5 text-[var(--muted)]">
       TryRevive 不替代老师、同伴或专业支持；项目方向与完成状态由你决定。
     </footer>

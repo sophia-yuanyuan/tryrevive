@@ -24,11 +24,18 @@ export interface ExportResult {
 export interface ImportResult {
   canceled: boolean;
   state?: unknown;
+  persisted?: boolean;
+}
+
+export interface LoadStateResult {
+  state: unknown | null;
+  recoveryRequired?: boolean;
+  recoveryMessage?: string;
 }
 
 export interface AppPlatform {
   readonly kind: "web" | "desktop";
-  loadState(): Promise<unknown | null>;
+  loadState(): Promise<LoadStateResult>;
   saveState(state: AppState): Promise<void>;
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
@@ -47,7 +54,7 @@ export interface AppPlatform {
 }
 
 export interface DesktopBridge {
-  loadState(): Promise<unknown | null>;
+  loadState(): Promise<LoadStateResult>;
   saveState(state: AppState): Promise<void>;
   exportState(state: AppState): Promise<ExportResult>;
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;

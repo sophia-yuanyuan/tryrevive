@@ -96,7 +96,7 @@ function pickJsonFile(): Promise<ImportResult> {
       try {
         resolve({ canceled: false, state: JSON.parse(await file.text()) });
       } catch {
-        resolve({ canceled: false, state: null });
+        resolve({ canceled: false });
       }
     };
     input.click();
@@ -106,7 +106,7 @@ function pickJsonFile(): Promise<ImportResult> {
 const webPlatform: AppPlatform = {
   kind: "web",
   async loadState() {
-    return (await readIndexedState()) ?? legacyState();
+    return { state: (await readIndexedState()) ?? legacyState() };
   },
   saveState: writeIndexedState,
   async exportState(state) {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +6,35 @@ import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test } from "@playwright/test";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+function createCurrentState(title, id, now = 1_800_000_000_000) {
+  return {
+    schemaVersion: 5,
+    activeProjectId: id,
+    projects: [
+      {
+        id,
+        schemaVersion: 5,
+        title,
+        stage: "restore",
+        status: "active",
+        restore: { lastCompleted: "", stuckAt: "", deadline: "", whyMatters: "" },
+        decision: null,
+        diagnosis: [],
+        action: null,
+        actionHistory: [],
+        evidence: [],
+        returnPlan: null,
+        analysis: null,
+        reward: null,
+        createdAt: now - 1_000,
+        updatedAt: now
+      }
+    ],
+    legacyMigrationCompleted: true,
+    updatedAt: now
+  };
+}
 
 async function startCloudSessionHarness() {
   const calls = [];
@@ -140,6 +169,148 @@ test("desktop app launches with an isolated bridge and persists state across res
     await expect(focus.getByText("默认关闭", { exact: true })).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop restores a valid backup and preserves an unsupported primary save", async () => {
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-recovery-e2e-"));
+  const primaryPath = path.join(userData, "tryrevive-state.json");
+  const backupPath = `${primaryPath}.bak`;
+  const futureState = {
+    schemaVersion: 6,
+    activeProjectId: "future-project",
+    projects: [{ id: "future-project", title: "未来版本原文件" }],
+    legacyMigrationCompleted: true,
+    updatedAt: 1_800_000_000_000
+  };
+  const backupState = createCurrentState("备份中保住的项目", "backup-project");
+  await writeFile(primaryPath, JSON.stringify(futureState), "utf8");
+  await writeFile(backupPath, JSON.stringify(backupState), "utf8");
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  const desktop = await electron.launch(launchOptions);
+
+  try {
+    const window = await desktop.firstWindow();
+    await expect(
+      window.getByRole("heading", { name: "先找回「备份中保住的项目」的现场" })
+    ).toBeVisible();
+    await expect(window.getByText(/已从上一份有效备份恢复本地进度/)).toBeVisible();
+  } finally {
+    await desktop.close().catch(() => undefined);
+  }
+
+  try {
+    const restored = JSON.parse(await readFile(primaryPath, "utf8"));
+    expect(restored.schemaVersion).toBe(5);
+    expect(restored.projects[0]?.title).toBe("备份中保住的项目");
+    const recoveryFiles = (await readdir(userData)).filter((name) =>
+      name.startsWith("tryrevive-state.json.recovery-")
+    );
+    expect(recoveryFiles).toHaveLength(1);
+    const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
+    expect(preserved.schemaVersion).toBe(6);
+    expect(preserved.projects[0]?.title).toBe("未来版本原文件");
+  } finally {
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop blocks writes when neither the primary nor backup can be verified", async () => {
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-blocked-recovery-e2e-"));
+  const primaryPath = path.join(userData, "tryrevive-state.json");
+  const backupPath = `${primaryPath}.bak`;
+  const futureState = {
+    schemaVersion: 6,
+    activeProjectId: "future-project",
+    projects: [{ id: "future-project", title: "不能覆盖的未来项目" }],
+    legacyMigrationCompleted: true,
+    updatedAt: 1_800_000_000_000
+  };
+  await writeFile(primaryPath, JSON.stringify(futureState), "utf8");
+  await writeFile(backupPath, "{not-valid-json", "utf8");
+  const primaryBefore = await readFile(primaryPath, "utf8");
+  const backupBefore = await readFile(backupPath, "utf8");
+  const importPath = path.join(userData, "valid-recovery-import.json");
+  await writeFile(
+    importPath,
+    JSON.stringify(createCurrentState("导入后找回的项目", "imported-project")),
+    "utf8"
+  );
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  const desktop = await electron.launch(launchOptions);
+
+  try {
+    const window = await desktop.firstWindow();
+    await expect(window.getByRole("heading", { name: "先恢复存档，再继续工作" })).toBeVisible();
+    await expect(window.getByRole("button", { name: "导入 JSON 备份" })).toBeVisible();
+    await window.getByRole("button", { name: "打开项目与数据设置" }).click();
+    await window.getByRole("link", { name: "打开黑胶星球" }).click();
+    await expect(window.getByRole("heading", { name: "先恢复存档，再继续工作" })).toBeVisible();
+    const rejectedSave = await window.evaluate(
+      async (attemptedState) => {
+        try {
+          await window.tryRevive.saveState(attemptedState);
+          return "";
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      },
+      createCurrentState("不应越过恢复锁的项目", "blocked-save")
+    );
+    expect(rejectedSave).toContain("普通保存已被桌面主进程拒绝");
+    expect(await readFile(primaryPath, "utf8")).toBe(primaryBefore);
+    expect(await readFile(backupPath, "utf8")).toBe(backupBefore);
+
+    await window.getByRole("link", { name: "TryRevive 工作台" }).click();
+    await desktop.evaluate(({ dialog }, selectedPath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
+    }, importPath);
+    await window.getByRole("button", { name: "导入 JSON 备份" }).click();
+    await expect(
+      window.getByRole("heading", { name: "先找回「导入后找回的项目」的现场" })
+    ).toBeVisible();
+  } finally {
+    await desktop.close().catch(() => undefined);
+  }
+
+  try {
+    const imported = JSON.parse(await readFile(primaryPath, "utf8"));
+    expect(imported.schemaVersion).toBe(5);
+    expect(imported.projects[0]?.title).toBe("导入后找回的项目");
+    expect(await readFile(backupPath, "utf8")).toBe(backupBefore);
+    const recoveryFiles = (await readdir(userData)).filter((name) =>
+      name.startsWith("tryrevive-state.json.recovery-")
+    );
+    expect(recoveryFiles).toHaveLength(1);
+    const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
+    expect(preserved.schemaVersion).toBe(6);
+    expect(preserved.projects[0]?.title).toBe("不能覆盖的未来项目");
+
+    const restarted = await electron.launch(launchOptions);
+    try {
+      const window = await restarted.firstWindow();
+      await expect(
+        window.getByRole("heading", { name: "先找回「导入后找回的项目」的现场" })
+      ).toBeVisible();
+    } finally {
+      await restarted.close().catch(() => undefined);
+    }
+  } finally {
     await rm(userData, { recursive: true, force: true });
   }
 });

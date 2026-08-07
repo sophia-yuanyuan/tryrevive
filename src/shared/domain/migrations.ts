@@ -9,8 +9,12 @@ import {
 
 type UnknownRecord = Record<string, unknown>;
 
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function asRecord(value: unknown): UnknownRecord {
-  return value && typeof value === "object" ? (value as UnknownRecord) : {};
+  return isRecord(value) ? value : {};
 }
 
 function asString(value: unknown): string {
@@ -22,7 +26,10 @@ function asNumber(value: unknown, fallback: number): number {
 }
 
 function migrateLegacyProject(raw: unknown, now: number): RevivalProject | null {
-  const source = asRecord(raw);
+  if (!isRecord(raw)) {
+    throw new Error("本地存档不是可识别的项目数据，TryRevive 没有覆盖它");
+  }
+  const source = raw;
   const title = asString(source.name) || asString(source.title) || asString(source.goal);
   if (!title) return null;
 
@@ -135,20 +142,38 @@ function migrateVersion4(raw: unknown): AppState | null {
 }
 
 export function migrateState(raw: unknown, now = Date.now()): AppState {
+  if (raw == null) return createEmptyState(now);
+
   const parsed = AppStateSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
 
-  const version4 = migrateVersion4(raw);
-  if (version4) return version4;
-
-  const version3 = migrateVersion3(raw);
-  if (version3) return version3;
-
   const source = asRecord(raw);
-  const legacyProjects = Array.isArray(source.projects) ? source.projects : [];
-  const projects = legacyProjects
-    .map((item) => migrateLegacyProject(item, now))
-    .filter((item): item is RevivalProject => Boolean(item));
+  const declaredVersion = source.schemaVersion;
+  if (declaredVersion === 4) {
+    const version4 = migrateVersion4(raw);
+    if (version4) return version4;
+    throw new Error("版本 4 的本地存档不完整，TryRevive 没有覆盖它");
+  }
+  if (declaredVersion === 3) {
+    const version3 = migrateVersion3(raw);
+    if (version3) return version3;
+    throw new Error("版本 3 的本地存档不完整，TryRevive 没有覆盖它");
+  }
+  if (declaredVersion !== undefined && declaredVersion !== 2) {
+    if (typeof declaredVersion === "number" && declaredVersion > SCHEMA_VERSION) {
+      throw new Error("这份存档来自更新版本的 TryRevive；请使用新版本打开，原文件没有被覆盖");
+    }
+    throw new Error("本地存档格式无法验证，TryRevive 没有覆盖它");
+  }
+
+  if (!Array.isArray(source.projects)) {
+    throw new Error("旧版存档缺少完整的项目列表，TryRevive 没有覆盖它");
+  }
+  const migratedProjects = source.projects.map((item) => migrateLegacyProject(item, now));
+  if (migratedProjects.some((item) => item == null)) {
+    throw new Error("旧版存档中有无法识别的项目，TryRevive 没有静默丢弃它");
+  }
+  const projects = migratedProjects as RevivalProject[];
   const state = createEmptyState(now);
   state.schemaVersion = SCHEMA_VERSION;
   state.projects = projects;

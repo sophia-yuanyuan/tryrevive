@@ -405,6 +405,17 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.recovery-banner {
+  width: min(46rem, calc(100% - 2rem));
+  margin: 1rem auto 0;
+  border: 1px solid rgba(39, 84, 66, 0.25);
+  border-radius: 0.9rem;
+  padding: 0.75rem 1rem;
+  color: #234e3d;
+  background: rgba(235, 246, 239, 0.88);
+  font-size: 0.82rem;
+}
+
 .dialog-overlay {
   position: fixed;
   z-index: 50;

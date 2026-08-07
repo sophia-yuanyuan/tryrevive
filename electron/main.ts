@@ -13,6 +13,8 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { AppStateSchema } from "../src/shared/domain/model";
+import { migrateState } from "../src/shared/domain/migrations";
+import type { LoadStateResult } from "../src/shared/platform/contracts";
 import { parseAudioExportRequest } from "../src/shared/audio/export";
 import {
   analyzeCloudContext,
@@ -26,6 +28,7 @@ import { IPC_CHANNELS } from "./ipc";
 
 const APP_SCHEME = "app";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+let diskRecoveryRequired = false;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -38,29 +41,104 @@ function dataPath(): string {
   return path.join(app.getPath("userData"), "tryrevive-state.json");
 }
 
-async function loadStateFromDisk(): Promise<unknown | null> {
+interface InspectedStateFile {
+  exists: boolean;
+  raw: unknown | null;
+  valid: boolean;
+  error?: string;
+}
+
+async function inspectStateFile(filePath: string): Promise<InspectedStateFile> {
   try {
-    return JSON.parse(await fs.readFile(dataPath(), "utf8"));
+    const raw: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
+    if (raw == null) throw new Error("存档内容为空");
+    migrateState(raw);
+    return { exists: true, raw, valid: true };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return null;
-    throw error;
+    if (code === "ENOENT") return { exists: false, raw: null, valid: false };
+    return {
+      exists: true,
+      raw: null,
+      valid: false,
+      error: error instanceof Error ? error.message : "存档无法读取"
+    };
   }
 }
 
-async function saveStateToDisk(input: unknown): Promise<void> {
+function recoveryPath(destination: string): string {
+  return `${destination}.recovery-${Date.now()}-${process.pid}.json`;
+}
+
+async function restoreBackup(
+  destination: string,
+  backup: string,
+  preservePrimary: boolean
+): Promise<string | null> {
+  let preservedPath: string | null = null;
+  if (preservePrimary) {
+    preservedPath = recoveryPath(destination);
+    await fs.rename(destination, preservedPath);
+  }
+  const temporary = `${destination}.restore.tmp`;
+  await fs.copyFile(backup, temporary);
+  await fs.rename(temporary, destination);
+  return preservedPath;
+}
+
+async function loadStateFromDisk(): Promise<LoadStateResult> {
+  const destination = dataPath();
+  const backup = `${destination}.bak`;
+  const primaryState = await inspectStateFile(destination);
+  if (primaryState.valid) {
+    diskRecoveryRequired = false;
+    return { state: primaryState.raw };
+  }
+
+  const backupState = await inspectStateFile(backup);
+  if (backupState.valid) {
+    const preservedPath = await restoreBackup(destination, backup, primaryState.exists);
+    const preservedMessage = preservedPath
+      ? `，原文件已保留为 ${path.basename(preservedPath)}`
+      : "";
+    diskRecoveryRequired = false;
+    return {
+      state: backupState.raw,
+      recoveryMessage: `TryRevive 已从上一份有效备份恢复本地进度${preservedMessage}`
+    };
+  }
+
+  if (!primaryState.exists && !backupState.exists) {
+    diskRecoveryRequired = false;
+    return { state: null };
+  }
+  diskRecoveryRequired = true;
+  return {
+    state: null,
+    recoveryRequired: true,
+    recoveryMessage:
+      "本地存档无法安全验证，TryRevive 没有写入空白数据。请导入你之前导出的 JSON 备份。"
+  };
+}
+
+async function saveStateToDisk(input: unknown, allowRecovery = false): Promise<void> {
+  if (diskRecoveryRequired && !allowRecovery) {
+    throw new Error("本地存档正在等待恢复；普通保存已被桌面主进程拒绝");
+  }
   const state = AppStateSchema.parse(input);
   const destination = dataPath();
   const temporary = `${destination}.tmp`;
   const backup = `${destination}.bak`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
-  try {
+  const currentState = await inspectStateFile(destination);
+  if (currentState.valid) {
     await fs.copyFile(destination, backup);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  } else if (currentState.exists) {
+    await fs.rename(destination, recoveryPath(destination));
   }
   await fs.writeFile(temporary, JSON.stringify(state, null, 2), "utf8");
   await fs.rename(temporary, destination);
+  diskRecoveryRequired = false;
 }
 
 function isAllowedExternalUrl(input: unknown): input is string {
@@ -128,7 +206,15 @@ function registerIpc(): void {
     if (result.canceled || !filePath) return { canceled: true };
     const stat = await fs.stat(filePath);
     if (stat.size > MAX_IMPORT_BYTES) throw new Error("备份文件不能超过 5 MB");
-    return { canceled: false, state: JSON.parse(await fs.readFile(filePath, "utf8")) };
+    const raw: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
+    if (diskRecoveryRequired) {
+      const imported = migrateState(raw);
+      if (!imported.projects.length) throw new Error("备份中没有可导入的项目");
+      imported.legacyMigrationCompleted = true;
+      await saveStateToDisk(imported, true);
+      return { canceled: false, state: imported, persisted: true };
+    }
+    return { canceled: false, state: raw };
   });
   ipcMain.handle(IPC_CHANNELS.openExternal, async (event, url: unknown) => {
     assertTrustedSender(event);
