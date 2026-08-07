@@ -1,0 +1,435 @@
+import {
+  MAX_TEXT_CHARS,
+  estimateCost,
+  isAcceptedAttachment,
+  normalizeAnalysis,
+  parseSourceMetadata,
+  sha256Hex,
+  stableMetadata
+} from "./cloud-core.js";
+
+const MAX_JSON_BODY_BYTES = 36 * 1024 * 1024;
+const DEFAULT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_QUOTE_MS = 10 * 60 * 1000;
+const DEFAULT_RESERVATION_MS = 10 * 60 * 1000;
+const textEncoder = new TextEncoder();
+
+class HttpError extends Error {
+  constructor(status, code, message, details = undefined) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function json(data, status = 200, headers = {}) {
+  return Response.json(data, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      ...headers
+    }
+  });
+}
+
+function errorResponse(error) {
+  if (error instanceof HttpError) {
+    return json(
+      {
+        error: error.code,
+        message: error.message,
+        ...(error.details ? { details: error.details } : {})
+      },
+      error.status
+    );
+  }
+  return json(
+    {
+      error: "internal_error",
+      message: "TryRevive 云端服务暂时不可用；本地项目没有受到影响。"
+    },
+    500
+  );
+}
+
+function boundedString(value, maximum, label) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text.length > maximum) {
+    throw new HttpError(400, "invalid_request", label + "不符合长度要求");
+  }
+  return text;
+}
+
+async function readJson(request) {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
+    throw new HttpError(413, "request_too_large", "本次内容超过云端处理上限");
+  }
+  const raw = await request.text();
+  if (raw.length > MAX_JSON_BODY_BYTES) {
+    throw new HttpError(413, "request_too_large", "本次内容超过云端处理上限");
+  }
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new HttpError(400, "invalid_json", "请求内容不是有效的 JSON");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "invalid_request", "请求内容不完整");
+  }
+  return value;
+}
+
+function parseBearer(request) {
+  const authorization = request.headers.get("authorization") || "";
+  const match = /^Bearer\s+([^\s]+)$/i.exec(authorization);
+  return match?.[1] || null;
+}
+
+async function requireAccount(request, repository, now) {
+  const token = parseBearer(request);
+  if (!token) {
+    throw new HttpError(401, "authentication_required", "请先兑换 TryRevive 算力");
+  }
+  const account = await repository.findAccountBySession(await sha256Hex(token), now);
+  if (!account) {
+    throw new HttpError(401, "session_expired", "算力凭据已失效，请重新兑换或登录");
+  }
+  return account;
+}
+
+async function optionalAccount(request, repository, now) {
+  const token = parseBearer(request);
+  if (!token) return null;
+  const account = await repository.findAccountBySession(await sha256Hex(token), now);
+  if (!account) {
+    throw new HttpError(401, "session_expired", "算力凭据已失效，请重新兑换或登录");
+  }
+  return account;
+}
+
+function publicSource(metadata) {
+  const source = parseSourceMetadata(metadata);
+  if (!isAcceptedAttachment(source)) {
+    throw new HttpError(415, "unsupported_source", "当前不支持这种语音或附件格式");
+  }
+  return {
+    ...source,
+    name: source.kind === "audio" ? "语音" : source.kind === "text" ? "文字" : "附件"
+  };
+}
+
+function parseBase64(value) {
+  const input = typeof value === "string" ? value : "";
+  if (!input || input.length > MAX_JSON_BODY_BYTES) {
+    throw new HttpError(400, "invalid_source", "附件内容不完整");
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(input) || input.length % 4 !== 0) {
+    throw new HttpError(400, "invalid_source", "附件内容编码无效");
+  }
+  let binary;
+  try {
+    binary = atob(input);
+  } catch {
+    throw new HttpError(400, "invalid_source", "附件内容编码无效");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function parseAnalyzeSource(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const metadata = parseSourceMetadata(source.metadata);
+  if (!isAcceptedAttachment(metadata)) {
+    throw new HttpError(415, "unsupported_source", "当前不支持这种语音或附件格式");
+  }
+  const hasText = typeof source.text === "string" && source.text.length > 0;
+  const hasBase64 = typeof source.base64 === "string" && source.base64.length > 0;
+  if (hasText === hasBase64) {
+    throw new HttpError(400, "invalid_source", "一次只能提交一份文字或附件内容");
+  }
+  if (hasText) {
+    if (metadata.kind === "audio") {
+      throw new HttpError(400, "invalid_source", "语音内容必须使用附件字节上传");
+    }
+    if (source.text.length > MAX_TEXT_CHARS) {
+      throw new HttpError(413, "text_too_large", "文字内容超过云端处理上限");
+    }
+    if (textEncoder.encode(source.text).byteLength !== metadata.sizeBytes) {
+      throw new HttpError(400, "source_size_mismatch", "文字大小与上传前确认的信息不一致");
+    }
+    return { metadata, text: source.text };
+  }
+  if (metadata.kind === "text") {
+    throw new HttpError(400, "invalid_source", "文字内容必须以文字形式提交");
+  }
+  const bytes = parseBase64(source.base64);
+  if (bytes.byteLength !== metadata.sizeBytes) {
+    throw new HttpError(400, "source_size_mismatch", "附件大小与上传前确认的信息不一致");
+  }
+  return { metadata, bytes };
+}
+
+function providerFailureCode(error) {
+  const code = typeof error?.code === "string" ? error.code : "provider_failed";
+  return code.slice(0, 80);
+}
+
+function providerAvailable(provider) {
+  return Boolean(provider && provider.available === true && typeof provider.analyze === "function");
+}
+
+export function createCloudService({
+  repository,
+  provider = null,
+  now = () => Date.now(),
+  randomToken,
+  randomId = () => crypto.randomUUID(),
+  sessionDurationMs = DEFAULT_SESSION_MS,
+  quoteDurationMs = DEFAULT_QUOTE_MS,
+  reservationDurationMs = DEFAULT_RESERVATION_MS,
+  uploadNotice = "只有在你确认后，所选内容才会发送给 TryRevive 云端处理。",
+  retentionNotice = "当前内测服务不会连接真实处理方；正式启用前会显示具体保留期限和删除入口。"
+}) {
+  if (!repository) throw new Error("cloud repository is required");
+  if (typeof randomToken !== "function") throw new Error("secure random token generator is required");
+
+  async function handleCatalog() {
+    return json({
+      service: "tryrevive-cloud",
+      available: true,
+      analysisAvailable: providerAvailable(provider),
+      units: ["speechMinutes", "projectAnalyses"],
+      limits: {
+        sourceBytes: 25 * 1024 * 1024,
+        textCharacters: MAX_TEXT_CHARS,
+        audioSeconds: 3600
+      }
+    });
+  }
+
+  async function handleRedeem(request) {
+    const timestamp = now();
+    const body = await readJson(request);
+    const code = boundedString(body.code, 80, "兑换码");
+    if (code.length < 6) throw new HttpError(400, "invalid_code", "兑换码格式无效");
+    const existing = await optionalAccount(request, repository, timestamp);
+    const sessionToken = randomToken(32);
+    const result = await repository.redeem({
+      codeHash: await sha256Hex(code),
+      existingAccountId: existing?.id || null,
+      newAccountId: "acct_" + randomId(),
+      sessionTokenHash: await sha256Hex(sessionToken),
+      sessionExpiresAt: timestamp + sessionDurationMs,
+      now: timestamp,
+      ledgerId: "ledger_" + randomId()
+    });
+    if (!result) {
+      throw new HttpError(409, "code_unavailable", "兑换码无效或已经使用");
+    }
+    return json({
+      sessionToken,
+      balance: result.balance,
+      message: existing ? "算力已经加入当前账户。" : "算力兑换成功。"
+    });
+  }
+
+  async function handleAccount(request) {
+    const account = await requireAccount(request, repository, now());
+    return json({ balance: account.balance });
+  }
+
+  async function handleQuote(request) {
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const body = await readJson(request);
+    let source;
+    try {
+      source = publicSource(body.source);
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, "invalid_source", error instanceof Error ? error.message : "来源信息无效");
+    }
+    const cost = estimateCost(source);
+    const expiresAt = timestamp + quoteDurationMs;
+    const quote = await repository.createQuote({
+      id: "quote_" + randomId(),
+      accountId: account.id,
+      source,
+      sourceFingerprint: await sha256Hex(stableMetadata(source)),
+      cost,
+      expiresAt,
+      now: timestamp
+    });
+    return json({
+      id: quote.id,
+      source,
+      cost,
+      balance: account.balance,
+      canAfford:
+        account.balance.speechMinutes >= cost.speechMinutes &&
+        account.balance.projectAnalyses >= cost.projectAnalyses,
+      expiresAt,
+      uploadNotice,
+      retentionNotice
+    });
+  }
+
+  async function handleReserve(request) {
+    if (!providerAvailable(provider)) {
+      throw new HttpError(
+        503,
+        "analysis_not_enabled",
+        "真实语音和附件处理尚未启用，本次没有预留或扣除算力。"
+      );
+    }
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const body = await readJson(request);
+    const idempotencyKey = boundedString(body.idempotencyKey, 120, "幂等请求号");
+    if (idempotencyKey.length < 12) {
+      throw new HttpError(400, "invalid_idempotency_key", "幂等请求号格式无效");
+    }
+    const quoteId = boundedString(body.quoteId, 200, "报价编号");
+    let source;
+    try {
+      source = publicSource(body.source);
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, "invalid_source", error instanceof Error ? error.message : "来源信息无效");
+    }
+    const reservationToken = randomToken(32);
+    const result = await repository.reserve({
+      accountId: account.id,
+      idempotencyKey,
+      quoteId,
+      sourceFingerprint: await sha256Hex(stableMetadata(source)),
+      reservationTokenHash: await sha256Hex(reservationToken),
+      reservationExpiresAt: timestamp + reservationDurationMs,
+      reservationNonce: "reserve_" + randomId(),
+      reserveLedgerId: "ledger_" + randomId(),
+      now: timestamp
+    });
+    if (result.status === "insufficient") {
+      throw new HttpError(402, "insufficient_balance", "当前算力额度不足，本次内容没有上传处理");
+    }
+    if (result.status === "invalid_quote") {
+      throw new HttpError(409, "invalid_quote", "报价已过期或与当前内容不一致，请重新查看预计消耗");
+    }
+    if (result.status === "failed") {
+      throw new HttpError(409, "previous_attempt_failed", "上次处理失败且额度已归还，请重新发起一次处理");
+    }
+    if (result.status === "processing") {
+      throw new HttpError(409, "already_processing", "这份内容正在处理中，请不要重复提交");
+    }
+    if (result.status === "succeeded") {
+      return json({ status: "succeeded", result: result.result });
+    }
+    return json({
+      status: "reserved",
+      reservationToken,
+      balance: result.balance,
+      charged: result.charged,
+      expiresAt: result.expiresAt
+    });
+  }
+
+  async function handleAnalyze(request) {
+    if (!providerAvailable(provider)) {
+      throw new HttpError(
+        503,
+        "analysis_not_enabled",
+        "真实语音和附件处理尚未启用，本次内容没有发送给第三方。"
+      );
+    }
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const body = await readJson(request);
+    const idempotencyKey = boundedString(body.idempotencyKey, 120, "幂等请求号");
+    const projectTitle = boundedString(body.projectTitle, 80, "项目名称");
+    const reservationToken = boundedString(
+      request.headers.get("x-tryrevive-reservation"),
+      512,
+      "预留凭据"
+    );
+    let source;
+    try {
+      source = parseAnalyzeSource(body.source);
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, "invalid_source", error instanceof Error ? error.message : "来源内容无效");
+    }
+    const claim = await repository.claim({
+      accountId: account.id,
+      idempotencyKey,
+      reservationTokenHash: await sha256Hex(reservationToken),
+      sourceFingerprint: await sha256Hex(stableMetadata(source.metadata)),
+      now: timestamp
+    });
+    if (claim.status === "succeeded") return json(claim.result);
+    if (claim.status !== "claimed") {
+      throw new HttpError(409, "reservation_unavailable", "上传确认已过期、已使用或与当前内容不一致");
+    }
+    try {
+      const rawAnalysis = await provider.analyze({ projectTitle, source });
+      const draft = normalizeAnalysis(rawAnalysis, {
+        sourceLabel: source.metadata.kind === "audio" ? "语音" : source.metadata.kind === "text" ? "文字" : "附件",
+        createdAt: now()
+      });
+      const result = await repository.succeed({
+        accountId: account.id,
+        idempotencyKey,
+        draft,
+        settleLedgerId: "ledger_" + randomId(),
+        now: now()
+      });
+      return json({
+        draft,
+        balance: result.balance,
+        charged: claim.charged,
+        idempotencyKey
+      });
+    } catch (error) {
+      const refunded = await repository.failAndRefund({
+        accountId: account.id,
+        idempotencyKey,
+        errorCode: providerFailureCode(error),
+        releaseLedgerId: "ledger_" + randomId(),
+        now: now()
+      });
+      throw new HttpError(502, "analysis_failed", "云端处理失败，预留算力已经归还。", {
+        refunded: true,
+        balance: refunded.balance
+      });
+    }
+  }
+
+  return async function fetch(request) {
+    try {
+      const url = new URL(request.url);
+      if (request.method === "GET" && url.pathname === "/v1/cloud/catalog") return handleCatalog();
+      if (request.method === "POST" && url.pathname === "/v1/cloud/redeem") {
+        return await handleRedeem(request);
+      }
+      if (request.method === "GET" && url.pathname === "/v1/cloud/account") {
+        return await handleAccount(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/quote") {
+        return await handleQuote(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/reservations") {
+        return await handleReserve(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/analyze") {
+        return await handleAnalyze(request);
+      }
+      return json({ error: "not_found", message: "接口不存在" }, 404);
+    } catch (error) {
+      return errorResponse(error);
+    }
+  };
+}

@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "electron:install": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-electron.ps1",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:worker": "node --test worker/cloud-core.test.mjs",
+    "test:worker": "node --test worker/cloud-core.test.mjs worker/cloud-service-core.test.mjs",
     "test:focus:windows": "node --test tests/integration/foreground-monitor.test.mjs",
     "test:e2e": "playwright test --config playwright.config.mjs tests/e2e/web.spec.mjs",
     "test:e2e:desktop": "npm run electron:install && npm run build:desktop && playwright test --config playwright.config.mjs tests/e2e/desktop.spec.mjs --project electron",

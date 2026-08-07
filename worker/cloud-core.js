@@ -122,6 +122,24 @@ export function isAcceptedAttachment(metadata) {
   const source = parseSourceMetadata(metadata);
   if (source.kind === "audio") return /^audio\//i.test(source.mimeType);
   if (source.kind === "text") return /^text\//i.test(source.mimeType);
+  const acceptedMimeTypes = new Set([
+    "application/json",
+    "application/msword",
+    "application/pdf",
+    "application/rtf",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/xml"
+  ]);
+  if (/^text\//i.test(source.mimeType) || acceptedMimeTypes.has(source.mimeType.toLowerCase())) {
+    return true;
+  }
   return /\.(pdf|doc|docx|rtf|odt|txt|md|json|html|xml|csv|xls|xlsx|ppt|pptx)$/i.test(
     source.name
   );
