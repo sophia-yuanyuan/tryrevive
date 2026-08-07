@@ -121,4 +121,33 @@ describe("FocusMode guardian controls", () => {
     expect(mocks.acknowledge).toHaveBeenCalledWith("necessary");
     wrapper.unmount();
   });
+
+  it("keeps the last real scene visible when reduced motion is requested", async () => {
+    const project = createProject("报名项目", 1_800_000_000_000);
+    project.restore.lastCompleted = "已经写完报名简介";
+    project.action = {
+      id: "action-reduced-motion",
+      text: "核对报名截止时间",
+      doneDefinition: "截止时间写进项目",
+      minutes: 5,
+      startedAt: null,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "05:00", started: false },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("回到上次离开的地方");
+    expect(wrapper.text()).toContain("已经写完报名简介");
+    expect(wrapper.text()).not.toContain("按住 0.8 秒，让唱针落下");
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    expect(wrapper.text()).toContain("按住 0.8 秒，让唱针落下");
+    wrapper.unmount();
+  });
 });

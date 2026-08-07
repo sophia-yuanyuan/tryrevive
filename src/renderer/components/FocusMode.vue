@@ -19,7 +19,7 @@ const emit = defineEmits<{
 
 const store = useRevivalStore();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const phase = ref(props.started ? 3 : reducedMotion ? 2 : 1);
+const phase = ref(props.started ? 3 : 1);
 const resetOpen = ref(false);
 const resetCause = ref<"manual" | "guardian">("manual");
 const guardianAvailable = ref(false);
@@ -211,7 +211,11 @@ onMounted(() => {
       guardianMessage.value = error instanceof Error ? error.message : "无法读取偏离提醒状态";
     });
   if (!props.started && !reducedMotion) {
-    phaseTimers.push(window.setTimeout(() => (phase.value = 2), 3_200));
+    phaseTimers.push(
+      window.setTimeout(() => {
+        if (phase.value === 1) phase.value = 2;
+      }, 3_200)
+    );
   }
 });
 
@@ -274,12 +278,15 @@ onBeforeUnmount(() => {
             @pointercancel="cancelEntryHold()"
             @keydown.space.prevent="beginEntryHold"
             @keyup.space.prevent="cancelEntryHold()"
-            @keydown.enter.prevent="dropNeedle"
+            @keydown.enter.prevent="beginEntryHold"
+            @keyup.enter.prevent="cancelEntryHold()"
             @click.prevent
           >
             <span>{{ entryBusy ? "正在落针…" : "按住 0.8 秒，让唱针落下" }}</span>
             <small>
-              {{ entryHolding ? `${Math.round(entryProgress * 100)}%` : "鼠标、触摸或空格" }}
+              {{
+                entryHolding ? `${Math.round(entryProgress * 100)}%` : "鼠标、触摸、空格或 Enter"
+              }}
             </small>
           </button>
           <p v-if="entryError" class="focus-entry-error" role="alert">{{ entryError }}</p>

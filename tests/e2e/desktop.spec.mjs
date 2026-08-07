@@ -108,6 +108,7 @@ async function startCloudSessionHarness() {
 }
 
 test("desktop app launches with an isolated bridge and persists state across restart", async () => {
+  test.setTimeout(60_000);
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-e2e-"));
   const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
   const launchOptions = executablePath
@@ -157,7 +158,10 @@ test("desktop app launches with an isolated bridge and persists state across res
     await focus.getByText("完成了项目入口", { exact: false }).click();
     const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
     await expect(dropNeedle).toBeVisible();
-    await dropNeedle.press("Space", { delay: 900 });
+    await dropNeedle.press("Enter", { delay: 300 });
+    await expect(dropNeedle).toBeVisible();
+    await expect(focus.getByLabel("当前时间盒剩余时间")).toHaveCount(0);
+    await dropNeedle.press("Enter", { delay: 900 });
     await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
     await expect(focus.getByText("Windows 偏离提醒", { exact: true })).toBeVisible();
     await expect(focus.getByText(/不读取按键、窗口标题或网页/)).toBeVisible();
