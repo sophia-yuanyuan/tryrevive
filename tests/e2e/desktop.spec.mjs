@@ -34,6 +34,9 @@ test("desktop app launches with an isolated bridge and persists state across res
     await expect(
       window.getByRole("heading", { name: "先找回「桌面端课程项目」的现场" })
     ).toBeVisible();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await expect(window.getByText("当前不会上传任何内容")).toBeVisible();
+    await expect(window.getByText(/不会上传你的项目内容/)).toBeVisible();
 
     await desktop.close();
     desktop = await electron.launch(launchOptions);

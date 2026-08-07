@@ -1,6 +1,6 @@
 {
   "name": "tryrevive",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Student-first stalled-project revival app for web and desktop.",
@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "electron:install": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-electron.ps1",
     "test:unit": "vitest run --config vitest.config.ts",
+    "test:worker": "node --test worker/cloud-core.test.mjs",
     "test:e2e": "playwright test --config playwright.config.mjs tests/e2e/web.spec.mjs",
     "test:e2e:desktop": "npm run electron:install && npm run build:desktop && playwright test --config playwright.config.mjs tests/e2e/desktop.spec.mjs --project electron",
     "test:e2e:packaged": "set \"ELECTRON_EXECUTABLE_PATH=release\\win-unpacked\\TryRevive.exe\" && playwright test --config playwright.config.mjs tests/e2e/desktop.spec.mjs --project electron",
@@ -25,7 +26,7 @@
     "build:desktop": "npm run typecheck && electron-vite build",
     "dist:win": "npm run electron:install && npm run build:desktop && electron-builder --win",
     "verify:dist:win": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-artifacts.ps1",
-    "check": "npm run typecheck && npm run lint && npm run test:unit && npm run build:web && npm run build:desktop"
+    "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:worker && npm run build:web && npm run build:desktop"
   },
   "dependencies": {
     "pinia": "^4.0.2",

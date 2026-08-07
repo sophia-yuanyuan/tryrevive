@@ -60,3 +60,13 @@ test("multiple unfinished projects can be collected in one local intake", async 
   await expect(dialog.getByText("报名英语考试", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完成 TryRevive 桌面版", { exact: true })).toBeVisible();
 });
+
+test("cloud context entry stays explicit and never asks for an API key", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("所有还在心里的项目").fill("申请黑客松");
+  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
+  await page.getByRole("button", { name: "查看云端入口" }).click();
+  await expect(page.getByText("当前不会上传任何内容")).toBeVisible();
+  await expect(page.getByText(/仅在桌面版内测/)).toBeVisible();
+  await expect(page.getByText(/API Key/)).toHaveCount(1);
+});

@@ -2,6 +2,8 @@ import {
   ActionSchema,
   type Decision,
   EvidenceSchema,
+  ProjectAnalysisSchema,
+  type ProjectAnalysis,
   type RestoreContext,
   ReturnPlanSchema,
   type RevivalAction,
@@ -22,6 +24,30 @@ export function saveRestore(
     throw new Error("请先写下最后完成的内容和当前卡点。");
   }
   return touch({ ...project, restore, stage: "decision", status: "active" }, now);
+}
+
+export function applyProjectAnalysis(
+  project: RevivalProject,
+  input: ProjectAnalysis,
+  now = Date.now()
+): RevivalProject {
+  const analysis = ProjectAnalysisSchema.parse(input);
+  return touch(
+    {
+      ...project,
+      restore: {
+        lastCompleted: analysis.lastCompleted,
+        stuckAt: analysis.stuckAt,
+        deadline: analysis.deadline,
+        whyMatters: analysis.whyMatters
+      },
+      diagnosis: analysis.stallReasons,
+      analysis,
+      status: "active",
+      stage: "decision"
+    },
+    now
+  );
 }
 
 export function chooseDecision(
@@ -132,6 +158,7 @@ export function suggestedAction(project: RevivalProject): {
   doneDefinition: string;
   minutes: number;
 } {
+  if (project.analysis) return { ...project.analysis.nextAction };
   const stuckAt = project.restore.stuckAt || "当前卡点";
   if (project.decision === "shrink") {
     return {

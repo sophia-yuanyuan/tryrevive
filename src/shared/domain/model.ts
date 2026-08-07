@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 3 as const;
+export const SCHEMA_VERSION = 4 as const;
 
 export const ProjectStageSchema = z.enum([
   "restore",
@@ -16,6 +16,25 @@ export const ProjectStageSchema = z.enum([
 
 export const ProjectStatusSchema = z.enum(["active", "paused", "abandoned", "completed"]);
 export const DecisionSchema = z.enum(["continue", "shrink", "help", "pause", "abandon"]);
+
+export const ProjectAnalysisSchema = z.object({
+  id: z.string().min(1),
+  sourceLabel: z.string().trim().min(1).max(180),
+  originalGoal: z.string().trim().min(1).max(500),
+  lastCompleted: z.string().trim().min(1).max(240),
+  stuckAt: z.string().trim().min(1).max(240),
+  deadline: z.string().trim().max(80).default(""),
+  whyMatters: z.string().trim().max(240).default(""),
+  stallReasons: z.array(z.string().trim().min(1).max(240)).min(1).max(3),
+  suggestedDecision: DecisionSchema,
+  nextAction: z.object({
+    text: z.string().trim().min(1).max(160),
+    doneDefinition: z.string().trim().min(1).max(160),
+    minutes: z.number().int().min(5).max(20)
+  }),
+  uncertainties: z.array(z.string().trim().min(1).max(240)).max(5),
+  createdAt: z.number().int().positive()
+});
 
 export const RestoreContextSchema = z.object({
   lastCompleted: z.string().trim().max(240),
@@ -60,6 +79,7 @@ export const ProjectSchema = z.object({
   actionHistory: z.array(ActionSchema).max(50),
   evidence: z.array(EvidenceSchema).max(100),
   returnPlan: ReturnPlanSchema.nullable(),
+  analysis: ProjectAnalysisSchema.nullable(),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive()
 });
@@ -79,6 +99,7 @@ export type RestoreContext = z.infer<typeof RestoreContextSchema>;
 export type RevivalAction = z.infer<typeof ActionSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type ReturnPlan = z.infer<typeof ReturnPlanSchema>;
+export type ProjectAnalysis = z.infer<typeof ProjectAnalysisSchema>;
 export type RevivalProject = z.infer<typeof ProjectSchema>;
 export type AppState = z.infer<typeof AppStateSchema>;
 
@@ -111,6 +132,7 @@ export function createProject(title: string, now = Date.now()): RevivalProject {
     actionHistory: [],
     evidence: [],
     returnPlan: null,
+    analysis: null,
     createdAt: now,
     updatedAt: now
   };

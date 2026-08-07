@@ -101,9 +101,28 @@ function migrateLegacyProject(raw: unknown, now: number): RevivalProject | null 
   return project;
 }
 
+function migrateVersion3(raw: unknown): AppState | null {
+  const source = asRecord(raw);
+  if (source.schemaVersion !== 3 || !Array.isArray(source.projects)) return null;
+  const candidate = {
+    ...source,
+    schemaVersion: SCHEMA_VERSION,
+    projects: source.projects.map((item) => ({
+      ...asRecord(item),
+      schemaVersion: SCHEMA_VERSION,
+      analysis: null
+    }))
+  };
+  const parsed = AppStateSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
 export function migrateState(raw: unknown, now = Date.now()): AppState {
   const parsed = AppStateSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
+
+  const version3 = migrateVersion3(raw);
+  if (version3) return version3;
 
   const source = asRecord(raw);
   const legacyProjects = Array.isArray(source.projects) ? source.projects : [];

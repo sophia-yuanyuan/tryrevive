@@ -102,6 +102,24 @@ const webPlatform: AppPlatform = {
     if (!["http:", "https:"].includes(parsed.protocol)) return false;
     window.open(parsed.href, "_blank", "noopener,noreferrer");
     return true;
+  },
+  async cloudStatus() {
+    return {
+      available: false,
+      authenticated: false,
+      balance: null,
+      secureSessionStorage: false,
+      message: "云端理解当前仅在桌面版内测；网页版仍可完成全部本地流程。"
+    };
+  },
+  async redeemCloudCode() {
+    throw new Error("云端理解当前仅在桌面版内测");
+  },
+  async quoteCloudContext() {
+    throw new Error("云端理解当前仅在桌面版内测");
+  },
+  async analyzeCloudContext() {
+    throw new Error("云端理解当前仅在桌面版内测");
   }
 };
 
@@ -112,7 +130,11 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     saveState: (state) => bridge.saveState(state),
     exportState: (state) => bridge.exportState(state),
     importState: () => bridge.importState(),
-    openExternal: (url) => bridge.openExternal(url)
+    openExternal: (url) => bridge.openExternal(url),
+    cloudStatus: () => bridge.cloudStatus(),
+    redeemCloudCode: (code) => bridge.redeemCloudCode(code),
+    quoteCloudContext: (source) => bridge.quoteCloudContext(source),
+    analyzeCloudContext: (request) => bridge.analyzeCloudContext(request)
   };
 }
 

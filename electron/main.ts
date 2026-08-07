@@ -13,6 +13,12 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { AppStateSchema } from "../src/shared/domain/model";
+import {
+  analyzeCloudContext,
+  getCloudStatus,
+  quoteCloudContext,
+  redeemCloudCode
+} from "./cloud";
 import { IPC_CHANNELS } from "./ipc";
 
 const APP_SCHEME = "app";
@@ -114,6 +120,22 @@ function registerIpc(): void {
     if (!isAllowedExternalUrl(url)) return false;
     await shell.openExternal(url);
     return true;
+  });
+  ipcMain.handle(IPC_CHANNELS.cloudStatus, async (event) => {
+    assertTrustedSender(event);
+    return getCloudStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.redeemCloudCode, async (event, code: unknown) => {
+    assertTrustedSender(event);
+    return redeemCloudCode(code);
+  });
+  ipcMain.handle(IPC_CHANNELS.quoteCloudContext, async (event, source: unknown) => {
+    assertTrustedSender(event);
+    return quoteCloudContext(source);
+  });
+  ipcMain.handle(IPC_CHANNELS.analyzeCloudContext, async (event, request: unknown) => {
+    assertTrustedSender(event);
+    return analyzeCloudContext(request as Parameters<typeof analyzeCloudContext>[0]);
   });
 }
 

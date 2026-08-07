@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   type AppState,
   type Decision,
+  type ProjectAnalysis,
   type RestoreContext,
   type RevivalProject,
   AppStateSchema,
@@ -12,6 +13,7 @@ import {
 import { migrateState } from "@/shared/domain/migrations";
 import {
   addEvidence,
+  applyProjectAnalysis,
   assignAction,
   chooseDecision,
   completeAction,
@@ -119,6 +121,12 @@ export const useRevivalStore = defineStore("revival", () => {
     await persist();
   }
 
+  async function applyAnalysis(analysis: ProjectAnalysis): Promise<void> {
+    if (!activeProject.value) return;
+    replaceActive(applyProjectAnalysis(activeProject.value, analysis));
+    await persist();
+  }
+
   async function decide(decision: Decision): Promise<void> {
     if (!activeProject.value) return;
     replaceActive(chooseDecision(activeProject.value, decision));
@@ -206,6 +214,7 @@ export const useRevivalStore = defineStore("revival", () => {
     selectProject,
     prepareNewProject,
     recordRestore,
+    applyAnalysis,
     decide,
     diagnose,
     setAction,

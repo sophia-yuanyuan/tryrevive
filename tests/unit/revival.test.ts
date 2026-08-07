@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createProject } from "@/shared/domain/model";
 import {
   addEvidence,
+  applyProjectAnalysis,
   assignAction,
   chooseDecision,
   completeAction,
@@ -92,5 +93,32 @@ describe("revival domain flow", () => {
     expect(paused).toMatchObject({ status: "paused", stage: "resume" });
     expect(resumeProject(paused)).toMatchObject({ status: "active", stage: "action" });
     expect(abandoned).toMatchObject({ status: "abandoned", stage: "closed" });
+  });
+
+  it("keeps a cloud analysis as a user-confirmed draft and reuses its next action", () => {
+    const project = applyProjectAnalysis(createProject("黑客松申请", 1_800_000_000_000), {
+      id: "draft-1",
+      sourceLabel: "报名记录.md",
+      originalGoal: "提交一份真实的黑客松申请",
+      lastCompleted: "写完项目背景",
+      stuckAt: "团队分工还没有落笔",
+      deadline: "周日 20:00",
+      whyMatters: "想验证 TryRevive",
+      stallReasons: ["下一步范围太大", "等待队友信息"],
+      suggestedDecision: "shrink",
+      nextAction: {
+        text: "只写自己的角色和已经完成的工作",
+        doneDefinition: "申请表出现一段 80 字以内的个人职责",
+        minutes: 10
+      },
+      uncertainties: ["队友是否已经确认参加"],
+      createdAt: 1_800_000_000_001
+    });
+
+    expect(project.stage).toBe("decision");
+    expect(project.restore.lastCompleted).toBe("写完项目背景");
+    expect(project.diagnosis).toHaveLength(2);
+    expect(project.analysis?.uncertainties[0]).toContain("队友");
+    expect(project.analysis?.nextAction.text).toContain("自己的角色");
   });
 });

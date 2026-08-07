@@ -1,4 +1,12 @@
 import type { AppState } from "../domain/model";
+import type {
+  CloudAnalysisResult,
+  CloudAnalyzeRequest,
+  CloudQuote,
+  CloudRedeemResult,
+  CloudSourceMetadata,
+  CloudStatus
+} from "../cloud/contracts";
 
 export interface ExportResult {
   canceled: boolean;
@@ -17,6 +25,10 @@ export interface AppPlatform {
   exportState(state: AppState): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
+  cloudStatus(): Promise<CloudStatus>;
+  redeemCloudCode(code: string): Promise<CloudRedeemResult>;
+  quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
+  analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
 }
 
 export interface DesktopBridge {
@@ -25,4 +37,8 @@ export interface DesktopBridge {
   exportState(state: AppState): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
+  cloudStatus(): Promise<CloudStatus>;
+  redeemCloudCode(code: string): Promise<CloudRedeemResult>;
+  quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
+  analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
 }
