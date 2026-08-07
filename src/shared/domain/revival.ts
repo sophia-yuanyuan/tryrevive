@@ -4,6 +4,8 @@ import {
   EvidenceSchema,
   ProjectAnalysisSchema,
   type ProjectAnalysis,
+  type ProjectMood,
+  ProjectRewardSchema,
   type RestoreContext,
   ReturnPlanSchema,
   type RevivalAction,
@@ -149,8 +151,23 @@ export function resumeProject(project: RevivalProject, now = Date.now()): Reviva
   return touch({ ...project, status: "active", stage: "action", returnPlan: null }, now);
 }
 
-export function markProjectCompleted(project: RevivalProject, now = Date.now()): RevivalProject {
-  return touch({ ...project, status: "completed", stage: "closed" }, now);
+export function markProjectCompleted(
+  project: RevivalProject,
+  mood: ProjectMood | null = null,
+  now = Date.now()
+): RevivalProject {
+  const reward = mood ? ProjectRewardSchema.parse({ mood, createdAt: now }) : project.reward;
+  return touch({ ...project, status: "completed", stage: "closed", reward }, now);
+}
+
+export function setProjectReward(
+  project: RevivalProject,
+  mood: ProjectMood,
+  now = Date.now()
+): RevivalProject {
+  if (project.status !== "completed") throw new Error("项目完成后才能生成收藏唱片。");
+  const reward = ProjectRewardSchema.parse({ mood, createdAt: now });
+  return touch({ ...project, reward }, now);
 }
 
 export function suggestedAction(project: RevivalProject): {

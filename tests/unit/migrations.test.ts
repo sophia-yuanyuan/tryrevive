@@ -25,7 +25,7 @@ describe("state migrations", () => {
     };
 
     const state = migrateState(legacy, 1_800_000_000_000);
-    expect(state.schemaVersion).toBe(4);
+    expect(state.schemaVersion).toBe(5);
     expect(state.activeProjectId).toBe("legacy-1");
     expect(state.projects[0]).toMatchObject({
       title: "课程网站",
@@ -56,9 +56,7 @@ describe("state migrations", () => {
           diagnosis: ["缺少队友信息"],
           action: null,
           actionHistory: [],
-          evidence: [
-            { id: "e-1", note: "问题陈述已保存", link: "", createdAt: 1_800_000_000_001 }
-          ],
+          evidence: [{ id: "e-1", note: "问题陈述已保存", link: "", createdAt: 1_800_000_000_001 }],
           returnPlan: null,
           createdAt: 1_800_000_000_000,
           updatedAt: 1_800_000_000_001
@@ -68,10 +66,52 @@ describe("state migrations", () => {
       updatedAt: 1_800_000_000_001
     });
 
-    expect(state.schemaVersion).toBe(4);
+    expect(state.schemaVersion).toBe(5);
     expect(state.projects[0]?.analysis).toBeNull();
+    expect(state.projects[0]?.reward).toBeNull();
     expect(state.projects[0]?.evidence[0]?.note).toBe("问题陈述已保存");
     expect(state.projects[0]?.restore.stuckAt).toBe("没有补团队介绍");
+  });
+
+  it("upgrades version 4 and preserves every existing project field", () => {
+    const state = migrateState({
+      schemaVersion: 4,
+      activeProjectId: "p-4",
+      projects: [
+        {
+          id: "p-4",
+          schemaVersion: 4,
+          title: "作品集投递",
+          stage: "closed",
+          status: "completed",
+          restore: {
+            lastCompleted: "已经投递",
+            stuckAt: "",
+            deadline: "",
+            whyMatters: "记录自己的完成"
+          },
+          decision: "continue",
+          diagnosis: [],
+          action: null,
+          actionHistory: [],
+          evidence: [],
+          returnPlan: null,
+          analysis: null,
+          createdAt: 1_800_000_000_000,
+          updatedAt: 1_800_000_000_001
+        }
+      ],
+      legacyMigrationCompleted: true,
+      updatedAt: 1_800_000_000_001
+    });
+
+    expect(state.schemaVersion).toBe(5);
+    expect(state.projects[0]).toMatchObject({
+      id: "p-4",
+      title: "作品集投递",
+      status: "completed",
+      reward: null
+    });
   });
 
   it("extracts the revive payload from the old local guest save", () => {

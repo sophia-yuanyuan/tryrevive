@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 4 as const;
+export const SCHEMA_VERSION = 5 as const;
 
 export const ProjectStageSchema = z.enum([
   "restore",
@@ -16,6 +16,12 @@ export const ProjectStageSchema = z.enum([
 
 export const ProjectStatusSchema = z.enum(["active", "paused", "abandoned", "completed"]);
 export const DecisionSchema = z.enum(["continue", "shrink", "help", "pause", "abandon"]);
+export const ProjectMoodSchema = z.enum(["calm", "relieved", "proud", "energized", "bittersweet"]);
+
+export const ProjectRewardSchema = z.object({
+  mood: ProjectMoodSchema,
+  createdAt: z.number().int().positive()
+});
 
 export const ProjectAnalysisSchema = z.object({
   id: z.string().min(1),
@@ -80,6 +86,7 @@ export const ProjectSchema = z.object({
   evidence: z.array(EvidenceSchema).max(100),
   returnPlan: ReturnPlanSchema.nullable(),
   analysis: ProjectAnalysisSchema.nullable(),
+  reward: ProjectRewardSchema.nullable(),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive()
 });
@@ -95,6 +102,8 @@ export const AppStateSchema = z.object({
 export type ProjectStage = z.infer<typeof ProjectStageSchema>;
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
 export type Decision = z.infer<typeof DecisionSchema>;
+export type ProjectMood = z.infer<typeof ProjectMoodSchema>;
+export type ProjectReward = z.infer<typeof ProjectRewardSchema>;
 export type RestoreContext = z.infer<typeof RestoreContextSchema>;
 export type RevivalAction = z.infer<typeof ActionSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
@@ -133,6 +142,7 @@ export function createProject(title: string, now = Date.now()): RevivalProject {
     evidence: [],
     returnPlan: null,
     analysis: null,
+    reward: null,
     createdAt: now,
     updatedAt: now
   };

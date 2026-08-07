@@ -110,7 +110,24 @@ function migrateVersion3(raw: unknown): AppState | null {
     projects: source.projects.map((item) => ({
       ...asRecord(item),
       schemaVersion: SCHEMA_VERSION,
-      analysis: null
+      analysis: null,
+      reward: null
+    }))
+  };
+  const parsed = AppStateSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
+function migrateVersion4(raw: unknown): AppState | null {
+  const source = asRecord(raw);
+  if (source.schemaVersion !== 4 || !Array.isArray(source.projects)) return null;
+  const candidate = {
+    ...source,
+    schemaVersion: SCHEMA_VERSION,
+    projects: source.projects.map((item) => ({
+      ...asRecord(item),
+      schemaVersion: SCHEMA_VERSION,
+      reward: null
     }))
   };
   const parsed = AppStateSchema.safeParse(candidate);
@@ -120,6 +137,9 @@ function migrateVersion3(raw: unknown): AppState | null {
 export function migrateState(raw: unknown, now = Date.now()): AppState {
   const parsed = AppStateSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
+
+  const version4 = migrateVersion4(raw);
+  if (version4) return version4;
 
   const version3 = migrateVersion3(raw);
   if (version3) return version3;
