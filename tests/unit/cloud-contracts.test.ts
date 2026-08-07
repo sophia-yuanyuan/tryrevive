@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAffordCloudQuote,
   CloudAnalysisResultSchema,
+  CloudReservationResultSchema,
   estimateCloudCost
 } from "@/shared/cloud/contracts";
 import {
@@ -52,6 +53,27 @@ describe("cloud usage contracts", () => {
       idempotencyKey: "request-123456"
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts only a bounded reservation token or an already-settled result", () => {
+    expect(
+      CloudReservationResultSchema.safeParse({
+        status: "reserved",
+        reservationToken: "r".repeat(64),
+        balance: { speechMinutes: 2, projectAnalyses: 1 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        expiresAt: 1_800_000_600_000
+      }).success
+    ).toBe(true);
+    expect(
+      CloudReservationResultSchema.safeParse({
+        status: "reserved",
+        reservationToken: "short",
+        balance: { speechMinutes: 2, projectAnalyses: 1 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        expiresAt: 1_800_000_600_000
+      }).success
+    ).toBe(false);
   });
 
   it("allows only the reviewed TryRevive API origin in packaged builds", () => {

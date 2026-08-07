@@ -57,6 +57,20 @@ export const CloudAnalysisResultSchema = z.object({
   idempotencyKey: z.string().min(1)
 });
 
+export const CloudReservationResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("reserved"),
+    reservationToken: z.string().min(32).max(512),
+    balance: CloudBalanceSchema,
+    charged: CloudBalanceSchema,
+    expiresAt: z.number().int().positive()
+  }),
+  z.object({
+    status: z.literal("succeeded"),
+    result: CloudAnalysisResultSchema
+  })
+]);
+
 export type CloudSourceMetadata = z.infer<typeof CloudSourceMetadataSchema>;
 export type CloudBalance = z.infer<typeof CloudBalanceSchema>;
 export type CloudStatus = z.infer<typeof CloudStatusSchema>;
@@ -64,6 +78,7 @@ export type CloudQuote = z.infer<typeof CloudQuoteSchema>;
 export type CloudRedeemResult = z.infer<typeof CloudRedeemResultSchema>;
 export type CloudDisconnectResult = z.infer<typeof CloudDisconnectResultSchema>;
 export type CloudAnalysisResult = z.infer<typeof CloudAnalysisResultSchema>;
+export type CloudReservationResult = z.infer<typeof CloudReservationResultSchema>;
 
 export interface CloudSourcePayload {
   metadata: CloudSourceMetadata;

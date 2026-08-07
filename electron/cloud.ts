@@ -12,6 +12,7 @@ import {
   type CloudQuote,
   CloudRedeemResultSchema,
   type CloudRedeemResult,
+  CloudReservationResultSchema,
   CloudSourceMetadataSchema,
   type CloudStatus,
   MAX_CLOUD_SOURCE_BYTES
@@ -277,21 +278,49 @@ export async function analyzeCloudContext(
   if (bytes && bytes.byteLength > MAX_CLOUD_SOURCE_BYTES) {
     throw new Error("单个云端文件不能超过 25 MB");
   }
+  const redactedMetadata = redactSourceMetadata(metadata);
+  const reservation = await requestJson(
+    "/v1/cloud/reservations",
+    CloudReservationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey,
+        quoteId,
+        source: redactedMetadata
+      })
+    },
+    token
+  );
+  if (reservation.status === "succeeded") {
+    if (reservation.result.idempotencyKey !== idempotencyKey) {
+      throw new Error("云端返回了不属于本次请求的结果，本地项目没有改变");
+    }
+    return reservation.result;
+  }
   const body = {
     idempotencyKey,
     quoteId,
     projectTitle,
     source: {
-      metadata: redactSourceMetadata(metadata),
+      metadata: redactedMetadata,
       ...(text ? { text } : {}),
       ...(bytes?.byteLength ? { base64: Buffer.from(bytes).toString("base64") } : {})
     }
   };
-  return requestJson(
+  const result = await requestJson(
     "/v1/cloud/analyze",
     CloudAnalysisResultSchema,
-    { method: "POST", body: JSON.stringify(body) },
+    {
+      method: "POST",
+      headers: { "x-tryrevive-reservation": reservation.reservationToken },
+      body: JSON.stringify(body)
+    },
     token,
     120_000
   );
+  if (result.idempotencyKey !== idempotencyKey) {
+    throw new Error("云端返回了不属于本次请求的结果，本地项目没有改变");
+  }
+  return result;
 }

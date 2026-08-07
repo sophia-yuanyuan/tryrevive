@@ -46,6 +46,22 @@ function clearQuote(): void {
   idempotencyKey = crypto.randomUUID();
 }
 
+function plainSourcePayload(): CloudSourcePayload {
+  if (!source.value) throw new Error("还没有选择语音或附件");
+  const payload = source.value;
+  return {
+    metadata: {
+      kind: payload.metadata.kind,
+      name: payload.metadata.name,
+      mimeType: payload.metadata.mimeType,
+      sizeBytes: payload.metadata.sizeBytes,
+      durationSeconds: payload.metadata.durationSeconds
+    },
+    ...(typeof payload.text === "string" ? { text: payload.text } : {}),
+    ...(payload.bytes ? { bytes: payload.bytes.slice() } : {})
+  };
+}
+
 function audioDuration(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const audio = document.createElement("audio");
@@ -204,7 +220,7 @@ async function requestQuote(): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-    quote.value = await platform.quoteCloudContext(source.value.metadata);
+    quote.value = await platform.quoteCloudContext(plainSourcePayload().metadata);
     notice.value = "报价只发送通用来源类型、大小和语音时长；真实文件名和内容仍未上传。";
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "无法取得本次报价";
@@ -222,7 +238,7 @@ async function confirmUpload(): Promise<void> {
       idempotencyKey: idempotencyKey || crypto.randomUUID(),
       quoteId: quote.value.id,
       projectTitle: props.projectTitle,
-      source: source.value
+      source: plainSourcePayload()
     });
     draft.value = result.draft;
     status.value = {

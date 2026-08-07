@@ -78,6 +78,8 @@ function createPendingState(title, now = 1_800_000_000_000) {
 async function startCloudSessionHarness() {
   const calls = [];
   const sessions = new Map();
+  const quotes = new Map();
+  const reservations = new Map();
   let redeemCount = 0;
   let rejectAccounts = false;
   const server = createServer(async (request, response) => {
@@ -86,7 +88,13 @@ async function startCloudSessionHarness() {
     const rawBody = Buffer.concat(chunks).toString("utf8");
     const body = rawBody ? JSON.parse(rawBody) : null;
     const authorization = request.headers.authorization ?? "";
-    calls.push({ method: request.method, path: request.url, authorization, body });
+    calls.push({
+      method: request.method,
+      path: request.url,
+      authorization,
+      reservation: request.headers["x-tryrevive-reservation"] ?? "",
+      body
+    });
     const send = (status, value) => {
       response.writeHead(status, {
         "content-type": "application/json; charset=utf-8",
@@ -128,6 +136,100 @@ async function startCloudSessionHarness() {
         message: "测试凭据已撤销。"
       });
     }
+    if (request.method === "POST" && request.url === "/v1/cloud/quote") {
+      const balance = sessions.get(token);
+      if (!balance) return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      const cost = {
+        speechMinutes:
+          body.source.kind === "audio"
+            ? Math.max(1, Math.ceil((body.source.durationSeconds ?? 1) / 60))
+            : 0,
+        projectAnalyses: 1
+      };
+      const id = `quote_${String(quotes.size + 1).padStart(8, "0")}`;
+      quotes.set(id, { token, source: body.source, cost });
+      return send(200, {
+        id,
+        source: body.source,
+        cost,
+        balance,
+        canAfford:
+          balance.speechMinutes >= cost.speechMinutes &&
+          balance.projectAnalyses >= cost.projectAnalyses,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        uploadNotice: "确认后，测试材料才会上传给 TryRevive 测试服务。",
+        retentionNotice: "这是本机 E2E 服务，收到后只保存在测试进程内存中。"
+      });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/reservations") {
+      const balance = sessions.get(token);
+      const quote = quotes.get(body.quoteId);
+      if (!balance || !quote || quote.token !== token) {
+        return send(409, { error: "invalid_quote", message: "测试报价无效" });
+      }
+      const existing = reservations.get(body.idempotencyKey);
+      if (existing?.result) return send(200, { status: "succeeded", result: existing.result });
+      if (existing) return send(409, { error: "already_processing", message: "测试请求处理中" });
+      if (
+        balance.speechMinutes < quote.cost.speechMinutes ||
+        balance.projectAnalyses < quote.cost.projectAnalyses
+      ) {
+        return send(402, { error: "insufficient_balance", message: "测试算力不足" });
+      }
+      balance.speechMinutes -= quote.cost.speechMinutes;
+      balance.projectAnalyses -= quote.cost.projectAnalyses;
+      const reservationToken = `reservation_${String(reservations.size + 1).padStart(40, "0")}`;
+      reservations.set(body.idempotencyKey, {
+        token,
+        reservationToken,
+        charged: quote.cost,
+        result: null
+      });
+      return send(200, {
+        status: "reserved",
+        reservationToken,
+        balance,
+        charged: quote.cost,
+        expiresAt: Date.now() + 10 * 60 * 1000
+      });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/analyze") {
+      const balance = sessions.get(token);
+      const reservation = reservations.get(body.idempotencyKey);
+      if (
+        !balance ||
+        !reservation ||
+        reservation.token !== token ||
+        reservation.reservationToken !== request.headers["x-tryrevive-reservation"]
+      ) {
+        return send(409, { error: "reservation_unavailable", message: "测试预留无效" });
+      }
+      const result = {
+        draft: {
+          id: "analysis_cloud_e2e",
+          sourceLabel: body.source.metadata.kind === "audio" ? "语音" : "附件",
+          originalGoal: "完成黑客松报名",
+          lastCompleted: "已经写完项目简介",
+          stuckAt: "还没有整理个人分工",
+          deadline: "本周日",
+          whyMatters: "想验证 TryRevive",
+          stallReasons: ["材料分散"],
+          suggestedDecision: "shrink",
+          nextAction: {
+            text: "先写自己的职责",
+            doneDefinition: "材料中留下 80 字职责说明",
+            minutes: 10
+          },
+          uncertainties: ["队友是否最终参加"],
+          createdAt: Date.now()
+        },
+        balance,
+        charged: reservation.charged,
+        idempotencyKey: body.idempotencyKey
+      };
+      reservation.result = result;
+      return send(200, result);
+    }
     return send(404, { error: "not_found", message: "测试接口不存在" });
   });
   await new Promise((resolve, reject) => {
@@ -138,6 +240,8 @@ async function startCloudSessionHarness() {
   if (!address || typeof address === "string") throw new Error("cloud harness did not start");
   return {
     calls,
+    quotes,
+    reservations,
     url: `http://127.0.0.1:${address.port}`,
     rejectAccounts(value) {
       rejectAccounts = value;
@@ -315,9 +419,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
       "utf8"
     );
     await focus.getByRole("button", { name: "我留下了一个结果" }).click();
-    await expect(
-      window.getByRole("heading", { name: "先确认这次真正留下了什么" })
-    ).toBeVisible();
+    await expect(window.getByRole("heading", { name: "先确认这次真正留下了什么" })).toBeVisible();
 
     const draftState = JSON.parse(await readFile(statePath, "utf8"));
     const draftProject = draftState.projects[0];
@@ -645,6 +747,77 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
       (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
     );
     expect(revoke.authorization).toMatch(/^Bearer session_token_/);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop cloud inference reserves units before uploading attachment bytes", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  test.setTimeout(90_000);
+  const harness = await startCloudSessionHarness();
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-inference-e2e-"));
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("云端推理验收项目", "cloud-inference-project")),
+    "utf8"
+  );
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await window.getByLabel("算力兑换码").fill("FIRST-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await window.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
+      name: "真实姓名-黑客松报名材料.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("已经写完项目简介，现在还没有整理个人分工。", "utf8")
+    });
+    await expect(window.getByText("真实姓名-黑客松报名材料.md", { exact: true })).toBeVisible();
+    await window.getByRole("button", { name: "查看预计消耗（不上传内容）" }).click();
+    await expect(window.getByText("上传确认", { exact: true })).toBeVisible();
+
+    const quoteCall = harness.calls.find((call) => call.path === "/v1/cloud/quote");
+    expect(quoteCall.body.source.name).toBe("附件");
+    expect(JSON.stringify(quoteCall.body)).not.toContain("真实姓名");
+    expect(JSON.stringify(quoteCall.body)).not.toContain("已经写完项目简介");
+    expect(harness.calls.some((call) => call.path === "/v1/cloud/analyze")).toBe(false);
+
+    await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
+    await expect(window.getByText("待你确认的草稿", { exact: true })).toBeVisible();
+    await expect(window.getByLabel("最开始的目标")).toHaveValue("完成黑客松报名");
+
+    const relevantCalls = harness.calls.filter((call) =>
+      ["/v1/cloud/quote", "/v1/cloud/reservations", "/v1/cloud/analyze"].includes(call.path)
+    );
+    expect(relevantCalls.map((call) => call.path)).toEqual([
+      "/v1/cloud/quote",
+      "/v1/cloud/reservations",
+      "/v1/cloud/analyze"
+    ]);
+    const reserveCall = relevantCalls[1];
+    expect(reserveCall.body.source.name).toBe("附件");
+    expect(JSON.stringify(reserveCall.body)).not.toContain("真实姓名");
+    expect(JSON.stringify(reserveCall.body)).not.toContain("已经写完项目简介");
+    const analyzeCall = relevantCalls[2];
+    expect(analyzeCall.reservation).toMatch(/^reservation_/u);
+    expect(analyzeCall.body.source.metadata.name).toBe("附件");
+    expect(Buffer.from(analyzeCall.body.source.base64, "base64").toString("utf8")).toContain(
+      "还没有整理个人分工"
+    );
+
+    await window.getByRole("button", { name: "采用这份草稿，进入项目判断" }).click();
+    await expect(window.getByRole("heading", { name: "现在最诚实的选择是什么？" })).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
     await harness.close().catch(() => undefined);
