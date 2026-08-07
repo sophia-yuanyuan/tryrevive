@@ -24,10 +24,13 @@ The first-use path is:
 - Electron main/preload isolation for desktop persistence, dialogs, and external links.
 - Vitest for domain tests and Playwright for desktop/mobile web plus Electron E2E.
 
-Renderer code never imports Node or Electron APIs. The preload exposes five narrow operations:
-load, save, export, import, and allow-listed external URL opening. The desktop window uses context
-isolation, sandboxing, disabled Node integration, a local `app://` scheme, a CSP, sender validation,
-and denied permission requests.
+Renderer code never imports Node or Electron APIs. The preload exposes explicit, typed operations
+for local persistence/import/export, WAV export, fullscreen state, allow-listed external links,
+cloud account entry, and the opt-in Windows focus guardian. The desktop window uses context
+isolation, sandboxing, disabled Node integration, a local `app://` scheme, CSP, and sender
+validation. Fullscreen is allowed; microphone/camera requests are accepted only from the trusted
+renderer and remain subject to the operating system's privacy settings. Other permissions are
+denied.
 
 ## Commands
 
@@ -63,14 +66,30 @@ code-signing identity is configured. Do not publish unsigned artifacts as a trus
 
 ## Data and migration
 
-The current schema is version 3. Web data lives in the `tryrevive` IndexedDB database. Desktop data
+The current schema is version 5. Web data lives in the `tryrevive` IndexedDB database. Desktop data
 lives in Electron's per-user `userData` directory as `tryrevive-state.json`; writes use a temporary
-file and keep the previous file as `.bak`.
+file and keep the previous valid file as `.bak`.
 
 On first web load, if no IndexedDB state exists, the adapter reads the old
 `tryrevive_save_<active-user>` localStorage profile and migrates its `revive` projects. Valid legacy
 project IDs are retained so the active project remains selected. Import and export use the same
-versioned JSON state and validate it before persistence.
+versioned JSON state and validate it before persistence. Only known schema versions are migrated.
+Future, damaged, primitive, or partially unreadable saves are never rebuilt as empty data. The
+desktop app restores a valid `.bak`, preserves the rejected primary as `.recovery-*`, or globally
+blocks normal writes until the user explicitly imports a valid JSON backup.
+
+## Desktop security boundaries
+
+- The app starts fullscreen, exposes a visible fullscreen toggle, and lets `Esc` leave startup
+  fullscreen. Focus mode keeps its own explicit `Esc` exit.
+- The CSP keeps `script-src 'self' 'wasm-unsafe-eval'` solely for packaged MediaPipe WASM and
+  permits `media-src 'self' blob:` for locally generated WAV playback.
+- Camera gestures are off by default, run against the packaged model, show a local preview, and
+  stop tracks on close or page leave. Discrete gestures trigger once and require a release before
+  rearming.
+- Packaged cloud requests accept only `https://api.tryrevive.online`; localhost HTTP harnesses are
+  development-only. The production provider remains disabled, so this allow-list does not enable
+  content processing by itself.
 
 ## Release gates
 
