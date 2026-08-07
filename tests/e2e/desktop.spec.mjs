@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +63,71 @@ test("desktop app launches with an isolated bridge and persists state across res
 
     await focus.getByRole("button", { name: "结束本次守护" }).click();
     await expect(focus.getByText("默认关闭", { exact: true })).toBeVisible();
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop camera gestures stay off by default and load the packaged local model on consent", async () => {
+  test.setTimeout(90_000);
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-gesture-e2e-"));
+  const now = 1_800_000_000_000;
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify({
+      schemaVersion: 5,
+      activeProjectId: "gesture-project",
+      projects: [
+        {
+          id: "gesture-project",
+          schemaVersion: 5,
+          title: "摄像头手势验收项目",
+          stage: "closed",
+          status: "completed",
+          restore: {
+            lastCompleted: "完成了黑胶星球",
+            stuckAt: "",
+            deadline: "",
+            whyMatters: "验证本机手势"
+          },
+          decision: "continue",
+          diagnosis: [],
+          action: null,
+          actionHistory: [],
+          evidence: [],
+          returnPlan: null,
+          analysis: null,
+          reward: { mood: "proud", createdAt: now },
+          createdAt: now - 1_000,
+          updatedAt: now
+        }
+      ],
+      legacyMigrationCompleted: true,
+      updatedAt: now
+    }),
+    "utf8"
+  );
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const args = [
+    `--user-data-dir=${userData}`,
+    "--use-fake-device-for-media-stream",
+    "--use-fake-ui-for-media-stream"
+  ];
+  const launchOptions = executablePath
+    ? { executablePath: path.resolve(projectRoot, executablePath), args, cwd: projectRoot }
+    : { args: [...args, projectRoot], cwd: projectRoot };
+  const desktop = await electron.launch(launchOptions);
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("link", { name: "黑胶星球" }).click();
+    await expect(window.getByText("摄像头默认关闭")).toBeVisible();
+    await window.getByRole("button", { name: "同意说明并开启摄像头手势" }).click();
+    await expect(window.getByText(/本机识别中/)).toBeVisible({ timeout: 60_000 });
+    await expect(window.getByLabel("本机手势摄像头预览")).toBeVisible();
+    await window.getByRole("button", { name: "关闭摄像头" }).click();
+    await expect(window.getByText("摄像头已关闭")).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });

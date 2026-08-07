@@ -84,6 +84,8 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
   await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "播放项目唱片" })).toBeVisible();
+  await expect(page.getByText("摄像头默认关闭")).toBeVisible();
+  await expect(page.getByRole("button", { name: "同意说明并开启摄像头手势" })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出同一首 WAV" }).click();

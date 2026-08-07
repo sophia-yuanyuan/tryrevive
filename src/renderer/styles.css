@@ -1493,6 +1493,129 @@ body.focus-mode-active {
   box-shadow: 0 0 0 0.2rem rgba(137, 148, 194, 0.18);
 }
 
+.gesture-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(17rem, 0.75fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1.4rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.gesture-control-copy h2 {
+  margin: 0.55rem 0 0;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  font-weight: 580;
+  line-height: 1.25;
+}
+
+.gesture-control-copy > p:not(.summary-label, .gesture-status) {
+  max-width: 48rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+.gesture-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+}
+
+.gesture-guide span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 0.65rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.58);
+  font-size: 0.68rem;
+}
+
+.gesture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.gesture-actions .text-button {
+  min-height: 44px;
+}
+
+.gesture-status {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.gesture-status-active {
+  color: var(--focus);
+}
+
+.gesture-status-error {
+  color: #a14328;
+}
+
+.gesture-preview {
+  position: relative;
+  display: grid;
+  min-height: 13rem;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(32, 37, 31, 0.12);
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at center, rgba(218, 152, 107, 0.14), transparent 55%), #111315;
+}
+
+.gesture-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scaleX(-1);
+  transition: opacity 180ms ease;
+}
+
+.gesture-preview-active video {
+  opacity: 0.78;
+}
+
+.gesture-preview-overlay {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  color: white;
+  background: rgba(5, 6, 7, 0.66);
+  backdrop-filter: blur(10px);
+}
+
+.gesture-preview-overlay strong,
+.gesture-preview-overlay small {
+  display: block;
+}
+
+.gesture-preview-overlay strong {
+  font-size: 0.76rem;
+}
+
+.gesture-preview-overlay small {
+  margin-top: 0.25rem;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.62rem;
+}
+
 .collection-library {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1717,6 +1840,10 @@ body.focus-mode-active {
 
   .collection-counts,
   .collection-library {
+    grid-template-columns: 1fr;
+  }
+
+  .gesture-control {
     grid-template-columns: 1fr;
   }
 

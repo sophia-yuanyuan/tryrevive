@@ -6,6 +6,7 @@ import { createProjectComposition } from "@/shared/audio/vinyl-music";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import CompletionMoodPicker from "@/renderer/components/CompletionMoodPicker.vue";
 import VinylArtifact from "@/renderer/components/VinylArtifact.vue";
+import GestureControl from "@/renderer/components/GestureControl.vue";
 
 const store = useRevivalStore();
 const { data, ready } = storeToRefs(store);
@@ -14,6 +15,7 @@ const rotationX = ref(-9);
 const rotationY = ref(0);
 const savingMood = ref(false);
 const error = ref("");
+const detailElement = ref<HTMLElement | null>(null);
 
 const completed = computed(() =>
   [...data.value.projects.filter((project) => project.status === "completed")].sort(
@@ -87,6 +89,19 @@ function endDrag(event: PointerEvent): void {
 function rotate(horizontal: number, vertical = 0): void {
   rotationY.value += horizontal;
   rotationX.value = Math.max(-28, Math.min(18, rotationX.value + vertical));
+}
+
+function selectNextProject(): void {
+  if (!collection.value.length) return;
+  const currentIndex = collection.value.findIndex(
+    (project) => project.id === selectedProject.value?.id
+  );
+  const nextIndex = (Math.max(0, currentIndex) + 1) % collection.value.length;
+  selectedId.value = collection.value[nextIndex]?.id ?? collection.value[0]?.id ?? null;
+}
+
+function openSelectedProject(): void {
+  detailElement.value?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function orbitStyle(project: RevivalProject, index: number, total: number): CSSProperties {
@@ -226,6 +241,12 @@ async function saveMood(mood: ProjectMood): Promise<void> {
         </div>
       </section>
 
+      <GestureControl
+        @rotate="rotate"
+        @select-next="selectNextProject"
+        @open-selected="openSelectedProject"
+      />
+
       <section class="collection-library" aria-label="全部项目收藏">
         <div>
           <p class="summary-label">完成唱片</p>
@@ -263,7 +284,12 @@ async function saveMood(mood: ProjectMood): Promise<void> {
         </div>
       </section>
 
-      <section v-if="selectedProject" class="collection-detail" aria-live="polite">
+      <section
+        v-if="selectedProject"
+        ref="detailElement"
+        class="collection-detail"
+        aria-live="polite"
+      >
         <header>
           <p class="summary-label">
             {{ selectedProject.status === "completed" ? "选中的完成唱片" : "选中的黑洞历史" }}

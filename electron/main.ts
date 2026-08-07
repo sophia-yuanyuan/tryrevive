@@ -226,9 +226,10 @@ app.whenReady().then(() => {
       if (permission === "fullscreen") return callback(true);
       if (permission === "media") {
         const requestedMedia = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
-        const audioOnly =
-          requestedMedia.length > 0 && requestedMedia.every((type) => type === "audio");
-        return callback(audioOnly);
+        const supportedMedia =
+          requestedMedia.length > 0 &&
+          requestedMedia.every((type) => type === "audio" || type === "video");
+        return callback(supportedMedia);
       }
       callback(false);
     }

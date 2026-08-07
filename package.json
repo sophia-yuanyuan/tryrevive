@@ -1,6 +1,6 @@
 {
   "name": "tryrevive",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Student-first stalled-project revival app for web and desktop.",
@@ -30,6 +30,7 @@
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:worker && npm run test:focus:windows && npm run build:web && npm run build:desktop"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.0.1",
     "pinia": "^4.0.2",
     "reka-ui": "^2.10.1",
     "vue": "^3.5.41",
