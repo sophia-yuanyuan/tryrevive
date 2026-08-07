@@ -16,6 +16,7 @@ import {
   type CloudStatus,
   MAX_CLOUD_SOURCE_BYTES
 } from "../src/shared/cloud/contracts";
+import { resolveCloudBaseUrl } from "../src/shared/cloud/intake-security";
 
 const SESSION_FILENAME = "tryrevive-cloud-session.bin";
 const MAX_TEXT_LENGTH = 120_000;
@@ -46,20 +47,14 @@ class CloudRequestError extends Error {
 }
 
 function configuredBaseUrl(): string | null {
-  const configured = process.env.TRYREVIVE_CLOUD_URL?.trim();
-  if (!configured) return null;
-  try {
-    const url = new URL(configured);
-    const localDevelopment =
-      !app.isPackaged &&
-      url.protocol === "http:" &&
-      ["127.0.0.1", "localhost"].includes(url.hostname);
-    if (url.protocol !== "https:" && !localDevelopment) return null;
-    if (url.username || url.password) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
+  return resolveCloudBaseUrl(process.env.TRYREVIVE_CLOUD_URL, app.isPackaged);
+}
+
+function redactSourceMetadata(source: z.infer<typeof CloudSourceMetadataSchema>) {
+  return {
+    ...source,
+    name: source.kind === "audio" ? "语音" : source.kind === "text" ? "文字" : "附件"
+  };
 }
 
 function sessionPath(): string {
@@ -258,10 +253,7 @@ export async function quoteCloudContext(input: unknown): Promise<CloudQuote> {
   const source = CloudSourceMetadataSchema.parse(input);
   const token = await loadSessionToken();
   if (!token) throw new Error("先兑换算力，再确认本次上传");
-  const quoteSource = {
-    ...source,
-    name: source.kind === "audio" ? "语音" : source.kind === "text" ? "文字" : "附件"
-  };
+  const quoteSource = redactSourceMetadata(source);
   return requestJson(
     "/v1/cloud/quote",
     CloudQuoteSchema,
@@ -290,7 +282,7 @@ export async function analyzeCloudContext(
     quoteId,
     projectTitle,
     source: {
-      metadata,
+      metadata: redactSourceMetadata(metadata),
       ...(text ? { text } : {}),
       ...(bytes?.byteLength ? { base64: Buffer.from(bytes).toString("base64") } : {})
     }

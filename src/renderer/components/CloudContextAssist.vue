@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref } from "vue";
 import type { ProjectAnalysis } from "@/shared/domain/model";
 import type { CloudQuote, CloudSourcePayload, CloudStatus } from "@/shared/cloud/contracts";
 import { MAX_CLOUD_SOURCE_BYTES } from "@/shared/cloud/contracts";
+import { isCloudAudioFile, normalizeCloudMimeType } from "@/shared/cloud/intake-security";
 import { platform } from "@/renderer/platform/web";
 
 const props = defineProps<{ projectTitle: string }>();
@@ -115,13 +116,14 @@ async function chooseFile(event: Event): Promise<void> {
     return;
   }
   try {
-    const isAudio = file.type.startsWith("audio/");
+    const mimeType = normalizeCloudMimeType(file.name, file.type);
+    const isAudio = isCloudAudioFile(file.name, file.type);
     const durationSeconds = isAudio ? await audioDuration(file) : null;
     source.value = {
       metadata: {
         kind: isAudio ? "audio" : "attachment",
         name: file.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         sizeBytes: file.size,
         durationSeconds
       },
@@ -131,7 +133,7 @@ async function chooseFile(event: Event): Promise<void> {
     notice.value = "文件仍在本机；查看报价不会上传文件内容。";
     clearQuote();
   } catch {
-    error.value = file.type.startsWith("audio/")
+    error.value = isCloudAudioFile(file.name, file.type)
       ? "无法确认这段音频的时长，请改用现场录音或其他附件。"
       : "无法读取这个附件。";
   }
