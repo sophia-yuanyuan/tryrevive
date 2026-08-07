@@ -10,19 +10,21 @@ export interface GestureSample {
 export type GestureCommand =
   { type: "rotate"; degrees: number } | { type: "select-next" } | { type: "open-selected" };
 
+export const GESTURE_HOLD_MS = 650;
+
 export interface GestureInteractionState {
   activeGesture: SupportedGesture;
   activeSince: number;
-  lastTriggeredAt: number;
   lastPalmX: number | null;
+  discreteArmed: boolean;
 }
 
 export function createGestureInteractionState(): GestureInteractionState {
   return {
     activeGesture: "None",
     activeSince: 0,
-    lastTriggeredAt: 0,
-    lastPalmX: null
+    lastPalmX: null,
+    discreteArmed: true
   };
 }
 
@@ -34,6 +36,7 @@ export function interpretGesture(
     state.activeGesture = "None";
     state.activeSince = sample.timestamp;
     state.lastPalmX = null;
+    state.discreteArmed = true;
     return null;
   }
 
@@ -41,10 +44,12 @@ export function interpretGesture(
     state.activeGesture = sample.name;
     state.activeSince = sample.timestamp;
     state.lastPalmX = sample.palmX;
+    if (sample.name === "Open_Palm") state.discreteArmed = true;
     return null;
   }
 
   if (sample.name === "Open_Palm") {
+    state.discreteArmed = true;
     if (sample.palmX === null || state.lastPalmX === null) {
       state.lastPalmX = sample.palmX;
       return null;
@@ -55,9 +60,19 @@ export function interpretGesture(
   }
 
   const stableFor = sample.timestamp - state.activeSince;
-  const sinceLastTrigger = sample.timestamp - state.lastTriggeredAt;
-  if (stableFor < 650 || (state.lastTriggeredAt > 0 && sinceLastTrigger < 1_250)) return null;
-  state.lastTriggeredAt = sample.timestamp;
-  state.activeSince = sample.timestamp;
+  if (!state.discreteArmed || stableFor < GESTURE_HOLD_MS) return null;
+  state.discreteArmed = false;
   return sample.name === "Closed_Fist" ? { type: "select-next" } : { type: "open-selected" };
+}
+
+export function gestureHoldProgress(state: GestureInteractionState, sample: GestureSample): number {
+  if (
+    sample.score < 0.65 ||
+    !["Closed_Fist", "Thumb_Up"].includes(sample.name) ||
+    state.activeGesture !== sample.name
+  ) {
+    return 0;
+  }
+  if (!state.discreteArmed) return 1;
+  return Math.min(1, Math.max(0, (sample.timestamp - state.activeSince) / GESTURE_HOLD_MS));
 }

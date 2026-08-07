@@ -1809,6 +1809,22 @@ body.focus-mode-active #app {
   display: block;
 }
 
+.gesture-hold-meter {
+  height: 0.25rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.gesture-hold-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #e7bd76;
+  transition: width 100ms linear;
+}
+
 .gesture-preview-overlay strong {
   font-size: 0.76rem;
 }

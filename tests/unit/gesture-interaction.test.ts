@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createGestureInteractionState, interpretGesture } from "@/shared/gesture/interaction";
+import {
+  createGestureInteractionState,
+  gestureHoldProgress,
+  interpretGesture
+} from "@/shared/gesture/interaction";
 
 describe("gesture interaction state machine", () => {
   it("uses an open palm to rotate only after meaningful movement", () => {
@@ -15,18 +19,42 @@ describe("gesture interaction state machine", () => {
     ).toEqual({ type: "rotate", degrees: expect.closeTo(5.85, 2) });
   });
 
-  it("requires a stable fist before selecting and applies a cooldown", () => {
+  it("requires a stable fist and a release before it can select again", () => {
     const state = createGestureInteractionState();
-    interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 100 });
+    const first = { name: "Closed_Fist" as const, score: 0.9, palmX: 0.5, timestamp: 100 };
+    interpretGesture(state, first);
+    expect(gestureHoldProgress(state, first)).toBe(0);
     expect(
       interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 600 })
     ).toBeNull();
     expect(
+      gestureHoldProgress(state, {
+        name: "Closed_Fist",
+        score: 0.9,
+        palmX: 0.5,
+        timestamp: 600
+      })
+    ).toBeCloseTo(500 / 650);
+    expect(
       interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 800 })
     ).toEqual({ type: "select-next" });
     expect(
-      interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 1_500 })
+      interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 3_000 })
     ).toBeNull();
+    expect(
+      gestureHoldProgress(state, {
+        name: "Closed_Fist",
+        score: 0.9,
+        palmX: 0.5,
+        timestamp: 3_000
+      })
+    ).toBe(1);
+
+    interpretGesture(state, { name: "None", score: 0, palmX: null, timestamp: 3_100 });
+    interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 3_200 });
+    expect(
+      interpretGesture(state, { name: "Closed_Fist", score: 0.9, palmX: 0.5, timestamp: 3_900 })
+    ).toEqual({ type: "select-next" });
   });
 
   it("opens the selected project after a stable thumbs-up and ignores weak detections", () => {

@@ -6,6 +6,7 @@ import wasmBinaryPath from "@mediapipe/tasks-vision/vision_wasm_internal.wasm?ur
 import modelAssetPath from "@/renderer/assets/gesture_recognizer.task?url";
 import {
   createGestureInteractionState,
+  gestureHoldProgress,
   interpretGesture,
   type SupportedGesture
 } from "@/shared/gesture/interaction";
@@ -21,12 +22,14 @@ const phase = ref<"off" | "requesting" | "loading" | "active" | "error">("off");
 const message = ref("摄像头默认关闭");
 const gestureLabel = ref("还没有识别到手势");
 const confidence = ref(0);
+const holdProgress = ref(0);
+const waitingForRelease = ref(false);
 let stream: MediaStream | null = null;
 let recognizer: GestureRecognizer | null = null;
 let animationFrame = 0;
 let lastInferenceAt = 0;
 let lastVideoTime = -1;
-const interaction = createGestureInteractionState();
+let interaction = createGestureInteractionState();
 
 const labels: Record<SupportedGesture, string> = {
   Open_Palm: "张开手掌 · 左右移动可转动星球",
@@ -55,7 +58,11 @@ function handleResult(result: GestureRecognizerResult, timestamp: number): void 
   const palmX = result.landmarks[0]?.[9]?.x ?? null;
   gestureLabel.value = labels[name];
   confidence.value = score;
-  const command = interpretGesture(interaction, { name, score, palmX, timestamp });
+  const sample = { name, score, palmX, timestamp };
+  const command = interpretGesture(interaction, sample);
+  holdProgress.value = gestureHoldProgress(interaction, sample);
+  waitingForRelease.value =
+    ["Closed_Fist", "Thumb_Up"].includes(name) && score >= 0.65 && !interaction.discreteArmed;
   if (command?.type === "rotate") emit("rotate", command.degrees);
   if (command?.type === "select-next") emit("selectNext");
   if (command?.type === "open-selected") emit("openSelected");
@@ -134,6 +141,9 @@ function stop(updateMessage = true): void {
   lastInferenceAt = 0;
   lastVideoTime = -1;
   confidence.value = 0;
+  holdProgress.value = 0;
+  waitingForRelease.value = false;
+  interaction = createGestureInteractionState();
   gestureLabel.value = "还没有识别到手势";
   if (updateMessage) {
     phase.value = "off";
@@ -197,6 +207,19 @@ onBeforeUnmount(() => {
         <strong>{{ gestureLabel }}</strong>
         <small v-if="confidence">识别置信度 {{ Math.round(confidence * 100) }}%</small>
         <small v-else>摄像头画面会一直显示在这里</small>
+        <div
+          v-if="holdProgress > 0"
+          class="gesture-hold-meter"
+          role="progressbar"
+          aria-label="手势保持进度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="Math.round(holdProgress * 100)"
+        >
+          <span :style="{ width: `${Math.round(holdProgress * 100)}%` }" />
+        </div>
+        <small v-if="waitingForRelease">已触发 · 松开手势后才能再次使用</small>
+        <small v-else-if="holdProgress > 0">保持进度 {{ Math.round(holdProgress * 100) }}%</small>
       </div>
     </div>
   </section>
