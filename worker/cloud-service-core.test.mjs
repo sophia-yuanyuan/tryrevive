@@ -96,15 +96,7 @@ class MemoryCloudRepository {
         return { status: "succeeded", result: structuredClone(existing.result) };
       }
       if (existing.status === "failed") return { status: "failed" };
-      if (existing.claimedAt) return { status: "processing" };
-      existing.reservationTokenHash = input.reservationTokenHash;
-      existing.expiresAt = input.reservationExpiresAt;
-      return {
-        status: "reserved",
-        balance: copyBalance(account.balance),
-        charged: copyBalance(existing.cost),
-        expiresAt: existing.expiresAt
-      };
+      return { status: "processing" };
     }
 
     const quote = this.quotes.get(input.quoteId);
@@ -405,7 +397,7 @@ test("insufficient balance is rejected during metadata reservation before provid
   assert.equal(repository.operations.size, 0);
 });
 
-test("duplicate requests reserve once, call the provider once, and return the stored result", async () => {
+test("duplicate requests reserve once, reject the duplicate token, and return the stored result", async () => {
   let providerCalls = 0;
   const provider = {
     available: true,
@@ -436,14 +428,14 @@ test("duplicate requests reserve once, call the provider once, and return the st
   const first = await request(service, "/v1/cloud/reservations", reservationRequest);
   const second = await request(service, "/v1/cloud/reservations", reservationRequest);
   assert.equal(first.response.status, 200);
-  assert.equal(second.response.status, 200);
-  assert.deepEqual(second.body.balance, { speechMinutes: 8, projectAnalyses: 1 });
+  assert.equal(second.response.status, 409);
+  assert.equal(second.body.error, "already_processing");
   assert.equal(repository.ledger.filter((entry) => entry.kind === "reserve").length, 1);
 
   const analyzed = await request(service, "/v1/cloud/analyze", {
     method: "POST",
     token: account.sessionToken,
-    headers: { "x-tryrevive-reservation": second.body.reservationToken },
+    headers: { "x-tryrevive-reservation": first.body.reservationToken },
     body: {
       idempotencyKey: "request-audio-once",
       projectTitle: "黑客松报名",

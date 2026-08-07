@@ -40,7 +40,7 @@ async function operationByKey(db, idempotencyKey) {
       `SELECT idempotency_key, account_id, quote_id, status,
               speech_minutes, project_analyses, result_json, error_code,
               source_fingerprint, reservation_token_hash,
-              reservation_expires_at, claimed_at, released_at
+              reservation_expires_at, reservation_nonce, claimed_at, released_at
        FROM cloud_operations
        WHERE idempotency_key = ?`
     )
@@ -300,27 +300,7 @@ export function createCloudD1Repository(db) {
           return { status: "succeeded", result: await storedResult(db, operation) };
         }
         if (operation.status === "failed") return { status: "failed" };
-        if (operation.claimed_at) return { status: "processing" };
-        await db
-          .prepare(
-            `UPDATE cloud_operations
-             SET reservation_token_hash = ?, reservation_expires_at = ?, updated_at = ?
-             WHERE idempotency_key = ? AND status = 'pending' AND claimed_at IS NULL`
-          )
-          .bind(
-            input.reservationTokenHash,
-            input.reservationExpiresAt,
-            input.now,
-            input.idempotencyKey
-          )
-          .run();
-        const account = await accountById(db, input.accountId);
-        return {
-          status: "reserved",
-          balance: balanceFrom(account),
-          charged: costFrom(operation),
-          expiresAt: input.reservationExpiresAt
-        };
+        return { status: "processing" };
       }
 
       await db.batch([
@@ -438,6 +418,13 @@ export function createCloudD1Repository(db) {
       ) {
         return { status: "invalid_quote" };
       }
+      if (operation.status === "succeeded") {
+        return { status: "succeeded", result: await storedResult(db, operation) };
+      }
+      if (operation.status === "failed") return { status: "failed" };
+      if (operation.claimed_at || operation.reservation_nonce !== input.reservationNonce) {
+        return { status: "processing" };
+      }
       const account = await accountById(db, input.accountId);
       return {
         status: "reserved",
@@ -490,7 +477,7 @@ export function createCloudD1Repository(db) {
       ) {
         throw new Error("operation cannot settle");
       }
-      await db.batch([
+      const [settled] = await db.batch([
         db
           .prepare(
             `UPDATE cloud_operations
@@ -522,6 +509,12 @@ export function createCloudD1Repository(db) {
             input.settleLedgerId
           )
       ]);
+      if (Number(settled.meta?.changes || 0) !== 1) {
+        const current = await operationByKey(db, input.idempotencyKey);
+        if (current?.status !== "succeeded") {
+          throw new Error("operation lost the settlement race");
+        }
+      }
       const account = await accountById(db, input.accountId);
       if (!account) throw new Error("settled account is missing");
       return { balance: balanceFrom(account) };

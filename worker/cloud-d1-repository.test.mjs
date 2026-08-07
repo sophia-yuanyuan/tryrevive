@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { sha256Hex } from "./cloud-core.js";
+import { sha256Hex, stableMetadata } from "./cloud-core.js";
 import { createCloudD1Repository } from "./cloud-d1-repository.js";
 import { createCloudService } from "./cloud-service-core.js";
 
@@ -235,6 +235,71 @@ test("D1 migrations persist one charge, one result, and an auditable ledger", as
   assert.equal(JSON.parse(operation.result_json).originalGoal, VALID_ANALYSIS.originalGoal);
 });
 
+test("concurrent D1 reservations expose exactly one usable token", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const { database, service } = await createHarness(t, { provider });
+  const account = await redeem(service, database, "D1-CONCURRENT-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+  const source = {
+    kind: "text",
+    name: "文字",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const quoted = await request(service, "/v1/cloud/quote", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { source }
+  });
+  const reservationRequest = {
+    method: "POST",
+    token: account.sessionToken,
+    body: {
+      idempotencyKey: "d1-concurrent-reservation",
+      quoteId: quoted.body.id,
+      source
+    }
+  };
+  const attempts = await Promise.all([
+    request(service, "/v1/cloud/reservations", reservationRequest),
+    request(service, "/v1/cloud/reservations", reservationRequest)
+  ]);
+  const winner = attempts.find((attempt) => attempt.response.status === 200);
+  const loser = attempts.find((attempt) => attempt.response.status === 409);
+  assert.ok(winner);
+  assert.ok(loser);
+  assert.equal(loser.body.error, "already_processing");
+  assert.equal("reservationToken" in loser.body, false);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger WHERE kind = 'reserve'").get()
+      .count,
+    1
+  );
+
+  const analyzed = await request(service, "/v1/cloud/analyze", {
+    method: "POST",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-reservation": winner.body.reservationToken },
+    body: {
+      idempotencyKey: "d1-concurrent-reservation",
+      projectTitle: "Concurrent project",
+      source: { metadata: source, text: "test" }
+    }
+  });
+  assert.equal(analyzed.response.status, 200);
+  assert.equal(providerCalls, 1);
+});
+
 test("a D1 provider failure returns the reservation exactly once", async (t) => {
   const provider = {
     available: true,
@@ -307,6 +372,74 @@ test("D1 session revocation removes only the presented device session", async (t
   assert.deepEqual(
     { ...database.prepare("SELECT speech_minutes, project_analyses FROM cloud_accounts").get() },
     { speech_minutes: 7, project_analyses: 3 }
+  );
+});
+
+test("D1 settlement cannot report success after an expiry refund wins", async (t) => {
+  const start = 1_800_000_000_000;
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const { database, repository, service } = await createHarness(t, {
+    provider,
+    initialNow: start
+  });
+  const account = await redeem(service, database, "D1-SETTLE-RACE", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const source = {
+    kind: "text",
+    name: "文字",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const quoted = await request(service, "/v1/cloud/quote", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { source }
+  });
+  const reserved = await request(service, "/v1/cloud/reservations", {
+    method: "POST",
+    token: account.sessionToken,
+    body: {
+      idempotencyKey: "d1-settlement-expiry-race",
+      quoteId: quoted.body.id,
+      source
+    }
+  });
+  const accountId = database.prepare("SELECT id FROM cloud_accounts").get().id;
+  const claimed = await repository.claim({
+    accountId,
+    idempotencyKey: "d1-settlement-expiry-race",
+    reservationTokenHash: await sha256Hex(reserved.body.reservationToken),
+    sourceFingerprint: await sha256Hex(stableMetadata(source)),
+    now: start
+  });
+  assert.equal(claimed.status, "claimed");
+
+  const settlement = repository.succeed({
+    accountId,
+    idempotencyKey: "d1-settlement-expiry-race",
+    draft: VALID_ANALYSIS,
+    settleLedgerId: "ledger-settlement-race",
+    now: start + 16 * 60 * 1000
+  });
+  await repository.releaseExpired(start + 16 * 60 * 1000);
+  await assert.rejects(settlement, /lost the settlement race/);
+
+  const operation = database
+    .prepare("SELECT status, result_json FROM cloud_operations WHERE idempotency_key = ?")
+    .get("d1-settlement-expiry-race");
+  assert.equal(operation.status, "failed");
+  assert.equal(operation.result_json, null);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger WHERE kind = 'settle'").get()
+      .count,
+    0
+  );
+  assert.deepEqual(
+    { ...database.prepare("SELECT speech_minutes, project_analyses FROM cloud_accounts").get() },
+    { speech_minutes: 0, project_analyses: 1 }
   );
 });
 
