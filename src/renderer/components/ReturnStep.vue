@@ -7,11 +7,16 @@ import StageShell from "./StageShell.vue";
 
 const props = defineProps<{ project: RevivalProject }>();
 const store = useRevivalStore();
+const lastEvidence = props.project.evidence.at(-1);
+const observedPath = lastEvidence?.observation?.paths[0];
+const defaultCue = observedPath
+  ? `先打开 ${observedPath}，从刚才确认的文件变化继续`
+  : lastEvidence?.note
+    ? `先看“${lastEvidence.note.slice(0, 80)}”，再决定下一个 5–20 分钟动作`
+    : "从今天留下的进度继续";
 const form = reactive({
   days: 3,
-  cue: props.project.evidence.length
-    ? "先看上次留下的结果，再决定下一个 5–20 分钟动作"
-    : "从今天留下的进度继续"
+  cue: defaultCue.slice(0, 160)
 });
 const busy = ref(false);
 const error = ref("");

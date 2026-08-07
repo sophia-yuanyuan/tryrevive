@@ -20,6 +20,10 @@ import {
 } from "@/shared/domain/inference-flow";
 import { inferLocalProject, type LocalInferenceRequest } from "@/shared/domain/local-inference";
 import {
+  createRepositoryOutcomeDraft,
+  observationFromOutcome
+} from "@/shared/domain/outcome-flow";
+import {
   addEvidence,
   applyProjectAnalysis,
   assignAction,
@@ -78,20 +82,31 @@ export const useRevivalStore = defineStore("revival", () => {
     await saveSnapshot(snapshot);
   }
 
-  async function commitCandidate(candidate: AppState, beforePublish?: () => void): Promise<void> {
-    if (candidateCommitInFlight.value) {
-      throw new Error("上一次保存还在进行，请等它完成后再操作");
-    }
+  async function commitCandidateBuild(
+    build: () => AppState | Promise<AppState>,
+    beforePublish?: () => void
+  ): Promise<void> {
+    assertNoCandidateCommit();
     candidateCommitInFlight.value = true;
+    saveStatus.value = "saving";
     try {
+      const candidate = await build();
       candidate.updatedAt = Date.now();
       const snapshot = AppStateSchema.parse(JSON.parse(JSON.stringify(candidate)));
       await saveSnapshot(snapshot);
       beforePublish?.();
       data.value = snapshot;
+    } catch (error) {
+      saveStatus.value = "error";
+      errorMessage.value = error instanceof Error ? error.message : "本地保存失败";
+      throw error;
     } finally {
       candidateCommitInFlight.value = false;
     }
+  }
+
+  async function commitCandidate(candidate: AppState, beforePublish?: () => void): Promise<void> {
+    await commitCandidateBuild(() => candidate, beforePublish);
   }
 
   async function initialize(): Promise<void> {
@@ -310,26 +325,126 @@ export const useRevivalStore = defineStore("revival", () => {
 
   async function beginAction(): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(startAction(activeProject.value));
-    await persist();
+    const projectId = activeProject.value.id;
+    await commitCandidateBuild(async () => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      let project = candidate.projects[index]!;
+      if (!project.action) throw new Error("还没有设定下一小步。");
+
+      if (!project.action.startedAt && project.repository) {
+        let baseline = null;
+        try {
+          const result = await platform.rescanRepository(project.repository.bindingId);
+          if (!result.canceled && result.bindingId === project.repository.bindingId) {
+            baseline = result.snapshot;
+          }
+        } catch {
+          baseline = null;
+        }
+        project = {
+          ...project,
+          repository: {
+            ...project.repository,
+            lastSnapshot: baseline ?? project.repository.lastSnapshot,
+            actionBaseline: baseline
+              ? { actionId: project.action.id, snapshot: baseline }
+              : null
+          }
+        };
+      }
+
+      candidate.projects[index] = startAction(project);
+      return candidate;
+    });
   }
 
   async function finishAction(): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(completeAction(activeProject.value));
-    await persist();
+    const projectId = activeProject.value.id;
+    const completionRequestedAt = Date.now();
+    await commitCandidateBuild(async () => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      const project = candidate.projects[index]!;
+      if (!project.action) throw new Error("还没有可完成的下一小步。");
+      let completed = completeAction(project, completionRequestedAt);
+
+      if (project.repository) {
+        const baseline =
+          project.repository.actionBaseline?.actionId === project.action.id
+            ? project.repository.actionBaseline.snapshot
+            : null;
+        let current = null;
+        let scanTruncated = false;
+        if (baseline) {
+          try {
+            const result = await platform.rescanRepository(project.repository.bindingId);
+            if (!result.canceled && result.bindingId === project.repository.bindingId) {
+              current = result.snapshot;
+              scanTruncated = result.boundary.truncated;
+            }
+          } catch {
+            current = null;
+          }
+        }
+        completed = {
+          ...completed,
+          repository: {
+            ...project.repository,
+            lastSnapshot: current ?? project.repository.lastSnapshot
+          },
+          outcomeDraft: createRepositoryOutcomeDraft(
+            {
+              actionId: project.action.id,
+              baseline,
+              current,
+              scanTruncated
+            },
+            completionRequestedAt
+          )
+        };
+      }
+
+      candidate.projects[index] = completed;
+      return candidate;
+    });
   }
 
   async function recordEvidence(input: { note: string; link?: string }): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(addEvidence(activeProject.value, input));
-    await persist();
+    const projectId = activeProject.value.id;
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      const project = candidate.projects[index]!;
+      if (
+        project.outcomeDraft &&
+        (!project.action || project.outcomeDraft.actionId !== project.action.id)
+      ) {
+        throw new Error("这份成果草稿不属于当前行动，请重新完成本次记录");
+      }
+      candidate.projects[index] = addEvidence(project, {
+        ...input,
+        observation: observationFromOutcome(project.outcomeDraft)
+      });
+      return candidate;
+    });
   }
 
   async function setReturnPlan(input: { dueAt: number; cue: string }): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(scheduleReturn(activeProject.value, input));
-    await persist();
+    const projectId = activeProject.value.id;
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      candidate.projects[index] = scheduleReturn(candidate.projects[index]!, input);
+      return candidate;
+    });
   }
 
   async function resume(): Promise<void> {

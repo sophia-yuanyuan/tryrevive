@@ -84,7 +84,7 @@ export const ActionSchema = z.object({
 
 export const RepositoryObservationSchema = z.object({
   kind: z.literal("repository_diff"),
-  paths: z.array(SafeRepositoryPathSchema).max(20),
+  paths: z.array(SafeRepositoryPathSchema).min(1).max(20),
   detectedAt: z.number().int().positive()
 });
 
@@ -116,21 +116,38 @@ export const ProjectRepositoryContextSchema = z.object({
     .nullable()
 });
 
-export const OutcomeDraftSchema = z.object({
-  actionId: z.string().min(1),
-  status: z.enum(["changes_detected", "no_readable_change", "scan_failed"]),
-  changes: z
-    .array(
-      z.object({
-        path: SafeRepositoryPathSchema,
-        kind: z.enum(["content_changed", "now_observed"])
-      })
-    )
-    .max(20),
-  suggestedNote: z.string().trim().min(1).max(500),
-  scanTruncated: z.boolean(),
-  createdAt: z.number().int().positive()
-});
+export const OutcomeDraftSchema = z
+  .object({
+    actionId: z.string().min(1),
+    status: z.enum(["changes_detected", "no_readable_change", "scan_failed"]),
+    changes: z
+      .array(
+        z.object({
+          path: SafeRepositoryPathSchema,
+          kind: z.enum(["content_changed", "now_observed"])
+        })
+      )
+      .max(20),
+    suggestedNote: z.string().trim().min(1).max(500),
+    scanTruncated: z.boolean(),
+    createdAt: z.number().int().positive()
+  })
+  .superRefine((draft, context) => {
+    if (draft.status === "changes_detected" && draft.changes.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["changes"],
+        message: "changes_detected 需要至少一条可确认的变化"
+      });
+    }
+    if (draft.status !== "changes_detected" && draft.changes.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["changes"],
+        message: "未检测到变化时不能保留变化列表"
+      });
+    }
+  });
 
 export const ProjectSchema = z.object({
   id: z.string().min(1),
@@ -170,6 +187,7 @@ export type InferenceSource = z.infer<typeof InferenceSourceSchema>;
 export type ProjectReward = z.infer<typeof ProjectRewardSchema>;
 export type RestoreContext = z.infer<typeof RestoreContextSchema>;
 export type RevivalAction = z.infer<typeof ActionSchema>;
+export type RepositoryObservation = z.infer<typeof RepositoryObservationSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type ReturnPlan = z.infer<typeof ReturnPlanSchema>;
 export type ProjectAnalysis = z.infer<typeof ProjectAnalysisSchema>;

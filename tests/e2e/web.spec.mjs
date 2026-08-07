@@ -43,7 +43,9 @@ async function completeRevivalLoop(page) {
 
   await page.getByRole("button", { name: "保存，下次从这里继续" }).click();
   await expect(page.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
-  await expect(page.getByText("导航已经可以在 390px 下打开和关闭")).toBeVisible();
+  await expect(
+    page.getByText("导航已经可以在 390px 下打开和关闭", { exact: true })
+  ).toBeVisible();
 }
 
 test("student can complete the P0 loop and resume after reload", async ({ page }) => {

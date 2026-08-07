@@ -6,6 +6,7 @@ import {
   type ProjectAnalysis,
   type ProjectMood,
   ProjectRewardSchema,
+  type RepositoryObservation,
   type RestoreContext,
   ReturnPlanSchema,
   type RevivalAction,
@@ -101,7 +102,20 @@ export function assignAction(
   const history = project.action
     ? [...project.actionHistory, project.action].slice(-50)
     : project.actionHistory;
-  return touch({ ...project, action, actionHistory: history, stage: "execute" }, now);
+  return touch(
+    {
+      ...project,
+      action,
+      actionHistory: history,
+      returnPlan: null,
+      outcomeDraft: null,
+      repository: project.repository
+        ? { ...project.repository, actionBaseline: null }
+        : project.repository,
+      stage: "execute"
+    },
+    now
+  );
 }
 
 export function startAction(project: RevivalProject, now = Date.now()): RevivalProject {
@@ -122,7 +136,7 @@ export function completeAction(project: RevivalProject, now = Date.now()): Reviv
 
 export function addEvidence(
   project: RevivalProject,
-  input: { note: string; link?: string },
+  input: { note: string; link?: string; observation?: RepositoryObservation | null },
   now = Date.now()
 ): RevivalProject {
   const evidence = EvidenceSchema.parse({
@@ -130,10 +144,21 @@ export function addEvidence(
     actionId: project.action?.id ?? null,
     note: input.note,
     link: input.link ?? "",
-    observation: null,
+    observation: input.observation ?? null,
     createdAt: now
   });
-  return touch({ ...project, evidence: [...project.evidence, evidence], stage: "return" }, now);
+  return touch(
+    {
+      ...project,
+      evidence: [...project.evidence, evidence],
+      outcomeDraft: null,
+      repository: project.repository
+        ? { ...project.repository, actionBaseline: null }
+        : project.repository,
+      stage: "return"
+    },
+    now
+  );
 }
 
 export function scheduleReturn(
@@ -150,7 +175,7 @@ export function resumeProject(project: RevivalProject, now = Date.now()): Reviva
   if (project.status === "abandoned" || project.status === "completed") {
     throw new Error("这个项目已经结束，可以新建项目继续。");
   }
-  return touch({ ...project, status: "active", stage: "action", returnPlan: null }, now);
+  return touch({ ...project, status: "active", stage: "action" }, now);
 }
 
 export function markProjectCompleted(
@@ -177,6 +202,21 @@ export function suggestedAction(project: RevivalProject): {
   doneDefinition: string;
   minutes: number;
 } {
+  const lastEvidence = project.evidence.at(-1);
+  if (project.returnPlan) {
+    return {
+      text: project.returnPlan.cue,
+      doneDefinition: "留下一条可确认的新结果，并写下下次从哪里继续",
+      minutes: 10
+    };
+  }
+  if (lastEvidence) {
+    return {
+      text: `从“${lastEvidence.note.slice(0, 96)}”继续最小的一步`,
+      doneDefinition: "留下一条能与上次结果对照的新进度",
+      minutes: 10
+    };
+  }
   if (project.analysis) return { ...project.analysis.nextAction };
   const stuckAt = project.restore.stuckAt || "当前卡点";
   if (project.decision === "shrink") {

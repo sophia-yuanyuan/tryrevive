@@ -222,8 +222,8 @@ test("desktop app launches with an isolated bridge and persists state across res
   }
 });
 
-test("desktop repository inference confirms one draft and enters focus after restart", async () => {
-  test.setTimeout(60_000);
+test("desktop repository inference reaches focus, confirmed evidence, and the next return cue", async () => {
+  test.setTimeout(90_000);
   const workspace = await mkdtemp(path.join(os.tmpdir(), "tryrevive-repo-flow-"));
   const userData = path.join(workspace, "user-data");
   const repository = path.join(workspace, "course-demo");
@@ -290,6 +290,93 @@ test("desktop repository inference confirms one draft and enters focus after res
     const focus = window.getByRole("dialog", { name: "专注界面" });
     await expect(focus).toBeVisible();
     await expect(focus.getByText("报名表单布局已经完成", { exact: false })).toBeVisible();
+
+    await window.keyboard.press("Enter");
+    const dropNeedle = focus.getByRole("button", {
+      name: /按住 0\.8 秒，让唱针落下并开始这一小步/
+    });
+    await expect(dropNeedle).toBeVisible();
+    await dropNeedle.press("Enter", { delay: 1_100 });
+    await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const state = JSON.parse(await readFile(statePath, "utf8"));
+        const project = state.projects[0];
+        return (
+          project?.repository?.actionBaseline?.actionId === project?.action?.id &&
+          Boolean(project?.action?.startedAt)
+        );
+      })
+      .toBe(true);
+
+    await writeFile(
+      path.join(repository, "src", "main.ts"),
+      "export const ready = true;\nexport const registrationDeadline = 'Friday 18:00';\n",
+      "utf8"
+    );
+    await focus.getByRole("button", { name: "我留下了一个结果" }).click();
+    await expect(
+      window.getByRole("heading", { name: "先确认这次真正留下了什么" })
+    ).toBeVisible();
+
+    const draftState = JSON.parse(await readFile(statePath, "utf8"));
+    const draftProject = draftState.projects[0];
+    expect(draftProject.stage).toBe("evidence");
+    expect(draftProject.status).toBe("active");
+    expect(draftProject.evidence).toHaveLength(0);
+    expect(draftProject.reward).toBeNull();
+    expect(draftProject.outcomeDraft?.actionId).toBe(draftProject.action?.id);
+    expect(draftProject.outcomeDraft?.changes).toContainEqual({
+      path: "src/main.ts",
+      kind: "content_changed"
+    });
+
+    const observation = window.getByRole("region", {
+      name: "TryRevive 观察到的文件变化"
+    });
+    await expect(observation).toContainText("src/main.ts");
+    await expect(observation).toContainText("内容与开始前不同");
+    await expect(observation).toContainText("不代表完成标准或成果质量");
+    await observation.getByRole("button", { name: "修改" }).click();
+    await window.getByLabel("我实际完成了").fill("我补上了报名截止日期");
+    await window.getByRole("button", { name: "把真实进度留下" }).click();
+    const returnCue = window.getByLabel("回来时先看哪句话？");
+    await expect(returnCue).toBeVisible();
+
+    const evidenceState = JSON.parse(await readFile(statePath, "utf8"));
+    const evidenceProject = evidenceState.projects[0];
+    expect(evidenceProject.stage).toBe("return");
+    expect(evidenceProject.outcomeDraft).toBeNull();
+    expect(evidenceProject.evidence[0]).toMatchObject({
+      actionId: evidenceProject.action.id,
+      note: "我补上了报名截止日期",
+      observation: { kind: "repository_diff", paths: ["src/main.ts"] }
+    });
+    expect(evidenceProject.reward).toBeNull();
+
+    await expect(returnCue).toHaveValue(/src\/main\.ts/);
+    const fixedCue = "下次先打开 src/main.ts，核对报名截止日期显示";
+    await returnCue.fill(fixedCue);
+    await window.getByRole("button", { name: "保存，下次从这里继续" }).click();
+    await expect(window.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
+    await expect(window.getByText(fixedCue, { exact: true })).toBeVisible();
+
+    const returnedStateText = await readFile(statePath, "utf8");
+    expect(returnedStateText).not.toContain(repository);
+    const returnedState = JSON.parse(returnedStateText);
+    expect(returnedState.projects[0]?.returnPlan?.cue).toBe(fixedCue);
+    expect(returnedState.projects[0]?.reward).toBeNull();
+
+    await desktop.close();
+    desktop = await electron.launch(launchOptions);
+    window = await desktop.firstWindow();
+    await expect(window.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
+    await expect(window.getByText(fixedCue, { exact: true })).toBeVisible();
+    await window.getByRole("button", { name: "从真实进度继续" }).click();
+    await expect(
+      window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+    ).toBeVisible();
+    await expect(window.getByLabel("这一步具体做什么？")).toHaveValue(fixedCue);
   } finally {
     await desktop.close().catch(() => undefined);
     await rm(workspace, { recursive: true, force: true });

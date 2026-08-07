@@ -9,7 +9,8 @@ import {
   resumeProject,
   saveRestore,
   scheduleReturn,
-  startAction
+  startAction,
+  suggestedAction
 } from "@/shared/domain/revival";
 
 describe("revival domain flow", () => {
@@ -59,6 +60,22 @@ describe("revival domain flow", () => {
     project = resumeProject(project, start + 3 * 86_400_000);
     expect(project.stage).toBe("action");
     expect(project.restore.lastCompleted).toBe("完成了首页布局");
+    expect(project.returnPlan?.cue).toBe("先检查键盘操作");
+    expect(suggestedAction(project).text).toBe("先检查键盘操作");
+
+    const previousActionId = project.action?.id;
+    project = assignAction(
+      project,
+      {
+        text: suggestedAction(project).text,
+        doneDefinition: suggestedAction(project).doneDefinition,
+        minutes: suggestedAction(project).minutes
+      },
+      start + 3 * 86_400_000 + 1
+    );
+    expect(project.returnPlan).toBeNull();
+    expect(project.actionHistory.at(-1)?.id).toBe(previousActionId);
+    expect(project.action?.id).not.toBe(previousActionId);
   });
 
   it("keeps action timeboxes inside the 5–20 minute contract", () => {
