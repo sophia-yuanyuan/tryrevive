@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   type AppState,
   type Decision,
+  type ProjectMood,
   type ProjectAnalysis,
   type RestoreContext,
   type RevivalProject,
@@ -22,6 +23,7 @@ import {
   saveDiagnosis,
   saveRestore,
   scheduleReturn,
+  setProjectReward,
   startAction
 } from "@/shared/domain/revival";
 import { platform } from "@/renderer/platform/web";
@@ -179,9 +181,17 @@ export const useRevivalStore = defineStore("revival", () => {
     await persist();
   }
 
-  async function completeProject(): Promise<void> {
+  async function completeProject(mood: ProjectMood): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(markProjectCompleted(activeProject.value));
+    replaceActive(markProjectCompleted(activeProject.value, mood));
+    await persist();
+  }
+
+  async function setRewardMood(projectId: string, mood: ProjectMood): Promise<void> {
+    const project = data.value.projects.find((item) => item.id === projectId);
+    if (!project) throw new Error("找不到这张项目唱片");
+    const index = data.value.projects.findIndex((item) => item.id === projectId);
+    data.value.projects[index] = setProjectReward(project, mood);
     await persist();
   }
 
@@ -224,6 +234,7 @@ export const useRevivalStore = defineStore("revival", () => {
     setReturnPlan,
     resume,
     completeProject,
+    setRewardMood,
     exportData,
     importData
   };

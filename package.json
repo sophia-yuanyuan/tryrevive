@@ -1,6 +1,6 @@
 {
   "name": "tryrevive",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Student-first stalled-project revival app for web and desktop.",

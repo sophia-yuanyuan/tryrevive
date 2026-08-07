@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { RevivalProject } from "@/shared/domain/model";
+import type { ProjectMood, RevivalProject } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import StageShell from "./StageShell.vue";
 import VinylArtifact from "./VinylArtifact.vue";
+import CompletionMoodPicker from "./CompletionMoodPicker.vue";
 
 const props = defineProps<{ project: RevivalProject }>();
 const store = useRevivalStore();
 const busy = ref(false);
 const error = ref("");
+const choosingMood = ref(false);
 const lastEvidence = computed(() => props.project.evidence.at(-1));
 const dueLabel = computed(() =>
   props.project.returnPlan
@@ -21,14 +23,25 @@ const dueLabel = computed(() =>
     : "你准备好的时候"
 );
 
-async function run(action: "resume" | "complete"): Promise<void> {
+async function resume(): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-    if (action === "resume") await store.resume();
-    else await store.completeProject();
+    await store.resume();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "状态保存失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function completeWithMood(mood: ProjectMood): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    await store.completeProject(mood);
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "完成状态保存失败";
   } finally {
     busy.value = false;
   }
@@ -56,17 +69,19 @@ async function run(action: "resume" | "complete"): Promise<void> {
         </p>
       </article>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-      <button class="primary-button w-full" type="button" :disabled="busy" @click="run('resume')">
+      <button class="primary-button w-full" type="button" :disabled="busy" @click="resume">
         从真实进度继续
       </button>
       <button
         class="text-button mx-auto block"
         type="button"
         :disabled="busy"
-        @click="run('complete')"
+        :aria-expanded="choosingMood"
+        @click="choosingMood = !choosingMood"
       >
         这个项目已经完成
       </button>
+      <CompletionMoodPicker v-if="choosingMood" :busy="busy" @select="completeWithMood" />
     </div>
   </StageShell>
 </template>

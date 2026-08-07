@@ -70,3 +70,44 @@ test("cloud context entry stays explicit and never asks for an API key", async (
   await expect(page.getByText(/仅在桌面版内测/)).toBeVisible();
   await expect(page.getByText(/API Key/)).toHaveCount(1);
 });
+
+test("a completed project becomes a persistent playable and exportable vinyl record", async ({
+  page
+}) => {
+  await completeRevivalLoop(page);
+  await page.getByRole("button", { name: "这个项目已经完成" }).click();
+  await expect(page.getByText("完成这一刻，更接近哪种感觉？")).toBeVisible();
+  await page.getByRole("button", { name: /踏实的骄傲/ }).click();
+  await expect(page.getByRole("heading", { name: "这个项目已经完成" })).toBeVisible();
+
+  await page.getByRole("link", { name: "黑胶星球" }).first().click();
+  await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
+  await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "播放项目唱片" })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出同一首 WAV" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("课程作品集.wav");
+  await expect(page.getByText("WAV 已导出")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "播放项目唱片" })).toBeVisible();
+});
+
+test("an abandoned project remains available in the black-hole history", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("所有还在心里的项目").fill("不再参加的比赛");
+  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
+  await page.getByLabel("上次最后完成了什么？").fill("读完了比赛规则");
+  await page.getByLabel("具体卡在哪里？").fill("方向已经不再重要");
+  await page.getByRole("button", { name: "现场找回来了" }).click();
+  await page.getByRole("button", { name: /放弃/ }).click();
+  await expect(page.getByRole("heading", { name: "这个项目已经结束" })).toBeVisible();
+
+  await page.getByRole("link", { name: "黑胶星球" }).first().click();
+  await expect(page.getByText("黑洞历史", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看已放下项目：不再参加的比赛" })).toBeVisible();
+  await expect(page.getByText("记录仍保留在本机", { exact: true })).toBeVisible();
+});

@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
+import {
+  createProjectComposition,
+  projectWavFileName,
+  renderProjectWav
+} from "@/shared/audio/vinyl-music";
+import { platform } from "@/renderer/platform/web";
 
 const props = defineProps<{
   project: RevivalProject;
@@ -9,8 +15,19 @@ const props = defineProps<{
 
 const opened = ref(false);
 const playing = ref(false);
-let audioContext: AudioContext | null = null;
-let stopTimer: number | null = null;
+const rendering = ref(false);
+const audioElement = ref<HTMLAudioElement | null>(null);
+const audioUrl = ref("");
+const audioBytes = ref<Uint8Array | null>(null);
+const audioError = ref("");
+const exportNotice = ref("");
+
+const composition = computed(() => createProjectComposition(props.project));
+const trackLength = computed(() => {
+  const seconds = composition.value.durationSeconds;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+});
+const recordedMinutes = computed(() => Math.max(1, Math.round(composition.value.workSeconds / 60)));
 
 const filledPieces = computed(() => {
   if (props.project.status === "completed") return 16;
@@ -35,50 +52,70 @@ const coverStyle = computed(() => ({
   "--cover-hue-alt": `${(coverSeed.value + 76) % 360}`
 }));
 
-function stopTone(): void {
-  if (stopTimer !== null) window.clearTimeout(stopTimer);
-  stopTimer = null;
+function stopTrack(): void {
+  audioElement.value?.pause();
   playing.value = false;
-  if (audioContext) void audioContext.close().catch(() => undefined);
-  audioContext = null;
 }
 
-function toggleTone(): void {
+function releaseAudio(): void {
+  stopTrack();
+  if (audioUrl.value) URL.revokeObjectURL(audioUrl.value);
+  audioUrl.value = "";
+  audioBytes.value = null;
+  audioError.value = "";
+  exportNotice.value = "";
+}
+
+function ensureAudio(): Uint8Array {
+  if (audioBytes.value) return audioBytes.value;
+  const bytes = renderProjectWav(props.project);
+  const blob = new Blob([bytes.slice().buffer], { type: "audio/wav" });
+  audioBytes.value = bytes;
+  audioUrl.value = URL.createObjectURL(blob);
+  return bytes;
+}
+
+async function toggleTrack(): Promise<void> {
   if (playing.value) {
-    stopTone();
+    stopTrack();
     return;
   }
-
-  const context = new AudioContext();
-  const master = context.createGain();
-  master.gain.setValueAtTime(0.0001, context.currentTime);
-  master.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.08);
-  master.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 6.2);
-  master.connect(context.destination);
-
-  const scale = [0, 2, 4, 7, 9];
-  const root = 146.83 * 2 ** ((coverSeed.value % 7) / 12);
-  for (let beat = 0; beat < 8; beat += 1) {
-    const oscillator = context.createOscillator();
-    const envelope = context.createGain();
-    const degree = scale[(coverSeed.value + beat * 3) % scale.length] ?? 0;
-    oscillator.type = beat % 3 === 0 ? "triangle" : "sine";
-    oscillator.frequency.value = root * 2 ** (degree / 12);
-    const startsAt = context.currentTime + beat * 0.72;
-    envelope.gain.setValueAtTime(0.0001, startsAt);
-    envelope.gain.exponentialRampToValueAtTime(0.42, startsAt + 0.04);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.62);
-    oscillator.connect(envelope).connect(master);
-    oscillator.start(startsAt);
-    oscillator.stop(startsAt + 0.66);
+  rendering.value = true;
+  audioError.value = "";
+  try {
+    ensureAudio();
+    await nextTick();
+    await audioElement.value?.play();
+  } catch (caught) {
+    audioError.value = caught instanceof Error ? caught.message : "这张唱片暂时无法播放";
+  } finally {
+    rendering.value = false;
   }
-
-  audioContext = context;
-  playing.value = true;
-  stopTimer = window.setTimeout(stopTone, 6_500);
 }
 
-onBeforeUnmount(stopTone);
+async function exportTrack(): Promise<void> {
+  rendering.value = true;
+  audioError.value = "";
+  exportNotice.value = "";
+  try {
+    const result = await platform.exportAudio({
+      fileName: projectWavFileName(props.project),
+      bytes: ensureAudio()
+    });
+    exportNotice.value = result.canceled
+      ? "已取消导出"
+      : result.path
+        ? `已导出到 ${result.path}`
+        : "WAV 已导出";
+  } catch (caught) {
+    audioError.value = caught instanceof Error ? caught.message : "WAV 导出失败";
+  } finally {
+    rendering.value = false;
+  }
+}
+
+watch(() => [props.project.id, props.project.reward?.mood], releaseAudio);
+onBeforeUnmount(releaseAudio);
 </script>
 
 <template>
@@ -142,18 +179,42 @@ onBeforeUnmount(stopTone);
         <p class="vinyl-copy">
           {{
             project.status === "completed"
-              ? "颜色与短音型由项目标题和本地记录确定；这是奖励原型，不会上传你的项目内容。"
+              ? project.reward
+                ? `这首 ${trackLength} 的曲目根据“${composition.moodLabel}”、${recordedMinutes} 分钟项目动作和本地记录生成；不会上传项目内容。`
+                : "先选择完成这一刻的真实心情，才会生成这张项目唱片。"
               : "每次留下真实进度，封面都会再清晰一点。项目完成时才会完整打开。"
           }}
         </p>
-        <button
-          v-if="project.status === 'completed'"
-          class="secondary-button vinyl-play"
-          type="button"
-          @click="toggleTone"
-        >
-          {{ playing ? "停止短音型" : "播放这张项目唱片" }}
-        </button>
+        <template v-if="project.status === 'completed' && project.reward">
+          <audio
+            ref="audioElement"
+            class="sr-only"
+            :src="audioUrl"
+            @play="playing = true"
+            @pause="playing = false"
+            @ended="playing = false"
+          />
+          <div class="vinyl-actions">
+            <button
+              class="secondary-button vinyl-play"
+              type="button"
+              :disabled="rendering"
+              @click="toggleTrack"
+            >
+              {{ rendering ? "正在生成曲目…" : playing ? "暂停项目唱片" : "播放项目唱片" }}
+            </button>
+            <button
+              class="text-button vinyl-export"
+              type="button"
+              :disabled="rendering"
+              @click="exportTrack"
+            >
+              导出同一首 WAV
+            </button>
+          </div>
+          <p v-if="audioError" class="form-error" role="alert">{{ audioError }}</p>
+          <p v-if="exportNotice" class="vinyl-notice" role="status">{{ exportNotice }}</p>
+        </template>
       </div>
     </template>
   </section>

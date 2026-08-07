@@ -57,6 +57,11 @@ async function startNewProject(): Promise<void> {
         </span>
       </RouterLink>
 
+      <nav class="app-nav" aria-label="主要页面">
+        <RouterLink to="/">工作台</RouterLink>
+        <RouterLink to="/collection">黑胶星球</RouterLink>
+      </nav>
+
       <div class="flex items-center gap-2">
         <span class="hidden text-xs text-[var(--muted)] sm:inline-flex" aria-live="polite">
           {{ saveLabel }} · {{ store.platformKind === "desktop" ? "桌面版" : "网页版" }}
@@ -142,6 +147,14 @@ async function startNewProject(): Promise<void> {
 
               <RouterLink
                 class="text-button mt-6 inline-flex"
+                to="/collection"
+                @click="settingsOpen = false"
+              >
+                打开黑胶星球
+              </RouterLink>
+
+              <RouterLink
+                class="text-button ml-4 mt-6 inline-flex"
                 to="/about"
                 @click="settingsOpen = false"
               >
