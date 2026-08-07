@@ -125,6 +125,14 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await expect(page.getByText("摄像头默认关闭")).toBeVisible();
   await expect(page.getByRole("button", { name: "同意说明并开启摄像头手势" })).toBeVisible();
 
+  await page.getByRole("button", { name: "播放项目唱片" }).click();
+  await expect(page.getByRole("button", { name: "暂停项目唱片" })).toBeVisible();
+  await expect
+    .poll(() => page.locator("audio").evaluate((audio) => audio.currentTime))
+    .toBeGreaterThan(0.05);
+  await expect(page.locator(".form-error")).toHaveCount(0);
+  await page.getByRole("button", { name: "暂停项目唱片" }).click();
+
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出同一首 WAV" }).click();
   const download = await downloadPromise;

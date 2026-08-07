@@ -368,6 +368,13 @@ test("desktop camera gestures stay off by default and load the packaged local mo
   try {
     const window = await desktop.firstWindow();
     await window.getByRole("link", { name: "黑胶星球" }).click();
+    await window.getByRole("button", { name: "播放项目唱片" }).click();
+    await expect(window.getByRole("button", { name: "暂停项目唱片" })).toBeVisible();
+    await expect
+      .poll(() => window.locator("audio").evaluate((audio) => audio.currentTime))
+      .toBeGreaterThan(0.05);
+    await expect(window.locator(".form-error")).toHaveCount(0);
+    await window.getByRole("button", { name: "暂停项目唱片" }).click();
     await expect(window.getByText("摄像头默认关闭")).toBeVisible();
     await window.getByRole("button", { name: "同意说明并开启摄像头手势" }).click();
     await expect(window.getByText(/本机识别中/)).toBeVisible({ timeout: 60_000 });
