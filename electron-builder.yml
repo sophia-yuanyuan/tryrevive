@@ -8,6 +8,9 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: resources/windows/foreground-monitor.ps1
+    to: foreground-monitor.ps1
 win:
   target:
     - target: nsis

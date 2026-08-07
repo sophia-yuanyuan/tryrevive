@@ -13,12 +13,8 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { AppStateSchema } from "../src/shared/domain/model";
-import {
-  analyzeCloudContext,
-  getCloudStatus,
-  quoteCloudContext,
-  redeemCloudCode
-} from "./cloud";
+import { analyzeCloudContext, getCloudStatus, quoteCloudContext, redeemCloudCode } from "./cloud";
+import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
 
 const APP_SCHEME = "app";
@@ -137,6 +133,24 @@ function registerIpc(): void {
     assertTrustedSender(event);
     return analyzeCloudContext(request as Parameters<typeof analyzeCloudContext>[0]);
   });
+  ipcMain.handle(IPC_CHANNELS.focusCapability, (event) => {
+    assertTrustedSender(event);
+    return focusGuardian.capability();
+  });
+  ipcMain.handle(IPC_CHANNELS.startFocusGuardian, (event, request: unknown) => {
+    assertTrustedSender(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error("找不到当前 TryRevive 窗口");
+    return focusGuardian.start(request, window);
+  });
+  ipcMain.handle(IPC_CHANNELS.stopFocusGuardian, (event) => {
+    assertTrustedSender(event);
+    return focusGuardian.stop();
+  });
+  ipcMain.handle(IPC_CHANNELS.acknowledgeFocusGuardian, (event, action: unknown) => {
+    assertTrustedSender(event);
+    return focusGuardian.acknowledge(action);
+  });
 }
 
 function registerAppProtocol(): void {
@@ -180,6 +194,7 @@ function createWindow(): BrowserWindow {
     if (!isTrustedRendererUrl(url)) event.preventDefault();
   });
   window.once("ready-to-show", () => window.show());
+  window.on("closed", () => focusGuardian.stop(false));
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -214,3 +229,5 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+app.on("before-quit", () => focusGuardian.stop(false));

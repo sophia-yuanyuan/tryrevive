@@ -651,6 +651,13 @@ button:disabled {
   text-align: center;
 }
 
+.focus-live-card {
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+  padding: 0.25rem;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
 .focus-phase-card {
   cursor: pointer;
 }
@@ -712,6 +719,132 @@ button:disabled {
   line-height: 1.7;
 }
 
+.focus-guardian {
+  max-width: 46rem;
+  margin: 1.25rem auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: left;
+}
+
+.focus-guardian-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.focus-guardian-title,
+.focus-guardian-copy,
+.focus-guardian-running p {
+  margin: 0;
+}
+
+.focus-guardian-title {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.focus-guardian-copy,
+.focus-guardian-running p {
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.focus-guardian-state {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.55rem;
+  color: rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.focus-guardian-state.active {
+  color: #c9f4df;
+  background: rgba(79, 179, 128, 0.18);
+}
+
+.focus-apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.focus-app-chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0.45rem 0.65rem;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.focus-app-chip.selected {
+  border-color: rgba(185, 226, 207, 0.55);
+  color: #e5fff2;
+  background: rgba(64, 151, 108, 0.22);
+}
+
+.focus-custom-app {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.68rem;
+}
+
+.focus-custom-app input {
+  min-height: 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.focus-custom-app input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.focus-guardian-start {
+  min-height: 2.6rem;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(202, 241, 221, 0.48);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  color: #e8fff3;
+  background: rgba(53, 133, 93, 0.28);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.focus-guardian-running {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+}
+
+.focus-guardian-running p {
+  flex: 1 1 18rem;
+  margin-top: 0;
+}
+
+.focus-guardian-running .focus-guardian-warning {
+  color: #ffd5ad;
+}
+
 .focus-controls {
   display: flex;
   flex-wrap: wrap;
@@ -770,6 +903,18 @@ button:disabled {
   display: block;
   margin-top: 0.2rem;
   color: rgba(255, 255, 255, 0.9);
+}
+
+.focus-reset .focus-reset-app {
+  margin-top: 0.35rem;
+  color: rgba(255, 213, 173, 0.8);
+}
+
+.focus-reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .breath-core {
@@ -1054,6 +1199,24 @@ body.focus-mode-active {
 
   .focus-reset-back {
     grid-column: 1 / -1;
+  }
+
+  .focus-guardian-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .focus-guardian-state {
+    align-self: flex-start;
+  }
+
+  .focus-reset-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .focus-reset-actions .focus-reset-back {
+    flex: 1 1 100%;
   }
 
   .vinyl-artifact,

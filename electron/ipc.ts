@@ -7,5 +7,10 @@ export const IPC_CHANNELS = {
   cloudStatus: "cloud:status",
   redeemCloudCode: "cloud:redeem-code",
   quoteCloudContext: "cloud:quote-context",
-  analyzeCloudContext: "cloud:analyze-context"
+  analyzeCloudContext: "cloud:analyze-context",
+  focusCapability: "focus:capability",
+  startFocusGuardian: "focus:start",
+  stopFocusGuardian: "focus:stop",
+  acknowledgeFocusGuardian: "focus:acknowledge",
+  focusEvent: "focus:event"
 } as const;

@@ -6,6 +6,7 @@ import type {
   ExportResult,
   ImportResult
 } from "@/shared/platform/contracts";
+import { FocusEventSchema } from "@/shared/focus/contracts";
 
 const DATABASE_NAME = "tryrevive";
 const STORE_NAME = "state";
@@ -120,6 +121,32 @@ const webPlatform: AppPlatform = {
   },
   async analyzeCloudContext() {
     throw new Error("云端理解当前仅在桌面版内测");
+  },
+  async focusCapability() {
+    return {
+      available: false,
+      active: false,
+      message: "网页版本保留手动全屏专注；系统级偏离提醒仅在 Windows 桌面版提供。"
+    };
+  },
+  async startFocusGuardian() {
+    throw new Error("系统级偏离提醒仅在 Windows 桌面版提供");
+  },
+  async stopFocusGuardian() {
+    return {
+      phase: "stopped" as const,
+      appName: "",
+      graceRemainingSeconds: 0,
+      idleSeconds: 0,
+      allowedApps: [],
+      message: "网页版本没有运行系统级偏离提醒。"
+    };
+  },
+  async acknowledgeFocusGuardian() {
+    throw new Error("系统级偏离提醒仅在 Windows 桌面版提供");
+  },
+  onFocusEvent() {
+    return () => undefined;
   }
 };
 
@@ -134,7 +161,13 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     cloudStatus: () => bridge.cloudStatus(),
     redeemCloudCode: (code) => bridge.redeemCloudCode(code),
     quoteCloudContext: (source) => bridge.quoteCloudContext(source),
-    analyzeCloudContext: (request) => bridge.analyzeCloudContext(request)
+    analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),
+    focusCapability: () => bridge.focusCapability(),
+    startFocusGuardian: (request) => bridge.startFocusGuardian(request),
+    stopFocusGuardian: () => bridge.stopFocusGuardian(),
+    acknowledgeFocusGuardian: (action) => bridge.acknowledgeFocusGuardian(action),
+    onFocusEvent: (listener) =>
+      bridge.onFocusEvent((event) => listener(FocusEventSchema.parse(event)))
   };
 }
 

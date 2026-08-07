@@ -28,7 +28,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...vue.configs["flat/recommended"],
   {
-    files: ["*.config.{js,mjs}", "tests/e2e/**/*.mjs"],
+    files: ["*.config.{js,mjs}", "tests/**/*.mjs"],
     languageOptions: {
       globals: globals.node
     }

@@ -7,6 +7,12 @@ import type {
   CloudSourceMetadata,
   CloudStatus
 } from "../cloud/contracts";
+import type {
+  FocusAcknowledge,
+  FocusCapability,
+  FocusEvent,
+  FocusSessionRequest
+} from "../focus/contracts";
 
 export interface ExportResult {
   canceled: boolean;
@@ -29,6 +35,11 @@ export interface AppPlatform {
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
+  focusCapability(): Promise<FocusCapability>;
+  startFocusGuardian(request: FocusSessionRequest): Promise<FocusEvent>;
+  stopFocusGuardian(): Promise<FocusEvent>;
+  acknowledgeFocusGuardian(action: FocusAcknowledge): Promise<FocusEvent>;
+  onFocusEvent(listener: (event: FocusEvent) => void): () => void;
 }
 
 export interface DesktopBridge {
@@ -41,4 +52,9 @@ export interface DesktopBridge {
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
+  focusCapability(): Promise<FocusCapability>;
+  startFocusGuardian(request: FocusSessionRequest): Promise<FocusEvent>;
+  stopFocusGuardian(): Promise<FocusEvent>;
+  acknowledgeFocusGuardian(action: FocusAcknowledge): Promise<FocusEvent>;
+  onFocusEvent(listener: (event: FocusEvent) => void): () => void;
 }
