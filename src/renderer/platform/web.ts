@@ -1,4 +1,5 @@
 import type { AppState } from "@/shared/domain/model";
+import type { AudioExportRequest } from "@/shared/audio/export";
 import { extractLegacyReviveState } from "@/shared/domain/migrations";
 import type {
   AppPlatform,
@@ -70,6 +71,20 @@ function downloadState(state: AppState): ExportResult {
   return { canceled: false };
 }
 
+function downloadAudio(request: AudioExportRequest): ExportResult {
+  const blob = new Blob([request.bytes.slice().buffer], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = request.fileName;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  return { canceled: false };
+}
+
 function pickJsonFile(): Promise<ImportResult> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -96,6 +111,9 @@ const webPlatform: AppPlatform = {
   saveState: writeIndexedState,
   async exportState(state) {
     return downloadState(state);
+  },
+  async exportAudio(request) {
+    return downloadAudio(request);
   },
   importState: pickJsonFile,
   async openExternal(url) {
@@ -156,6 +174,7 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     loadState: () => bridge.loadState(),
     saveState: (state) => bridge.saveState(state),
     exportState: (state) => bridge.exportState(state),
+    exportAudio: (request) => bridge.exportAudio(request),
     importState: () => bridge.importState(),
     openExternal: (url) => bridge.openExternal(url),
     cloudStatus: () => bridge.cloudStatus(),

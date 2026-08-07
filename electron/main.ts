@@ -13,6 +13,7 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { AppStateSchema } from "../src/shared/domain/model";
+import { parseAudioExportRequest } from "../src/shared/audio/export";
 import { analyzeCloudContext, getCloudStatus, quoteCloudContext, redeemCloudCode } from "./cloud";
 import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
@@ -96,6 +97,18 @@ function registerIpc(): void {
     });
     if (result.canceled || !result.filePath) return { canceled: true };
     await fs.writeFile(result.filePath, JSON.stringify(state, null, 2), "utf8");
+    return { canceled: false, path: result.filePath };
+  });
+  ipcMain.handle(IPC_CHANNELS.exportAudio, async (event, input: unknown) => {
+    assertTrustedSender(event);
+    const request = parseAudioExportRequest(input);
+    const result = await dialog.showSaveDialog({
+      title: "导出这张项目唱片",
+      defaultPath: request.fileName,
+      filters: [{ name: "WAV 音频", extensions: ["wav"] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    await fs.writeFile(result.filePath, request.bytes);
     return { canceled: false, path: result.filePath };
   });
   ipcMain.handle(IPC_CHANNELS.importState, async (event) => {

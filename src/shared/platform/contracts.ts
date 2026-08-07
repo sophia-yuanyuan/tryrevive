@@ -1,4 +1,5 @@
 import type { AppState } from "../domain/model";
+import type { AudioExportRequest } from "../audio/export";
 import type {
   CloudAnalysisResult,
   CloudAnalyzeRequest,
@@ -29,6 +30,7 @@ export interface AppPlatform {
   loadState(): Promise<unknown | null>;
   saveState(state: AppState): Promise<void>;
   exportState(state: AppState): Promise<ExportResult>;
+  exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
@@ -46,6 +48,7 @@ export interface DesktopBridge {
   loadState(): Promise<unknown | null>;
   saveState(state: AppState): Promise<void>;
   exportState(state: AppState): Promise<ExportResult>;
+  exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
