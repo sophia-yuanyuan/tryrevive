@@ -127,8 +127,10 @@ export function addEvidence(
 ): RevivalProject {
   const evidence = EvidenceSchema.parse({
     id: createId("evidence"),
+    actionId: project.action?.id ?? null,
     note: input.note,
     link: input.link ?? "",
+    observation: null,
     createdAt: now
   });
   return touch({ ...project, evidence: [...project.evidence, evidence], stage: "return" }, now);

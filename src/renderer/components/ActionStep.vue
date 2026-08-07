@@ -18,7 +18,8 @@ async function submit(): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-    await store.setAction(form);
+    await document.documentElement.requestFullscreen?.().catch(() => undefined);
+    await store.setActionAndRequestFocus(form);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "下一小步保存失败";
   } finally {
@@ -29,9 +30,9 @@ async function submit(): Promise<void> {
 
 <template>
   <StageShell
-    eyebrow="下一小步 · 3/6"
-    title="把它缩成今天能完成的一步"
-    description="只保留一个动作、一个完成标准和 5–20 分钟的时间盒。你可以直接改掉建议。"
+    :eyebrow="project.decision === null ? '最小下一步 · 2/5' : '下一小步 · 3/6'"
+    title="这是 TryRevive 给你的最小下一步"
+    description="只保留一个动作、一个完成标准和 5–20 分钟的时间盒。可以修改；确认后直接进入专注。"
   >
     <form class="space-y-5" @submit.prevent="submit">
       <div>
@@ -71,7 +72,7 @@ async function submit(): Promise<void> {
       </fieldset>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <button class="primary-button w-full sm:w-auto" type="submit" :disabled="busy">
-        {{ busy ? "正在保存…" : "就做这一步" }}
+        {{ busy ? "正在进入专注…" : "就做这一步，直接进入专注" }}
       </button>
     </form>
   </StageShell>

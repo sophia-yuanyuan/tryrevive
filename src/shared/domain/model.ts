@@ -1,6 +1,11 @@
 import { z } from "zod";
+import {
+  RepositoryEvidenceSchema,
+  RepositorySnapshotSchema,
+  SafeRepositoryPathSchema
+} from "./repository";
 
-export const SCHEMA_VERSION = 5 as const;
+export const SCHEMA_VERSION = 6 as const;
 
 export const ProjectStageSchema = z.enum([
   "restore",
@@ -17,6 +22,7 @@ export const ProjectStageSchema = z.enum([
 export const ProjectStatusSchema = z.enum(["active", "paused", "abandoned", "completed"]);
 export const DecisionSchema = z.enum(["continue", "shrink", "help", "pause", "abandon"]);
 export const ProjectMoodSchema = z.enum(["calm", "relieved", "proud", "energized", "bittersweet"]);
+export const InferenceSourceSchema = z.enum(["repository", "material", "voice", "text"]);
 
 export const ProjectRewardSchema = z.object({
   mood: ProjectMoodSchema,
@@ -42,6 +48,23 @@ export const ProjectAnalysisSchema = z.object({
   createdAt: z.number().int().positive()
 });
 
+export const PendingRepositoryContextSchema = z.object({
+  bindingId: z.string().regex(/^repo_[a-f0-9]{24}$/u),
+  displayName: z.string().trim().min(1).max(120),
+  snapshot: RepositorySnapshotSchema,
+  evidence: z.array(RepositoryEvidenceSchema).max(8)
+});
+
+export const PendingInferenceSchema = z.object({
+  id: z.string().min(1),
+  sourceKind: InferenceSourceSchema,
+  title: z.string().trim().min(1).max(80),
+  analysis: ProjectAnalysisSchema,
+  repository: PendingRepositoryContextSchema.nullable(),
+  createdAt: z.number().int().positive(),
+  updatedAt: z.number().int().positive()
+});
+
 export const RestoreContextSchema = z.object({
   lastCompleted: z.string().trim().max(240),
   stuckAt: z.string().trim().max(240),
@@ -59,16 +82,53 @@ export const ActionSchema = z.object({
   createdAt: z.number().int().positive()
 });
 
+export const RepositoryObservationSchema = z.object({
+  kind: z.literal("repository_diff"),
+  paths: z.array(SafeRepositoryPathSchema).max(20),
+  detectedAt: z.number().int().positive()
+});
+
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
+  actionId: z.string().min(1).nullable(),
   note: z.string().trim().min(1).max(500),
   link: z.string().trim().max(500).default(""),
+  observation: RepositoryObservationSchema.nullable(),
   createdAt: z.number().int().positive()
 });
 
 export const ReturnPlanSchema = z.object({
   dueAt: z.number().int().positive(),
   cue: z.string().trim().min(1).max(160),
+  createdAt: z.number().int().positive()
+});
+
+export const ProjectRepositoryContextSchema = z.object({
+  bindingId: z.string().regex(/^repo_[a-f0-9]{24}$/u),
+  displayName: z.string().trim().min(1).max(120),
+  lastSnapshot: RepositorySnapshotSchema,
+  evidence: z.array(RepositoryEvidenceSchema).max(8),
+  actionBaseline: z
+    .object({
+      actionId: z.string().min(1),
+      snapshot: RepositorySnapshotSchema
+    })
+    .nullable()
+});
+
+export const OutcomeDraftSchema = z.object({
+  actionId: z.string().min(1),
+  status: z.enum(["changes_detected", "no_readable_change", "scan_failed"]),
+  changes: z
+    .array(
+      z.object({
+        path: SafeRepositoryPathSchema,
+        kind: z.enum(["content_changed", "now_observed"])
+      })
+    )
+    .max(20),
+  suggestedNote: z.string().trim().min(1).max(500),
+  scanTruncated: z.boolean(),
   createdAt: z.number().int().positive()
 });
 
@@ -86,6 +146,8 @@ export const ProjectSchema = z.object({
   evidence: z.array(EvidenceSchema).max(100),
   returnPlan: ReturnPlanSchema.nullable(),
   analysis: ProjectAnalysisSchema.nullable(),
+  repository: ProjectRepositoryContextSchema.nullable(),
+  outcomeDraft: OutcomeDraftSchema.nullable(),
   reward: ProjectRewardSchema.nullable(),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive()
@@ -95,6 +157,7 @@ export const AppStateSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   activeProjectId: z.string().nullable(),
   projects: z.array(ProjectSchema).max(100),
+  pendingInference: PendingInferenceSchema.nullable(),
   legacyMigrationCompleted: z.boolean(),
   updatedAt: z.number().int().positive()
 });
@@ -103,12 +166,16 @@ export type ProjectStage = z.infer<typeof ProjectStageSchema>;
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
 export type Decision = z.infer<typeof DecisionSchema>;
 export type ProjectMood = z.infer<typeof ProjectMoodSchema>;
+export type InferenceSource = z.infer<typeof InferenceSourceSchema>;
 export type ProjectReward = z.infer<typeof ProjectRewardSchema>;
 export type RestoreContext = z.infer<typeof RestoreContextSchema>;
 export type RevivalAction = z.infer<typeof ActionSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type ReturnPlan = z.infer<typeof ReturnPlanSchema>;
 export type ProjectAnalysis = z.infer<typeof ProjectAnalysisSchema>;
+export type PendingInference = z.infer<typeof PendingInferenceSchema>;
+export type ProjectRepositoryContext = z.infer<typeof ProjectRepositoryContextSchema>;
+export type OutcomeDraft = z.infer<typeof OutcomeDraftSchema>;
 export type RevivalProject = z.infer<typeof ProjectSchema>;
 export type AppState = z.infer<typeof AppStateSchema>;
 
@@ -122,6 +189,7 @@ export function createEmptyState(now = Date.now()): AppState {
     schemaVersion: SCHEMA_VERSION,
     activeProjectId: null,
     projects: [],
+    pendingInference: null,
     legacyMigrationCompleted: false,
     updatedAt: now
   };
@@ -142,6 +210,8 @@ export function createProject(title: string, now = Date.now()): RevivalProject {
     evidence: [],
     returnPlan: null,
     analysis: null,
+    repository: null,
+    outcomeDraft: null,
     reward: null,
     createdAt: now,
     updatedAt: now

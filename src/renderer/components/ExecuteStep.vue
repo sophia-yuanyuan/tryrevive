@@ -10,7 +10,7 @@ const store = useRevivalStore();
 const now = ref(Date.now());
 const busy = ref(false);
 const error = ref("");
-const focusOpen = ref(false);
+const focusOpen = ref(store.consumeFocusRequest(props.project.id));
 const timer = window.setInterval(() => (now.value = Date.now()), 1_000);
 onBeforeUnmount(() => window.clearInterval(timer));
 
@@ -72,7 +72,7 @@ async function finishFromFocus(): Promise<void> {
 <template>
   <div>
     <StageShell
-      eyebrow="执行 · 4/6"
+      :eyebrow="project.decision === null ? '专注执行 · 3/5' : '执行 · 4/6'"
       title="现在只处理这一小步"
       description="可以提前完成，也可以超时继续。计时只是边界，不是评价。"
     >

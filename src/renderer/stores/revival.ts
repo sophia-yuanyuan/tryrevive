@@ -13,6 +13,13 @@ import {
 } from "@/shared/domain/model";
 import { migrateState } from "@/shared/domain/migrations";
 import {
+  confirmPendingInference,
+  correctPendingInference,
+  createPendingInference,
+  type InferenceCorrection
+} from "@/shared/domain/inference-flow";
+import { inferLocalProject, type LocalInferenceRequest } from "@/shared/domain/local-inference";
+import {
   addEvidence,
   applyProjectAnalysis,
   assignAction,
@@ -37,6 +44,8 @@ export const useRevivalStore = defineStore("revival", () => {
   const errorMessage = ref("");
   const recoveryRequired = ref(false);
   const recoveryNotice = ref("");
+  const focusRequestedProjectId = ref<string | null>(null);
+  const candidateCommitInFlight = ref(false);
 
   const activeProject = computed(
     () => data.value.projects.find((project) => project.id === data.value.activeProjectId) ?? null
@@ -44,13 +53,12 @@ export const useRevivalStore = defineStore("revival", () => {
   const openProjects = computed(() =>
     data.value.projects.filter((project) => !["abandoned", "completed"].includes(project.status))
   );
+  const pendingInference = computed(() => data.value.pendingInference);
 
-  async function persist(): Promise<void> {
+  async function saveSnapshot(snapshot: AppState): Promise<void> {
     if (recoveryRequired.value) {
       throw new Error("本地存档正在等待恢复；为防止覆盖原文件，请先导入有效的 JSON 备份");
     }
-    data.value.updatedAt = Date.now();
-    const snapshot = AppStateSchema.parse(JSON.parse(JSON.stringify(data.value)));
     saveStatus.value = "saving";
     saveQueue = saveQueue.catch(() => undefined).then(() => platform.saveState(snapshot));
     try {
@@ -61,6 +69,28 @@ export const useRevivalStore = defineStore("revival", () => {
       saveStatus.value = "error";
       errorMessage.value = error instanceof Error ? error.message : "本地保存失败";
       throw error;
+    }
+  }
+
+  async function persist(): Promise<void> {
+    data.value.updatedAt = Date.now();
+    const snapshot = AppStateSchema.parse(JSON.parse(JSON.stringify(data.value)));
+    await saveSnapshot(snapshot);
+  }
+
+  async function commitCandidate(candidate: AppState, beforePublish?: () => void): Promise<void> {
+    if (candidateCommitInFlight.value) {
+      throw new Error("上一次保存还在进行，请等它完成后再操作");
+    }
+    candidateCommitInFlight.value = true;
+    try {
+      candidate.updatedAt = Date.now();
+      const snapshot = AppStateSchema.parse(JSON.parse(JSON.stringify(candidate)));
+      await saveSnapshot(snapshot);
+      beforePublish?.();
+      data.value = snapshot;
+    } finally {
+      candidateCommitInFlight.value = false;
     }
   }
 
@@ -95,6 +125,16 @@ export const useRevivalStore = defineStore("revival", () => {
     data.value.projects[index] = project;
   }
 
+  function stateSnapshot(): AppState {
+    return AppStateSchema.parse(JSON.parse(JSON.stringify(data.value)));
+  }
+
+  function assertNoCandidateCommit(): void {
+    if (candidateCommitInFlight.value) {
+      throw new Error("上一次保存还在进行，请等它完成后再操作");
+    }
+  }
+
   async function newProject(title: string): Promise<void> {
     await newProjects([title]);
   }
@@ -118,18 +158,98 @@ export const useRevivalStore = defineStore("revival", () => {
     if (!projects.length) throw new Error("没有发现可新建的项目，可能都已经在本地存档中。");
     data.value.projects.unshift(...projects);
     data.value.activeProjectId = projects[0]?.id ?? null;
+    data.value.pendingInference = null;
     await persist();
+  }
+
+  async function inferRepository(): Promise<boolean> {
+    const result = await platform.chooseRepository();
+    if (result.canceled) return false;
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = null;
+    candidate.pendingInference = createPendingInference({
+      sourceKind: "repository",
+      title: result.displayName,
+      analysis: result.analysis,
+      repository: {
+        bindingId: result.bindingId,
+        displayName: result.displayName,
+        snapshot: result.snapshot,
+        evidence: result.evidence
+      }
+    });
+    await commitCandidate(candidate);
+    return true;
+  }
+
+  async function inferLocalContext(request: Omit<LocalInferenceRequest, "now">): Promise<void> {
+    const inferred = inferLocalProject(request);
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = null;
+    candidate.pendingInference = createPendingInference({
+      sourceKind: request.sourceKind,
+      title: inferred.title,
+      analysis: inferred.analysis,
+      repository: null
+    });
+    await commitCandidate(candidate);
+  }
+
+  async function correctInference(input: InferenceCorrection): Promise<void> {
+    if (!data.value.pendingInference) return;
+    const candidate = stateSnapshot();
+    candidate.pendingInference = correctPendingInference(data.value.pendingInference, input);
+    await commitCandidate(candidate);
+  }
+
+  async function discardInference(): Promise<void> {
+    const candidate = stateSnapshot();
+    candidate.pendingInference = null;
+    await commitCandidate(candidate);
+  }
+
+  async function confirmInference(): Promise<void> {
+    const pending = data.value.pendingInference;
+    if (!pending) return;
+    if (data.value.projects.length >= 100)
+      throw new Error("本地项目已达到 100 个，请先导出备份再整理。");
+    if (
+      pending.repository &&
+      data.value.projects.some(
+        (project) =>
+          project.repository?.bindingId === pending.repository?.bindingId &&
+          !["abandoned", "completed"].includes(project.status)
+      )
+    ) {
+      throw new Error("这个项目文件夹已经有一个进行中的项目；请从项目列表继续，或先结束旧项目。");
+    }
+    const project = confirmPendingInference(pending);
+    const candidate = stateSnapshot();
+    candidate.projects.unshift(project);
+    candidate.activeProjectId = project.id;
+    candidate.pendingInference = null;
+    await commitCandidate(candidate);
   }
 
   async function selectProject(projectId: string): Promise<void> {
     if (!data.value.projects.some((project) => project.id === projectId)) return;
-    data.value.activeProjectId = projectId;
-    await persist();
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = projectId;
+    await commitCandidate(candidate);
+  }
+
+  async function reviewInference(): Promise<void> {
+    if (!data.value.pendingInference) return;
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = null;
+    await commitCandidate(candidate);
   }
 
   async function prepareNewProject(): Promise<void> {
-    data.value.activeProjectId = null;
-    await persist();
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = null;
+    candidate.pendingInference = null;
+    await commitCandidate(candidate);
   }
 
   async function recordRestore(restore: RestoreContext): Promise<void> {
@@ -164,6 +284,28 @@ export const useRevivalStore = defineStore("revival", () => {
     if (!activeProject.value) return;
     replaceActive(assignAction(activeProject.value, input));
     await persist();
+  }
+
+  async function setActionAndRequestFocus(input: {
+    text: string;
+    doneDefinition: string;
+    minutes: number;
+  }): Promise<void> {
+    if (!activeProject.value) return;
+    const projectId = activeProject.value.id;
+    const candidate = stateSnapshot();
+    const index = candidate.projects.findIndex((project) => project.id === projectId);
+    if (index < 0) throw new Error("找不到当前项目");
+    candidate.projects[index] = assignAction(candidate.projects[index]!, input);
+    await commitCandidate(candidate, () => {
+      focusRequestedProjectId.value = projectId;
+    });
+  }
+
+  function consumeFocusRequest(projectId: string): boolean {
+    if (focusRequestedProjectId.value !== projectId) return false;
+    focusRequestedProjectId.value = null;
+    return true;
   }
 
   async function beginAction(): Promise<void> {
@@ -219,11 +361,15 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function importData(): Promise<string> {
+    assertNoCandidateCommit();
     const result = await platform.importState();
     if (result.canceled) return "已取消导入";
+    assertNoCandidateCommit();
     if (result.state == null) throw new Error("无法读取这个 JSON 备份；现有项目没有被替换");
     const imported = migrateState(result.state);
-    if (!imported.projects.length && result.state) throw new Error("备份中没有可导入的项目");
+    if (!imported.projects.length && !imported.pendingInference && result.state) {
+      throw new Error("备份中没有可导入的项目或待确认恢复摘要");
+    }
     data.value = { ...imported, legacyMigrationCompleted: true };
     const wasRecoveryRequired = recoveryRequired.value;
     recoveryRequired.value = false;
@@ -251,17 +397,26 @@ export const useRevivalStore = defineStore("revival", () => {
     recoveryNotice,
     activeProject,
     openProjects,
+    pendingInference,
     platformKind: platform.kind,
     initialize,
     newProject,
     newProjects,
+    inferRepository,
+    inferLocalContext,
+    correctInference,
+    discardInference,
+    confirmInference,
     selectProject,
+    reviewInference,
     prepareNewProject,
     recordRestore,
     applyAnalysis,
     decide,
     diagnose,
     setAction,
+    setActionAndRequestFocus,
+    consumeFocusRequest,
     beginAction,
     finishAction,
     recordEvidence,

@@ -25,7 +25,7 @@ async function submit(): Promise<void> {
 
 <template>
   <StageShell
-    eyebrow="留下进度 · 5/6"
+    :eyebrow="project.decision === null ? '留下进度 · 4/5' : '留下进度 · 5/6'"
     title="下一次回来，要一眼看见什么？"
     :description="`刚才的完成标准：${project.action?.doneDefinition ?? '留下一个明确结果'}`"
   >

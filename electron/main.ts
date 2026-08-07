@@ -216,7 +216,9 @@ function registerIpc(): void {
     const raw: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
     if (diskRecoveryRequired) {
       const imported = migrateState(raw);
-      if (!imported.projects.length) throw new Error("备份中没有可导入的项目");
+      if (!imported.projects.length && !imported.pendingInference) {
+        throw new Error("备份中没有可导入的项目或待确认恢复摘要");
+      }
       imported.legacyMigrationCompleted = true;
       await saveStateToDisk(imported, true);
       return { canceled: false, state: imported, persisted: true };

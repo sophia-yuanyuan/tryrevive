@@ -2,24 +2,24 @@ import { expect, test } from "@playwright/test";
 
 async function completeRevivalLoop(page) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "你不需要先决定从哪一个开始。" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
 
-  await page.getByLabel("所有还在心里的项目").fill("课程作品集");
-  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
+  await page
+    .getByLabel("项目材料或你记得的内容")
+    .fill(
+      "课程作品集\n我想完成课程作品集。\n上次已经完成了首页布局。\n现在卡在移动端导航无法收起。"
+    );
+  await page.getByRole("button", { name: "让 TryRevive 先猜一遍" }).click();
+  await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+  await page.getByRole("button", { name: "正确，继续" }).click();
+  await expect(
+    page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "就做这一步，直接进入专注" }).click();
 
-  await page.getByLabel("上次最后完成了什么？").fill("完成了首页布局");
-  await page.getByLabel("具体卡在哪里？").fill("移动端导航无法收起");
-  await page.getByLabel("最近的时间节点（可选）").fill("周五课堂展示");
-  await page.getByRole("button", { name: "现场找回来了" }).click();
-
-  await page.getByRole("button", { name: /缩小/ }).click();
-  await expect(page.getByRole("heading", { name: "把它缩成今天能完成的一步" })).toBeVisible();
-  await page.getByRole("button", { name: "就做这一步" }).click();
-
-  await page.getByRole("button", { name: "以唱针进入全屏专注" }).click();
   const focus = page.getByRole("dialog", { name: "专注界面" });
-  await expect(focus.getByText("完成了首页布局", { exact: false })).toBeVisible();
-  await focus.getByText("完成了首页布局", { exact: false }).click();
+  await expect(focus.getByText("已经完成了首页布局", { exact: false })).toBeVisible();
+  await focus.getByText("已经完成了首页布局", { exact: false }).click();
   const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
   await expect(dropNeedle).toBeVisible();
   if ((page.viewportSize()?.width ?? 1440) <= 500) {
@@ -63,6 +63,7 @@ test("settings exposes local backup controls without requiring an account", asyn
 
 test("an unreadable JSON backup cannot replace existing local projects", async ({ page }) => {
   await page.goto("/");
+  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page.getByLabel("所有还在心里的项目").fill("必须保留的现有项目");
   await page.getByRole("button", { name: "收下这 1 个项目" }).click();
   await page.getByRole("button", { name: "打开项目与数据设置" }).click();
@@ -87,6 +88,7 @@ test("an unreadable JSON backup cannot replace existing local projects", async (
 
 test("multiple unfinished projects can be collected in one local intake", async ({ page }) => {
   await page.goto("/");
+  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page
     .getByLabel("所有还在心里的项目")
     .fill("申请黑客松\n报名英语考试；完成 TryRevive 桌面版");
@@ -101,6 +103,7 @@ test("multiple unfinished projects can be collected in one local intake", async 
 
 test("cloud context entry stays explicit and never asks for an API key", async ({ page }) => {
   await page.goto("/");
+  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page.getByLabel("所有还在心里的项目").fill("申请黑客松");
   await page.getByRole("button", { name: "收下这 1 个项目" }).click();
   await page.getByRole("button", { name: "查看云端入口" }).click();
@@ -146,6 +149,7 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
 
 test("an abandoned project remains available in the black-hole history", async ({ page }) => {
   await page.goto("/");
+  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page.getByLabel("所有还在心里的项目").fill("不再参加的比赛");
   await page.getByRole("button", { name: "收下这 1 个项目" }).click();
   await page.getByLabel("上次最后完成了什么？").fill("读完了比赛规则");

@@ -38,8 +38,24 @@ const progressByStage = {
   closed: 100
 };
 
+const inferenceProgressByStage = {
+  restore: 0,
+  decision: 0,
+  diagnosis: 0,
+  action: 40,
+  execute: 60,
+  evidence: 80,
+  return: 100,
+  resume: 100,
+  closed: 100
+};
+
 const activeComponent = computed(() => components[props.project.stage]);
-const progress = computed(() => progressByStage[props.project.stage]);
+const progress = computed(() =>
+  props.project.decision === null
+    ? inferenceProgressByStage[props.project.stage]
+    : progressByStage[props.project.stage]
+);
 </script>
 
 <template>

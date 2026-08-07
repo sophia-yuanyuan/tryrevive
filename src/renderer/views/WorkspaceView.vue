@@ -2,10 +2,11 @@
 import { storeToRefs } from "pinia";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import ProjectIntake from "@/renderer/components/ProjectIntake.vue";
+import InferenceConfirmStep from "@/renderer/components/InferenceConfirmStep.vue";
 import RevivalFlow from "@/renderer/components/RevivalFlow.vue";
 
 const store = useRevivalStore();
-const { ready, activeProject } = storeToRefs(store);
+const { ready, activeProject, pendingInference } = storeToRefs(store);
 </script>
 
 <template>
@@ -20,6 +21,7 @@ const { ready, activeProject } = storeToRefs(store);
       <p class="sr-only">正在读取本地进度</p>
     </div>
     <RevivalFlow v-else-if="activeProject" :project="activeProject" />
+    <InferenceConfirmStep v-else-if="pendingInference" :pending="pendingInference" />
     <ProjectIntake v-else />
   </main>
 </template>

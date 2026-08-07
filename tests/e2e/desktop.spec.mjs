@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -9,12 +9,12 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 function createCurrentState(title, id, now = 1_800_000_000_000) {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     activeProjectId: id,
     projects: [
       {
         id,
-        schemaVersion: 5,
+        schemaVersion: 6,
         title,
         stage: "restore",
         status: "active",
@@ -26,11 +26,50 @@ function createCurrentState(title, id, now = 1_800_000_000_000) {
         evidence: [],
         returnPlan: null,
         analysis: null,
+        repository: null,
+        outcomeDraft: null,
         reward: null,
         createdAt: now - 1_000,
         updatedAt: now
       }
     ],
+    pendingInference: null,
+    legacyMigrationCompleted: true,
+    updatedAt: now
+  };
+}
+
+function createPendingState(title, now = 1_800_000_000_000) {
+  return {
+    schemaVersion: 6,
+    activeProjectId: null,
+    projects: [],
+    pendingInference: {
+      id: "inference-pending-backup",
+      sourceKind: "text",
+      title,
+      analysis: {
+        id: "analysis-pending-backup",
+        sourceLabel: "主动输入",
+        originalGoal: "恢复待确认的项目现场",
+        lastCompleted: "上次已经完成了入口",
+        stuckAt: "现在卡在下一步还没有确认",
+        deadline: "",
+        whyMatters: "",
+        stallReasons: ["下一步尚未确认"],
+        suggestedDecision: "continue",
+        nextAction: {
+          text: "确认下一步",
+          doneDefinition: "下一步已经确认",
+          minutes: 10
+        },
+        uncertainties: ["需要你确认"],
+        createdAt: now
+      },
+      repository: null,
+      createdAt: now,
+      updatedAt: now
+    },
     legacyMigrationCompleted: true,
     updatedAt: now
   };
@@ -140,35 +179,28 @@ test("desktop app launches with an isolated bridge and persists state across res
         desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
       )
       .toBe(true);
-    await expect(window.getByText("桌面版")).toBeVisible();
-    await expect(
-      window.getByRole("heading", { name: "你不需要先决定从哪一个开始。" })
-    ).toBeVisible();
-    await window.getByLabel("所有还在心里的项目").fill("桌面端课程项目");
-    await window.getByRole("button", { name: "收下这 1 个项目" }).click();
-    await expect(
-      window.getByRole("heading", { name: "先找回「桌面端课程项目」的现场" })
-    ).toBeVisible();
-    await window.getByRole("button", { name: "查看云端入口" }).click();
-    await expect(window.getByText("当前不会上传任何内容")).toBeVisible();
-    await expect(window.getByText(/不会上传你的项目内容/)).toBeVisible();
+    await expect(window.getByText("已保存到本地 · 桌面版", { exact: true })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
+    await window
+      .getByLabel("项目材料或你记得的内容")
+      .fill(
+        "桌面端课程项目\n我想完成桌面端课程项目。\n上次已经完成了项目入口。\n现在卡在没有进入下一步。"
+      );
+    await window.getByRole("button", { name: "让 TryRevive 先猜一遍" }).click();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
 
     await desktop.close();
     desktop = await electron.launch(launchOptions);
     window = await desktop.firstWindow();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    await window.getByRole("button", { name: "正确，继续" }).click();
     await expect(
-      window.getByRole("heading", { name: "先找回「桌面端课程项目」的现场" })
+      window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
-
-    await window.getByLabel("上次最后完成了什么？").fill("完成了项目入口");
-    await window.getByLabel("具体卡在哪里？").fill("没有进入下一步");
-    await window.getByRole("button", { name: "现场找回来了" }).click();
-    await window.getByRole("button", { name: /缩小/ }).click();
-    await window.getByRole("button", { name: "就做这一步" }).click();
-    await window.getByRole("button", { name: "以唱针进入全屏专注" }).click();
+    await window.getByRole("button", { name: "就做这一步，直接进入专注" }).click();
 
     const focus = window.getByRole("dialog", { name: "专注界面" });
-    await focus.getByText("完成了项目入口", { exact: false }).click();
+    await focus.getByText("已经完成了项目入口", { exact: false }).click();
     const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
     await expect(dropNeedle).toBeVisible();
     await dropNeedle.press("Enter", { delay: 300 });
@@ -190,12 +222,86 @@ test("desktop app launches with an isolated bridge and persists state across res
   }
 });
 
+test("desktop repository inference confirms one draft and enters focus after restart", async () => {
+  test.setTimeout(60_000);
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "tryrevive-repo-flow-"));
+  const userData = path.join(workspace, "user-data");
+  const repository = path.join(workspace, "course-demo");
+  await mkdir(path.join(repository, "src"), { recursive: true });
+  await writeFile(
+    path.join(repository, "package.json"),
+    JSON.stringify({ name: "course-demo", description: "完成课程项目的报名页面" }),
+    "utf8"
+  );
+  await writeFile(
+    path.join(repository, "README.md"),
+    "# Course demo\n\n这是一个需要在周五前完成的课程报名页面。\n",
+    "utf8"
+  );
+  await writeFile(
+    path.join(repository, "src", "main.ts"),
+    "export const ready = true;\n// TODO: 补上报名截止日期\n",
+    "utf8"
+  );
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  let desktop = await electron.launch(launchOptions);
+
+  try {
+    let window = await desktop.firstWindow();
+    await desktop.evaluate(({ dialog }, selectedPath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
+    }, repository);
+    await window.getByRole("button", { name: "选择项目文件夹并安全扫描" }).click();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    await expect(window.getByText(/补上报名截止日期/).first()).toBeVisible();
+    await expect(window.getByText("src/main.ts", { exact: true }).first()).toBeVisible();
+
+    const statePath = path.join(userData, "tryrevive-state.json");
+    await expect
+      .poll(async () => JSON.parse(await readFile(statePath, "utf8")).projects.length)
+      .toBe(0);
+    const pendingState = await readFile(statePath, "utf8");
+    expect(pendingState).not.toContain(repository);
+    expect(pendingState).not.toMatch(/[A-Z]:\\/u);
+
+    await window.getByRole("button", { name: "修改" }).click();
+    await window.getByLabel("实际上次做到哪里？").fill("报名表单布局已经完成");
+    await window.getByRole("button", { name: "保存修改" }).click();
+    await window.getByRole("button", { name: "正确，继续" }).click();
+    await expect(
+      window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+    ).toBeVisible();
+    await expect(window.getByLabel("这一步具体做什么？")).toHaveValue(/补上报名截止日期/);
+
+    await desktop.close();
+    desktop = await electron.launch(launchOptions);
+    window = await desktop.firstWindow();
+    await expect(
+      window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+    ).toBeVisible();
+    await window.getByRole("button", { name: "就做这一步，直接进入专注" }).click();
+    const focus = window.getByRole("dialog", { name: "专注界面" });
+    await expect(focus).toBeVisible();
+    await expect(focus.getByText("报名表单布局已经完成", { exact: false })).toBeVisible();
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("desktop restores a valid backup and preserves an unsupported primary save", async () => {
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-recovery-e2e-"));
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "未来版本原文件" }],
     legacyMigrationCompleted: true,
@@ -226,14 +332,14 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
 
   try {
     const restored = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(restored.schemaVersion).toBe(5);
+    expect(restored.schemaVersion).toBe(6);
     expect(restored.projects[0]?.title).toBe("备份中保住的项目");
     const recoveryFiles = (await readdir(userData)).filter((name) =>
       name.startsWith("tryrevive-state.json.recovery-")
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(6);
+    expect(preserved.schemaVersion).toBe(7);
     expect(preserved.projects[0]?.title).toBe("未来版本原文件");
   } finally {
     await rm(userData, { recursive: true, force: true });
@@ -245,7 +351,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "不能覆盖的未来项目" }],
     legacyMigrationCompleted: true,
@@ -256,11 +362,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
   const primaryBefore = await readFile(primaryPath, "utf8");
   const backupBefore = await readFile(backupPath, "utf8");
   const importPath = path.join(userData, "valid-recovery-import.json");
-  await writeFile(
-    importPath,
-    JSON.stringify(createCurrentState("导入后找回的项目", "imported-project")),
-    "utf8"
-  );
+  await writeFile(importPath, JSON.stringify(createPendingState("导入后找回的待确认摘要")), "utf8");
   const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
   const launchOptions = executablePath
     ? {
@@ -298,32 +400,30 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
     }, importPath);
     await window.getByRole("button", { name: "导入 JSON 备份" }).click();
-    await expect(
-      window.getByRole("heading", { name: "先找回「导入后找回的项目」的现场" })
-    ).toBeVisible();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    await expect(window.getByText("导入后找回的待确认摘要", { exact: true }).first()).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
   }
 
   try {
     const imported = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(imported.schemaVersion).toBe(5);
-    expect(imported.projects[0]?.title).toBe("导入后找回的项目");
+    expect(imported.schemaVersion).toBe(6);
+    expect(imported.projects).toHaveLength(0);
+    expect(imported.pendingInference?.title).toBe("导入后找回的待确认摘要");
     expect(await readFile(backupPath, "utf8")).toBe(backupBefore);
     const recoveryFiles = (await readdir(userData)).filter((name) =>
       name.startsWith("tryrevive-state.json.recovery-")
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(6);
+    expect(preserved.schemaVersion).toBe(7);
     expect(preserved.projects[0]?.title).toBe("不能覆盖的未来项目");
 
     const restarted = await electron.launch(launchOptions);
     try {
       const window = await restarted.firstWindow();
-      await expect(
-        window.getByRole("heading", { name: "先找回「导入后找回的项目」的现场" })
-      ).toBeVisible();
+      await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     } finally {
       await restarted.close().catch(() => undefined);
     }
@@ -339,12 +439,12 @@ test("desktop camera gestures stay off by default and load the packaged local mo
   await writeFile(
     path.join(userData, "tryrevive-state.json"),
     JSON.stringify({
-      schemaVersion: 5,
+      schemaVersion: 6,
       activeProjectId: "gesture-project",
       projects: [
         {
           id: "gesture-project",
-          schemaVersion: 5,
+          schemaVersion: 6,
           title: "摄像头手势验收项目",
           stage: "closed",
           status: "completed",
@@ -361,11 +461,14 @@ test("desktop camera gestures stay off by default and load the packaged local mo
           evidence: [],
           returnPlan: null,
           analysis: null,
+          repository: null,
+          outcomeDraft: null,
           reward: { mood: "proud", createdAt: now },
           createdAt: now - 1_000,
           updatedAt: now
         }
       ],
+      pendingInference: null,
       legacyMigrationCompleted: true,
       updatedAt: now
     }),
@@ -411,6 +514,11 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
   );
   const harness = await startCloudSessionHarness();
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-session-e2e-"));
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("云端会话验收项目", "cloud-session-project")),
+    "utf8"
+  );
   const launchOptions = {
     args: [`--user-data-dir=${userData}`, projectRoot],
     cwd: projectRoot,
@@ -420,8 +528,6 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
 
   try {
     let window = await desktop.firstWindow();
-    await window.getByLabel("所有还在心里的项目").fill("云端会话验收项目");
-    await window.getByRole("button", { name: "收下这 1 个项目" }).click();
     await window.getByRole("button", { name: "查看云端入口" }).click();
     await window.getByLabel("算力兑换码").fill("FIRST-CODE");
     await window.getByRole("button", { name: "兑换算力" }).click();

@@ -85,8 +85,10 @@ function migrateLegacyProject(raw: unknown, now: number): RevivalProject | null 
       return note
         ? {
             id: asString(record.id) || `evidence_legacy_${index}`,
+            actionId: project.action?.id ?? null,
             note,
             link: asString(record.link),
+            observation: null,
             createdAt: asNumber(record.createdAt, now)
           }
         : null;
@@ -108,18 +110,56 @@ function migrateLegacyProject(raw: unknown, now: number): RevivalProject | null 
   return project;
 }
 
+function migrateEvidenceList(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((item) => ({
+    ...asRecord(item),
+    actionId: null,
+    observation: null
+  }));
+}
+
+function migrateVersion5(raw: unknown): AppState | null {
+  const source = asRecord(raw);
+  if (source.schemaVersion !== 5 || !Array.isArray(source.projects)) return null;
+  const candidate = {
+    ...source,
+    schemaVersion: SCHEMA_VERSION,
+    pendingInference: null,
+    projects: source.projects.map((item) => {
+      const project = asRecord(item);
+      return {
+        ...project,
+        schemaVersion: SCHEMA_VERSION,
+        evidence: migrateEvidenceList(project.evidence),
+        repository: null,
+        outcomeDraft: null
+      };
+    })
+  };
+  const parsed = AppStateSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
 function migrateVersion3(raw: unknown): AppState | null {
   const source = asRecord(raw);
   if (source.schemaVersion !== 3 || !Array.isArray(source.projects)) return null;
   const candidate = {
     ...source,
     schemaVersion: SCHEMA_VERSION,
-    projects: source.projects.map((item) => ({
-      ...asRecord(item),
-      schemaVersion: SCHEMA_VERSION,
-      analysis: null,
-      reward: null
-    }))
+    pendingInference: null,
+    projects: source.projects.map((item) => {
+      const project = asRecord(item);
+      return {
+        ...project,
+        schemaVersion: SCHEMA_VERSION,
+        evidence: migrateEvidenceList(project.evidence),
+        analysis: null,
+        repository: null,
+        outcomeDraft: null,
+        reward: null
+      };
+    })
   };
   const parsed = AppStateSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
@@ -131,11 +171,18 @@ function migrateVersion4(raw: unknown): AppState | null {
   const candidate = {
     ...source,
     schemaVersion: SCHEMA_VERSION,
-    projects: source.projects.map((item) => ({
-      ...asRecord(item),
-      schemaVersion: SCHEMA_VERSION,
-      reward: null
-    }))
+    pendingInference: null,
+    projects: source.projects.map((item) => {
+      const project = asRecord(item);
+      return {
+        ...project,
+        schemaVersion: SCHEMA_VERSION,
+        evidence: migrateEvidenceList(project.evidence),
+        repository: null,
+        outcomeDraft: null,
+        reward: null
+      };
+    })
   };
   const parsed = AppStateSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
@@ -149,6 +196,11 @@ export function migrateState(raw: unknown, now = Date.now()): AppState {
 
   const source = asRecord(raw);
   const declaredVersion = source.schemaVersion;
+  if (declaredVersion === 5) {
+    const version5 = migrateVersion5(raw);
+    if (version5) return version5;
+    throw new Error("版本 5 的本地存档不完整，TryRevive 没有覆盖它");
+  }
   if (declaredVersion === 4) {
     const version4 = migrateVersion4(raw);
     if (version4) return version4;

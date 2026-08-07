@@ -135,16 +135,30 @@ async function startNewProject(): Promise<void> {
                 <p v-if="recoveryRequired" class="mt-3 text-sm leading-6 text-[var(--muted)]">
                   项目暂未载入；有效备份导入前不会显示空白列表，也不会覆盖原存档。
                 </p>
-                <div
-                  v-else-if="data.projects.length"
-                  class="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
-                >
+                <div v-else class="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                  <button
+                    v-if="data.pendingInference"
+                    class="project-row"
+                    :class="{ 'project-row-active': !activeProject }"
+                    type="button"
+                    :disabled="saveStatus === 'saving'"
+                    @click="store.reviewInference().then(() => (settingsOpen = false))"
+                  >
+                    <span class="min-w-0">
+                      <strong class="block truncate text-sm font-semibold">
+                        {{ data.pendingInference.title }}
+                      </strong>
+                      <small class="mt-1 block text-xs text-[var(--muted)]">待确认恢复摘要</small>
+                    </span>
+                    <span aria-hidden="true">→</span>
+                  </button>
                   <button
                     v-for="project in data.projects"
                     :key="project.id"
                     class="project-row"
                     :class="{ 'project-row-active': activeProject?.id === project.id }"
                     type="button"
+                    :disabled="saveStatus === 'saving'"
                     @click="store.selectProject(project.id).then(() => (settingsOpen = false))"
                   >
                     <span class="min-w-0">
@@ -165,12 +179,17 @@ async function startNewProject(): Promise<void> {
                     </span>
                     <span aria-hidden="true">→</span>
                   </button>
+                  <p
+                    v-if="!data.pendingInference && !data.projects.length"
+                    class="text-sm text-[var(--muted)]"
+                  >
+                    还没有本地项目。
+                  </p>
                 </div>
-                <p v-else class="mt-3 text-sm text-[var(--muted)]">还没有本地项目。</p>
                 <button
                   class="secondary-button mt-4 w-full"
                   type="button"
-                  :disabled="recoveryRequired"
+                  :disabled="recoveryRequired || saveStatus === 'saving'"
                   @click="startNewProject"
                 >
                   新建另一个项目
@@ -188,7 +207,12 @@ async function startNewProject(): Promise<void> {
                   >
                     导出备份
                   </button>
-                  <button class="secondary-button" type="button" @click="runDataAction('import')">
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    :disabled="saveStatus === 'saving'"
+                    @click="runDataAction('import')"
+                  >
                     导入备份
                   </button>
                 </div>
@@ -232,7 +256,12 @@ async function startNewProject(): Promise<void> {
         <p class="stage-copy">
           {{ recoveryNotice || "TryRevive 没有用空白项目覆盖无法验证的原存档。" }}
         </p>
-        <button class="primary-button mt-7" type="button" @click="runDataAction('import')">
+        <button
+          class="primary-button mt-7"
+          type="button"
+          :disabled="saveStatus === 'saving'"
+          @click="runDataAction('import')"
+        >
           导入 JSON 备份
         </button>
         <p class="mt-4 text-sm leading-6 text-[var(--muted)]">

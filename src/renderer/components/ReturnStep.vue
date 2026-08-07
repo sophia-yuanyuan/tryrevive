@@ -43,7 +43,7 @@ async function submit(): Promise<void> {
 
 <template>
   <StageShell
-    eyebrow="下次继续 · 6/6"
+    :eyebrow="project.decision === null ? '下次继续 · 5/5' : '下次继续 · 6/6'"
     title="把再次开始的门槛降到最低"
     description="选择 3–7 天内回来看看。网页版会在本地保留进度，桌面版会保存在应用数据目录。"
   >

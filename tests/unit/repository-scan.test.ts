@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isSecretFileName, scanLocalRepository } from "../../electron/repository-scanner";
+import { SafeRepositoryPathSchema } from "../../src/shared/domain/repository";
 
 const temporaryRoots: string[] = [];
 
@@ -175,5 +176,13 @@ describe("bounded local repository scan", () => {
     ).toBe(true);
     expect(isSecretFileName("tokens.css")).toBe(false);
     expect(isSecretFileName("README.md")).toBe(false);
+  });
+
+  it("rejects imported paths that use Windows traversal or embedded drive prefixes", () => {
+    expect(SafeRepositoryPathSchema.safeParse("src/main.ts").success).toBe(true);
+    expect(SafeRepositoryPathSchema.safeParse("folder\\..\\secret.txt").success).toBe(false);
+    expect(SafeRepositoryPathSchema.safeParse("notes/C:\\Users\\Alice\\secret.txt").success).toBe(
+      false
+    );
   });
 });

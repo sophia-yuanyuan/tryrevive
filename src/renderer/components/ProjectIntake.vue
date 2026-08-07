@@ -1,70 +1,25 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
-import { parseProjectDump } from "@/shared/domain/intake";
+import { computed, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import { parseProjectDump } from "@/shared/domain/intake";
 
 const store = useRevivalStore();
-const brainDump = ref("");
+const context = ref("");
+const projectNames = ref("");
 const busy = ref(false);
 const error = ref("");
-const voiceStatus = ref("也可以直接说出来；语音只在你主动开启时使用。");
-const listening = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
-let recognition: SpeechRecognition | null = null;
+const parsedProjectNames = computed(() => parseProjectDump(projectNames.value));
 
-const projects = computed(() => parseProjectDump(brainDump.value));
-
-function stopListening(): void {
-  recognition?.stop();
-  recognition = null;
-  listening.value = false;
-}
-
-function startListening(): void {
-  if (listening.value) {
-    stopListening();
-    return;
-  }
-
-  const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-  if (!Recognition) {
-    voiceStatus.value = "当前设备没有提供可靠的实时语音转写，请使用文字或导入本地文本。";
-    return;
-  }
-
-  const initialText = brainDump.value.trim();
-  recognition = new Recognition();
-  recognition.lang = "zh-CN";
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.onresult = (event) => {
-    let transcript = "";
-    for (let index = 0; index < event.results.length; index += 1) {
-      transcript += event.results[index]?.[0]?.transcript ?? "";
-      if (event.results[index]?.isFinal) transcript += "\n";
-    }
-    brainDump.value = [initialText, transcript.trim()].filter(Boolean).join("\n");
-    voiceStatus.value = "正在把你说的内容转成文字；请检查项目边界是否正确。";
-  };
-  recognition.onerror = (event) => {
-    listening.value = false;
-    voiceStatus.value =
-      event.error === "not-allowed"
-        ? "没有获得麦克风权限。你仍可继续输入文字或导入本地文本。"
-        : "语音转写中断了，已经识别出的文字仍保留在这里。";
-  };
-  recognition.onend = () => {
-    listening.value = false;
-    recognition = null;
-  };
-
+async function chooseRepository(): Promise<void> {
+  busy.value = true;
+  error.value = "";
   try {
-    recognition.start();
-    listening.value = true;
-    voiceStatus.value = "正在听。每说完一个项目，请停顿一下。";
-  } catch {
-    recognition = null;
-    voiceStatus.value = "语音入口暂时无法启动，请使用文字或导入本地文本。";
+    await store.inferRepository();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "项目文件夹扫描失败";
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -74,113 +29,175 @@ async function importText(event: Event): Promise<void> {
   input.value = "";
   if (!file) return;
   if (file.size > 1024 * 1024) {
-    error.value = "文本文件不能超过 1 MB。";
+    error.value = "文字材料不能超过 1 MB。";
     return;
   }
-  try {
-    const content = await file.text();
-    brainDump.value = [brainDump.value.trim(), content.trim()].filter(Boolean).join("\n");
-    error.value = "";
-  } catch {
-    error.value = "无法读取这个文本文件。";
-  }
-}
-
-async function submit(): Promise<void> {
-  if (!projects.value.length) {
-    error.value = "先写下至少一个你还挂念的项目，每行一个。";
-    return;
-  }
-  stopListening();
   busy.value = true;
   error.value = "";
   try {
-    await store.newProjects(projects.value);
+    const content = await file.text();
+    context.value = content;
+    await store.inferLocalContext({
+      content,
+      sourceKind: "material",
+      sourceLabel: file.name,
+      titleHint: file.name
+    });
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "项目收纳失败";
+    error.value = caught instanceof Error ? caught.message : "无法读取这份文字材料";
   } finally {
     busy.value = false;
   }
 }
 
-onBeforeUnmount(stopListening);
+async function analyzeContext(): Promise<void> {
+  const content = context.value.trim();
+  if (content.length < 4) {
+    error.value = "至少写一句：你想完成什么、做到哪里，或卡在哪里。";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  try {
+    await store.inferLocalContext({
+      content,
+      sourceKind: "text",
+      sourceLabel: "主动输入"
+    });
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "暂时无法理解这段内容";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function collectProjectNames(): Promise<void> {
+  if (!parsedProjectNames.value.length) {
+    error.value = "先写下至少一个项目名称。";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  try {
+    await store.newProjects(parsedProjectNames.value);
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "项目入口保存失败";
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
   <section class="intake-stage" aria-labelledby="intake-title">
     <div class="intake-copy">
-      <p class="eyebrow">把脑内项目先放下来</p>
-      <h1 id="intake-title" class="intake-title">你不需要先决定从哪一个开始。</h1>
+      <p class="eyebrow">重新接上一个真实项目</p>
+      <h1 id="intake-title" class="intake-title">先把现场交给 TryRevive。</h1>
       <p class="intake-description">
-        黑客松申请、报名、证书、作品集、没做完的产品——先全部放进来。数据默认留在本机，接下来一次只梳理一个。
+        选择项目文件夹、上传一份文字材料，或写下你记得的内容。TryRevive
+        会先猜“你做到这里”，由你点正确或修改。
       </p>
-      <div class="intake-principles" aria-label="收纳原则">
-        <span>不要求完整计划</span>
-        <span>不替你判断价值</span>
-        <span>随时可以暂停或放弃</span>
+      <div class="intake-principles" aria-label="理解边界">
+        <span>确认前不创建正式项目</span>
+        <span>不执行仓库代码</span>
+        <span>不把猜测写成事实</span>
       </div>
     </div>
 
-    <form class="intake-console" @submit.prevent="submit">
-      <div class="intake-toolbar">
-        <div>
-          <label class="field-label" for="project-dump">所有还在心里的项目</label>
-          <p class="field-help">每行一个，也可以用分号隔开。一次最多收纳 20 个。</p>
+    <div class="intake-console space-y-6">
+      <section class="rounded-3xl border border-[var(--line)] bg-white/55 p-5 sm:p-6">
+        <p class="field-label">从项目文件夹恢复</p>
+        <p class="field-help">
+          桌面版只读扫描最多 180
+          个可读文件；跳过依赖、构建产物、隐藏目录、凭据和大文件，不运行任何脚本。
+        </p>
+        <button
+          class="primary-button mt-4 w-full"
+          type="button"
+          :disabled="busy || store.platformKind !== 'desktop'"
+          @click="chooseRepository"
+        >
+          {{ busy ? "正在有限扫描…" : "选择项目文件夹并安全扫描" }}
+        </button>
+        <p v-if="store.platformKind !== 'desktop'" class="mt-3 text-xs text-[var(--muted)]">
+          网页版不能读取文件夹；可以上传文字材料或直接输入。
+        </p>
+      </section>
+
+      <form class="space-y-4" @submit.prevent="analyzeContext">
+        <div class="intake-toolbar">
+          <div>
+            <label class="field-label" for="project-context">项目材料或你记得的内容</label>
+            <p class="field-help">最好包含：最初目标、上次做到哪里、现在卡在哪里。</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              class="secondary-button"
+              type="button"
+              disabled
+              title="等待明确语音处理目的地与保留策略"
+            >
+              语音理解暂缓
+            </button>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="busy"
+              @click="fileInput?.click()"
+            >
+              上传文字材料
+            </button>
+            <input
+              ref="fileInput"
+              class="sr-only"
+              type="file"
+              accept="text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.yaml,.yml"
+              @change="importText"
+            />
+          </div>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            class="secondary-button voice-button"
-            :class="{ 'voice-button-active': listening }"
-            type="button"
-            :aria-pressed="listening"
-            @click="startListening"
-          >
-            <span class="voice-dot" aria-hidden="true" />
-            {{ listening ? "停止倾听" : "用语音说" }}
-          </button>
-          <button class="secondary-button" type="button" @click="fileInput?.click()">
-            导入文字
-          </button>
-          <input
-            ref="fileInput"
-            class="sr-only"
-            type="file"
-            accept="text/plain,text/markdown,text/csv,.txt,.md,.csv"
-            @change="importText"
+
+        <textarea
+          id="project-context"
+          v-model="context"
+          class="field-input intake-textarea"
+          maxlength="20000"
+          autofocus
+          placeholder="我想完成 TryRevive 桌面版。上次已经接好 Vue 页面，现在卡在不知道怎样把仓库现状变成下一小步。"
+        />
+        <p class="voice-status">
+          当前只做本地文字推断；不会把这段内容发送给 TryRevive 后端或 OpenAI。
+        </p>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button class="primary-button w-full" type="submit" :disabled="busy">
+          {{ busy ? "正在整理恢复摘要…" : "让 TryRevive 先猜一遍" }}
+        </button>
+      </form>
+
+      <details class="rounded-3xl border border-[var(--line)] p-5">
+        <summary class="cursor-pointer text-sm font-semibold text-[var(--ink)]">
+          只先收纳多个项目名称
+        </summary>
+        <form class="mt-5 space-y-4" @submit.prevent="collectProjectNames">
+          <div>
+            <label class="field-label" for="project-names">所有还在心里的项目</label>
+            <p class="field-help">保留原来的快速收纳方式；每行一个，之后再逐个补现场。</p>
+          </div>
+          <textarea
+            id="project-names"
+            v-model="projectNames"
+            class="field-input min-h-28 resize-y"
+            maxlength="4000"
+            placeholder="申请黑客松&#10;报名英语考试&#10;整理作品集"
           />
-        </div>
-      </div>
-
-      <textarea
-        id="project-dump"
-        v-model="brainDump"
-        class="field-input intake-textarea"
-        maxlength="4000"
-        autofocus
-        placeholder="申请 AdventureX 黑客松&#10;报名英语考试&#10;完成 TryRevive 桌面版&#10;整理作品集"
-      />
-      <p class="voice-status" aria-live="polite">{{ voiceStatus }}</p>
-
-      <div v-if="projects.length" class="intake-preview" aria-live="polite">
-        <div class="intake-preview-head">
-          <strong>识别到 {{ projects.length }} 个项目</strong>
-          <span>只创建项目入口，不会假装已经理解全部上下文</span>
-        </div>
-        <ol class="project-chip-list">
-          <li v-for="project in projects" :key="project">{{ project }}</li>
-        </ol>
-      </div>
-
-      <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-      <button class="primary-button intake-submit" type="submit" :disabled="busy">
-        {{
-          busy
-            ? "正在保存到本机…"
-            : projects.length
-              ? `收下这 ${projects.length} 个项目`
-              : "收下这些项目"
-        }}
-      </button>
-    </form>
+          <p v-if="parsedProjectNames.length" class="text-sm text-[var(--muted)]">
+            识别到 {{ parsedProjectNames.length }} 个项目
+          </p>
+          <button class="secondary-button w-full" type="submit" :disabled="busy">
+            {{ busy ? "正在保存…" : `收下这 ${parsedProjectNames.length || 0} 个项目` }}
+          </button>
+        </form>
+      </details>
+    </div>
   </section>
 </template>
