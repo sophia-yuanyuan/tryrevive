@@ -34,6 +34,8 @@ class MemoryCloudRepository {
     this.sessions = new Map();
     this.quotes = new Map();
     this.operations = new Map();
+    this.paymentOrders = new Map();
+    this.paymentEvents = new Set();
     this.ledger = [];
   }
 
@@ -246,7 +248,8 @@ class MemoryCloudRepository {
           speechMinutesDelta: entry.speechDelta,
           projectAnalysesDelta: entry.analysesDelta,
           createdAt: generatedAt
-        }))
+        })),
+      payments: { orders: [], ledger: [] }
     };
   }
 
@@ -273,21 +276,165 @@ class MemoryCloudRepository {
     this.ledger = this.ledger.filter((entry) => entry.accountId !== accountId);
     return { status: "deleted" };
   }
+
+  async createPaymentOrder(input) {
+    const existing = [...this.paymentOrders.values()].find(
+      (order) =>
+        order.accountId === input.accountId && order.idempotencyKey === input.idempotencyKey
+    );
+    if (existing) {
+      if (existing.package.id !== input.package.id) return { status: "conflict" };
+      if (existing.checkoutUrl) return { status: "ready", order: structuredClone(existing.public) };
+      return { status: "processing" };
+    }
+    this.paymentOrders.set(input.id, {
+      ...structuredClone(input),
+      accountId: input.accountId,
+      status: "creating",
+      checkoutUrl: null,
+      sessionId: null,
+      public: null
+    });
+    return { status: "created", orderId: input.id };
+  }
+
+  async attachPaymentCheckout(input) {
+    const order = this.paymentOrders.get(input.orderId);
+    order.status = "pending";
+    order.checkoutUrl = input.checkoutUrl;
+    order.sessionId = input.sessionId;
+    order.public = {
+      id: order.id,
+      packageId: order.package.id,
+      amount: order.package.amount,
+      currency: order.package.currency,
+      units: {
+        speechMinutes: order.package.speechMinutes,
+        projectAnalyses: order.package.projectAnalyses
+      },
+      status: "pending",
+      checkoutUrl: input.checkoutUrl,
+      createdAt: order.now,
+      updatedAt: input.now,
+      paidAt: null
+    };
+    return structuredClone(order.public);
+  }
+
+  async markPaymentCreationFailed(input) {
+    const order = this.paymentOrders.get(input.orderId);
+    if (order) order.status = "failed";
+  }
+
+  async fulfillPayment(input) {
+    const order = this.paymentOrders.get(input.orderId);
+    if (!order || order.sessionId !== input.sessionId) return { status: "unknown_order" };
+    if (
+      order.package.amount !== input.amount ||
+      order.package.currency !== input.currency ||
+      order.package.priceId !== input.priceId
+    ) {
+      return { status: "rejected", balance: copyBalance(this.accounts.get(order.accountId).balance) };
+    }
+    const duplicate = order.status === "paid";
+    if (!duplicate) {
+      const account = this.accounts.get(order.accountId);
+      account.balance.speechMinutes += order.package.speechMinutes;
+      account.balance.projectAnalyses += order.package.projectAnalyses;
+      order.status = "paid";
+      order.public.status = "paid";
+      order.public.paidAt = input.now;
+    }
+    this.paymentEvents.add(input.eventId);
+    return {
+      status: duplicate ? "duplicate" : "credited",
+      order: structuredClone(order.public),
+      balance: copyBalance(this.accounts.get(order.accountId).balance)
+    };
+  }
+
+  async failPayment(input) {
+    const order = [...this.paymentOrders.values()].find(
+      (candidate) => candidate.sessionId === input.sessionId
+    );
+    if (!order) return { status: "unknown_order" };
+    if (order.status !== "paid") order.status = input.status;
+    this.paymentEvents.add(input.eventId);
+    return { status: "processed" };
+  }
+
+  async recordPaymentEvent(input) {
+    this.paymentEvents.add(input.eventId);
+    return { status: "ignored" };
+  }
 }
 
-function createHarness({ provider = null, now = 1_800_000_000_000 } = {}) {
+function createHarness({ provider = null, paymentProvider = null, now = 1_800_000_000_000 } = {}) {
   const repository = new MemoryCloudRepository();
   let tokenIndex = 0;
   let idIndex = 0;
   const service = createCloudService({
     repository,
     provider,
+    paymentProvider,
     now: () => now,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
     randomId: () => `id_${++idIndex}`,
     retentionNotice: "测试内容处理完毕后立即删除。"
   });
   return { repository, service };
+}
+
+function createPaymentProvider() {
+  const selectedPackage = {
+    id: "starter",
+    name: "Starter test pack",
+    priceId: "price_TestStarter123",
+    currency: "sgd",
+    amount: 500,
+    speechMinutes: 30,
+    projectAnalyses: 10
+  };
+  const sessions = new Map();
+  let createCalls = 0;
+  return {
+    available: true,
+    mode: "test",
+    sessions,
+    get createCalls() {
+      return createCalls;
+    },
+    publicPackages() {
+      const { priceId: _priceId, ...item } = selectedPackage;
+      return [item];
+    },
+    getPackage(id) {
+      return id === selectedPackage.id ? { ...selectedPackage } : null;
+    },
+    async createCheckoutSession({ orderId }) {
+      createCalls += 1;
+      const sessionId = `cs_test_${String(createCalls).padStart(32, "0")}`;
+      sessions.set(sessionId, {
+        id: sessionId,
+        clientReferenceId: orderId,
+        paymentStatus: "paid",
+        amountTotal: selectedPackage.amount,
+        currency: selectedPackage.currency,
+        priceIds: [selectedPackage.priceId]
+      });
+      return {
+        sessionId,
+        checkoutUrl: `https://checkout.stripe.com/c/pay/${sessionId}`
+      };
+    },
+    async verifyWebhook({ payload, signature }) {
+      if (signature !== "valid-test-signature") throw new Error("invalid signature");
+      return JSON.parse(payload);
+    },
+    async retrieveCheckoutSession(id) {
+      return structuredClone(sessions.get(id));
+    }
+  };
 }
 
 async function request(service, path, { method = "GET", token, body, headers = {} } = {}) {
@@ -693,4 +840,119 @@ test("account deletion cannot race an in-flight cloud analysis", async () => {
   assert.equal(deleted.response.status, 409);
   assert.equal(deleted.body.error, "account_processing");
   assert.equal(repository.accounts.size, 1);
+});
+
+test("signed payment callbacks credit one reviewed package exactly once", async () => {
+  const paymentProvider = createPaymentProvider();
+  const { repository, service } = createHarness({ paymentProvider });
+  const account = await redeem(service, repository, "PAYMENT-ACCOUNT-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
+  const packages = await request(service, "/v1/cloud/payments/packages");
+  assert.equal(packages.response.status, 200);
+  assert.equal(packages.body.mode, "test");
+  assert.equal(packages.body.packages[0].priceId, undefined);
+  assert.deepEqual(packages.body.packages[0], {
+    id: "starter",
+    name: "Starter test pack",
+    currency: "sgd",
+    amount: 500,
+    speechMinutes: 30,
+    projectAnalyses: 10
+  });
+
+  const checkoutRequest = {
+    method: "POST",
+    token: account.sessionToken,
+    body: { packageId: "starter", idempotencyKey: "payment-checkout-once" }
+  };
+  const checkout = await request(service, "/v1/cloud/payments/checkout", checkoutRequest);
+  assert.equal(checkout.response.status, 200);
+  assert.equal(checkout.body.order.status, "pending");
+  assert.match(checkout.body.order.checkoutUrl, /^https:\/\/checkout\.stripe\.com\//);
+  const duplicateCheckout = await request(
+    service,
+    "/v1/cloud/payments/checkout",
+    checkoutRequest
+  );
+  assert.equal(duplicateCheckout.response.status, 200);
+  assert.equal(paymentProvider.createCalls, 1);
+
+  const sessionId = [...paymentProvider.sessions.keys()][0];
+  const event = {
+    id: "evt_payment_completed_once",
+    type: "checkout.session.completed",
+    sessionId
+  };
+  const fulfilled = await request(service, "/v1/cloud/payments/webhook", {
+    method: "POST",
+    headers: { "stripe-signature": "valid-test-signature" },
+    body: event
+  });
+  assert.equal(fulfilled.response.status, 200);
+  assert.equal(fulfilled.body.status, "credited");
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 30,
+    projectAnalyses: 10
+  });
+
+  const replay = await request(service, "/v1/cloud/payments/webhook", {
+    method: "POST",
+    headers: { "stripe-signature": "valid-test-signature" },
+    body: event
+  });
+  assert.equal(replay.body.status, "duplicate");
+  const secondEvent = await request(service, "/v1/cloud/payments/webhook", {
+    method: "POST",
+    headers: { "stripe-signature": "valid-test-signature" },
+    body: { ...event, id: "evt_payment_completed_duplicate" }
+  });
+  assert.equal(secondEvent.body.status, "duplicate");
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 30,
+    projectAnalyses: 10
+  });
+});
+
+test("payment callbacks reject invalid signatures and never trust a client redirect", async () => {
+  const paymentProvider = createPaymentProvider();
+  const { repository, service } = createHarness({ paymentProvider });
+  const account = await redeem(service, repository, "PAYMENT-SIGNATURE-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
+  const checkout = await request(service, "/v1/cloud/payments/checkout", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { packageId: "starter", idempotencyKey: "payment-signature-check" }
+  });
+  assert.equal(checkout.response.status, 200);
+  const sessionId = [...paymentProvider.sessions.keys()][0];
+  const rejected = await request(service, "/v1/cloud/payments/webhook", {
+    method: "POST",
+    headers: { "stripe-signature": "forged" },
+    body: {
+      id: "evt_forged",
+      type: "checkout.session.completed",
+      sessionId
+    }
+  });
+  assert.equal(rejected.response.status, 400);
+  assert.equal(rejected.body.error, "invalid_webhook");
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
+
+  const redirect = await request(service, "/v1/cloud/payments/success", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { sessionId, paid: true }
+  });
+  assert.equal(redirect.response.status, 404);
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
 });

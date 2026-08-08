@@ -206,6 +206,15 @@ test("the production provider remains off until every server-side gate is explic
       CLOUD_PROVIDER_ENABLED: "true",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "approved"
+    }),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "approved"
     })?.available,
     true
   );

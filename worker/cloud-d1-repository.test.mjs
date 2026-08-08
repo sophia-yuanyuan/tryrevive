@@ -79,8 +79,13 @@ async function createDatabase() {
   database.exec("PRAGMA foreign_keys = ON");
   const first = await readFile(new URL("./migrations/0001_cloud_billing.sql", import.meta.url), "utf8");
   const second = await readFile(new URL("./migrations/0002_cloud_ledger.sql", import.meta.url), "utf8");
+  const third = await readFile(
+    new URL("./migrations/0003_cloud_payments.sql", import.meta.url),
+    "utf8"
+  );
   database.exec(first);
   database.exec(second);
+  database.exec(third);
   return database;
 }
 
@@ -591,4 +596,131 @@ test("D1 account deletion remains atomic while a reservation is pending", async 
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_quotes").get().count, 1);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_operations").get().count, 1);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger").get().count, 2);
+});
+
+test("D1 applies one signed payment order once across duplicate webhook events", async (t) => {
+  const start = 1_800_000_000_000;
+  const { database, repository, service } = await createHarness(t, { initialNow: start });
+  const account = await redeem(service, database, "D1-PAYMENT-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
+  const accountId = database.prepare("SELECT id FROM cloud_accounts").get().id;
+  const selectedPackage = {
+    id: "starter",
+    name: "Starter",
+    priceId: "price_D1Starter123",
+    currency: "sgd",
+    amount: 500,
+    speechMinutes: 30,
+    projectAnalyses: 10
+  };
+  const orderInput = {
+    id: "payment-d1-once",
+    accountId,
+    package: selectedPackage,
+    idempotencyKey: "payment-d1-idempotent",
+    creationNonce: "payment-create-d1",
+    now: start
+  };
+  assert.equal((await repository.createPaymentOrder(orderInput)).status, "created");
+  assert.equal(
+    (
+      await repository.createPaymentOrder({
+        ...orderInput,
+        id: "payment-d1-duplicate",
+        creationNonce: "payment-create-duplicate"
+      })
+    ).status,
+    "processing"
+  );
+  const sessionId = `cs_test_${"1".repeat(32)}`;
+  const attached = await repository.attachPaymentCheckout({
+    orderId: orderInput.id,
+    accountId,
+    creationNonce: orderInput.creationNonce,
+    sessionId,
+    checkoutUrl: `https://checkout.stripe.com/c/pay/${sessionId}`,
+    now: start + 1
+  });
+  assert.equal(attached.status, "pending");
+
+  const fulfillment = {
+    eventId: "evt_d1_payment_once",
+    eventType: "checkout.session.completed",
+    sessionId,
+    orderId: orderInput.id,
+    amount: selectedPackage.amount,
+    currency: selectedPackage.currency,
+    priceId: selectedPackage.priceId,
+    now: start + 2
+  };
+  assert.equal((await repository.fulfillPayment(fulfillment)).status, "credited");
+  assert.equal((await repository.fulfillPayment(fulfillment)).status, "duplicate");
+  assert.equal(
+    (
+      await repository.fulfillPayment({
+        ...fulfillment,
+        eventId: "evt_d1_payment_duplicate",
+        now: start + 3
+      })
+    ).status,
+    "duplicate"
+  );
+  assert.deepEqual(
+    { ...database.prepare("SELECT speech_minutes, project_analyses FROM cloud_accounts").get() },
+    { speech_minutes: 30, project_analyses: 10 }
+  );
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_payment_ledger").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_payment_events").get().count, 2);
+  assert.equal(database.prepare("SELECT status FROM cloud_payment_orders").get().status, "paid");
+
+  const exported = await request(service, "/v1/cloud/data-export", {
+    token: account.sessionToken
+  });
+  assert.equal(exported.response.status, 200);
+  assert.equal(exported.body.payments.orders[0].status, "paid");
+  assert.equal(exported.body.payments.ledger.length, 1);
+  assert.equal(JSON.stringify(exported.body).includes(sessionId), false);
+});
+
+test("D1 blocks deletion during checkout creation and releases stale payment orders", async (t) => {
+  const start = 1_800_000_000_000;
+  const { database, repository, service, setNow } = await createHarness(t, { initialNow: start });
+  const account = await redeem(service, database, "D1-PAYMENT-DELETE", {
+    speechMinutes: 0,
+    projectAnalyses: 0
+  });
+  const accountId = database.prepare("SELECT id FROM cloud_accounts").get().id;
+  await repository.createPaymentOrder({
+    id: "payment-delete-pending",
+    accountId,
+    package: {
+      id: "starter",
+      priceId: "price_DeletePending123",
+      currency: "sgd",
+      amount: 500,
+      speechMinutes: 30,
+      projectAnalyses: 10
+    },
+    idempotencyKey: "payment-delete-pending-key",
+    creationNonce: "payment-delete-pending-nonce",
+    now: start
+  });
+  const blocked = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(blocked.response.status, 409);
+
+  setNow(start + 25 * 60 * 60 * 1000);
+  await repository.releaseExpired(start + 25 * 60 * 60 * 1000);
+  const deleted = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_payment_orders").get().count, 0);
 });

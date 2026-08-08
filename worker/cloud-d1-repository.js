@@ -1,4 +1,5 @@
 const STALE_PROCESSING_MS = 15 * 60 * 1000;
+const STALE_PAYMENT_MS = 24 * 60 * 60 * 1000;
 
 function balanceFrom(row) {
   return {
@@ -48,6 +49,35 @@ async function operationByKey(db, idempotencyKey) {
     .first();
 }
 
+async function paymentOrderById(db, orderId) {
+  return db
+    .prepare(
+      `SELECT id, account_id, provider, package_id, price_id, amount_total,
+              currency, speech_minutes, project_analyses, idempotency_key,
+              creation_nonce, provider_session_id, checkout_url, status,
+              created_at, updated_at, paid_at
+       FROM cloud_payment_orders
+       WHERE id = ?`
+    )
+    .bind(orderId)
+    .first();
+}
+
+function publicPaymentOrder(row) {
+  return {
+    id: row.id,
+    packageId: row.package_id,
+    amount: Number(row.amount_total),
+    currency: row.currency,
+    units: costFrom(row),
+    status: row.status,
+    checkoutUrl: row.checkout_url || null,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    paidAt: row.paid_at === null ? null : Number(row.paid_at)
+  };
+}
+
 async function storedResult(db, operation) {
   const draft = parseStoredDraft(operation?.result_json);
   if (!draft) return null;
@@ -86,6 +116,9 @@ export function createCloudD1Repository(db) {
     const filter = expiryFilter(scoped);
     const ledgerBindings = expiryBindings(now, accountId);
     const operationBindings = expiryBindings(now, accountId);
+    const paymentScope = accountId ? " AND account_id = ?" : "";
+    const paymentBindings = [now, now - STALE_PAYMENT_MS];
+    if (accountId) paymentBindings.push(accountId);
     await db.batch([
       db
         .prepare(
@@ -138,6 +171,14 @@ export function createCloudD1Repository(db) {
            WHERE ${filter}`
         )
         .bind(now, now, ...operationBindings)
+      ,
+      db
+        .prepare(
+          `UPDATE cloud_payment_orders
+           SET status = 'expired', checkout_url = NULL, updated_at = ?
+           WHERE status IN ('creating', 'pending') AND created_at <= ?${paymentScope}`
+        )
+        .bind(...paymentBindings)
     ]);
   }
 
@@ -168,6 +209,257 @@ export function createCloudD1Repository(db) {
         .run();
     },
 
+    async createPaymentOrder(input) {
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO cloud_payment_orders (
+             id, account_id, provider, package_id, price_id, amount_total,
+             currency, speech_minutes, project_analyses, idempotency_key,
+             creation_nonce, status, created_at, updated_at
+           ) VALUES (?, ?, 'stripe', ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?)`
+        )
+        .bind(
+          input.id,
+          input.accountId,
+          input.package.id,
+          input.package.priceId,
+          input.package.amount,
+          input.package.currency,
+          input.package.speechMinutes,
+          input.package.projectAnalyses,
+          input.idempotencyKey,
+          input.creationNonce,
+          input.now,
+          input.now
+        )
+        .run();
+      const existing = await db
+        .prepare(
+          `SELECT id
+           FROM cloud_payment_orders
+           WHERE account_id = ? AND idempotency_key = ?`
+        )
+        .bind(input.accountId, input.idempotencyKey)
+        .first();
+      if (!existing) throw new Error("payment order was not created");
+      const order = await paymentOrderById(db, existing.id);
+      if (
+        order.account_id !== input.accountId ||
+        order.package_id !== input.package.id ||
+        order.price_id !== input.package.priceId ||
+        Number(order.amount_total) !== input.package.amount ||
+        order.currency !== input.package.currency
+      ) {
+        return { status: "conflict" };
+      }
+      if (order.checkout_url) return { status: "ready", order: publicPaymentOrder(order) };
+      if (order.creation_nonce === input.creationNonce && order.status === "creating") {
+        return { status: "created", orderId: order.id };
+      }
+      if (order.status === "creating") return { status: "processing" };
+      return { status: order.status, order: publicPaymentOrder(order) };
+    },
+
+    async attachPaymentCheckout(input) {
+      const updated = await db
+        .prepare(
+          `UPDATE cloud_payment_orders
+           SET provider_session_id = ?, checkout_url = ?, status = 'pending', updated_at = ?
+           WHERE id = ? AND account_id = ? AND creation_nonce = ? AND status = 'creating'`
+        )
+        .bind(
+          input.sessionId,
+          input.checkoutUrl,
+          input.now,
+          input.orderId,
+          input.accountId,
+          input.creationNonce
+        )
+        .run();
+      if (Number(updated.meta?.changes || 0) !== 1) {
+        const current = await paymentOrderById(db, input.orderId);
+        if (!current?.checkout_url) throw new Error("payment checkout could not be attached");
+        return publicPaymentOrder(current);
+      }
+      return publicPaymentOrder(await paymentOrderById(db, input.orderId));
+    },
+
+    async markPaymentCreationFailed(input) {
+      await db
+        .prepare(
+          `UPDATE cloud_payment_orders
+           SET status = 'failed', updated_at = ?
+           WHERE id = ? AND account_id = ? AND creation_nonce = ? AND status = 'creating'`
+        )
+        .bind(input.now, input.orderId, input.accountId, input.creationNonce)
+        .run();
+    },
+
+    async fulfillPayment(input) {
+      const order = await paymentOrderById(db, input.orderId);
+      if (!order || order.provider_session_id !== input.sessionId) {
+        return { status: "unknown_order" };
+      }
+      const paymentLedgerId = `payment:${input.orderId}`;
+      const results = await db.batch([
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cloud_payment_events (
+               event_id, event_type, provider_session_id, order_id,
+               status, created_at
+             ) VALUES (?, ?, ?, ?, 'received', ?)`
+          )
+          .bind(input.eventId, input.eventType, input.sessionId, input.orderId, input.now),
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cloud_payment_ledger (
+               id, account_id, order_id, speech_minutes_delta,
+               project_analyses_delta, amount_total, currency, provider, created_at
+             )
+             SELECT ?, account_id, id, speech_minutes, project_analyses,
+                    amount_total, currency, provider, ?
+             FROM cloud_payment_orders
+             WHERE id = ? AND account_id = ? AND provider_session_id = ?
+               AND status = 'pending' AND amount_total = ? AND currency = ?
+               AND price_id = ?
+               AND EXISTS (
+                 SELECT 1 FROM cloud_payment_events
+                 WHERE event_id = ? AND status = 'received'
+               )`
+          )
+          .bind(
+            paymentLedgerId,
+            input.now,
+            input.orderId,
+            order.account_id,
+            input.sessionId,
+            input.amount,
+            input.currency,
+            input.priceId,
+            input.eventId
+          ),
+        db
+          .prepare(
+            `UPDATE cloud_accounts
+             SET speech_minutes = speech_minutes + (
+                   SELECT speech_minutes_delta FROM cloud_payment_ledger
+                   WHERE id = ? AND applied_at IS NULL
+                 ),
+                 project_analyses = project_analyses + (
+                   SELECT project_analyses_delta FROM cloud_payment_ledger
+                   WHERE id = ? AND applied_at IS NULL
+                 ),
+                 updated_at = ?
+             WHERE id = ?
+               AND EXISTS (
+                 SELECT 1 FROM cloud_payment_ledger
+                 WHERE id = ? AND applied_at IS NULL
+               )`
+          )
+          .bind(
+            paymentLedgerId,
+            paymentLedgerId,
+            input.now,
+            order.account_id,
+            paymentLedgerId
+          ),
+        db
+          .prepare(
+            `UPDATE cloud_payment_ledger
+             SET applied_at = ?
+             WHERE id = ? AND applied_at IS NULL`
+          )
+          .bind(input.now, paymentLedgerId),
+        db
+          .prepare(
+            `UPDATE cloud_payment_orders
+             SET status = 'paid', checkout_url = NULL, paid_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'pending'
+               AND EXISTS (
+                 SELECT 1 FROM cloud_payment_ledger
+                 WHERE id = ? AND applied_at IS NOT NULL
+               )`
+          )
+          .bind(input.now, input.now, input.orderId, paymentLedgerId),
+        db
+          .prepare(
+            `UPDATE cloud_payment_events
+             SET status = CASE
+                   WHEN EXISTS (
+                     SELECT 1 FROM cloud_payment_ledger
+                     WHERE id = ? AND applied_at IS NOT NULL
+                   ) THEN 'processed'
+                   ELSE 'ignored'
+                 END,
+                 processed_at = ?
+             WHERE event_id = ?`
+          )
+          .bind(paymentLedgerId, input.now, input.eventId)
+      ]);
+      const current = await paymentOrderById(db, input.orderId);
+      const account = await accountById(db, order.account_id);
+      if (!account) return { status: "unknown_order" };
+      const credited = Number(results[2]?.meta?.changes || 0) === 1;
+      if (current?.status === "paid") {
+        return {
+          status: credited ? "credited" : "duplicate",
+          order: publicPaymentOrder(current),
+          balance: balanceFrom(account)
+        };
+      }
+      return { status: "rejected", balance: balanceFrom(account) };
+    },
+
+    async failPayment(input) {
+      const order = await db
+        .prepare(
+          `SELECT id, account_id
+           FROM cloud_payment_orders
+           WHERE provider_session_id = ?`
+        )
+        .bind(input.sessionId)
+        .first();
+      if (!order) return { status: "unknown_order" };
+      await db.batch([
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cloud_payment_events (
+               event_id, event_type, provider_session_id, order_id,
+               status, created_at
+             ) VALUES (?, ?, ?, ?, 'received', ?)`
+          )
+          .bind(input.eventId, input.eventType, input.sessionId, order.id, input.now),
+        db
+          .prepare(
+            `UPDATE cloud_payment_orders
+             SET status = ?, checkout_url = NULL, updated_at = ?
+             WHERE id = ? AND status IN ('creating', 'pending')`
+          )
+          .bind(input.status, input.now, order.id),
+        db
+          .prepare(
+            `UPDATE cloud_payment_events
+             SET status = 'processed', processed_at = ?
+             WHERE event_id = ?`
+          )
+          .bind(input.now, input.eventId)
+      ]);
+      return { status: "processed" };
+    },
+
+    async recordPaymentEvent(input) {
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO cloud_payment_events (
+             event_id, event_type, provider_session_id, order_id,
+             status, created_at, processed_at
+           ) VALUES (?, ?, ?, NULL, 'ignored', ?, ?)`
+        )
+        .bind(input.eventId, input.eventType, input.sessionId, input.now, input.now)
+        .run();
+      return { status: "ignored" };
+    },
+
     async exportAccountData(accountId, generatedAt) {
       const account = await db
         .prepare(
@@ -179,7 +471,15 @@ export function createCloudD1Repository(db) {
         .first();
       if (!account) return null;
 
-      const [sessions, redeemEvents, quotes, operations, ledger] = await Promise.all([
+      const [
+        sessions,
+        redeemEvents,
+        quotes,
+        operations,
+        ledger,
+        paymentOrders,
+        paymentLedger
+      ] = await Promise.all([
         db
           .prepare(
             `SELECT created_at, expires_at
@@ -227,6 +527,26 @@ export function createCloudD1Repository(db) {
              ORDER BY created_at ASC`
           )
           .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT id, package_id, amount_total, currency, speech_minutes,
+                    project_analyses, status, created_at, updated_at, paid_at
+             FROM cloud_payment_orders
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT order_id, speech_minutes_delta, project_analyses_delta,
+                    amount_total, currency, provider, created_at, applied_at
+             FROM cloud_payment_ledger
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
           .all()
       ]);
 
@@ -270,6 +590,31 @@ export function createCloudD1Repository(db) {
           projectAnalysesDelta: Number(row.project_analyses_delta),
           createdAt: Number(row.created_at)
         })),
+        payments: {
+          orders: paymentOrders.results.map((row) => ({
+            id: row.id,
+            packageId: row.package_id,
+            amount: Number(row.amount_total),
+            currency: row.currency,
+            units: costFrom(row),
+            status: row.status,
+            createdAt: Number(row.created_at),
+            updatedAt: Number(row.updated_at),
+            paidAt: row.paid_at === null ? null : Number(row.paid_at)
+          })),
+          ledger: paymentLedger.results.map((row) => ({
+            orderId: row.order_id,
+            units: {
+              speechMinutes: Number(row.speech_minutes_delta),
+              projectAnalyses: Number(row.project_analyses_delta)
+            },
+            amount: Number(row.amount_total),
+            currency: row.currency,
+            provider: row.provider,
+            createdAt: Number(row.created_at),
+            appliedAt: row.applied_at === null ? null : Number(row.applied_at)
+          }))
+        },
         generatedAt
       };
     },
@@ -277,79 +622,75 @@ export function createCloudD1Repository(db) {
     async deleteAccountData(accountId, now) {
       const account = await accountById(db, accountId);
       if (!account) return { status: "not_found" };
+      const deletionGuard = `NOT EXISTS (
+          SELECT 1 FROM cloud_operations
+          WHERE account_id = ? AND status = 'pending'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM cloud_payment_orders
+          WHERE account_id = ? AND status IN ('creating', 'pending')
+        )`;
       await db.batch([
         db
           .prepare(
             `UPDATE cloud_redeem_codes
              SET account_id = NULL
-             WHERE account_id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
+             WHERE account_id = ? AND ${deletionGuard}`
           )
-          .bind(accountId, accountId),
+          .bind(accountId, accountId, accountId),
         db
           .prepare(
             `DELETE FROM cloud_ledger
-             WHERE account_id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
+             WHERE account_id = ? AND ${deletionGuard}`
           )
-          .bind(accountId, accountId),
+          .bind(accountId, accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_payment_events
+             WHERE order_id IN (
+               SELECT id FROM cloud_payment_orders WHERE account_id = ?
+             ) AND ${deletionGuard}`
+          )
+          .bind(accountId, accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_payment_ledger
+             WHERE account_id = ? AND ${deletionGuard}`
+          )
+          .bind(accountId, accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_payment_orders
+             WHERE account_id = ? AND ${deletionGuard}`
+          )
+          .bind(accountId, accountId, accountId),
         db
           .prepare(
             `DELETE FROM cloud_operations
-             WHERE account_id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
+             WHERE account_id = ? AND ${deletionGuard}`
           )
-          .bind(accountId, accountId),
+          .bind(accountId, accountId, accountId),
         db
-          .prepare(
-            `DELETE FROM cloud_quotes
-             WHERE account_id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
-          )
-          .bind(accountId, accountId),
+          .prepare(`DELETE FROM cloud_quotes WHERE account_id = ? AND ${deletionGuard}`)
+          .bind(accountId, accountId, accountId),
         db
-          .prepare(
-            `DELETE FROM cloud_sessions
-             WHERE account_id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
-          )
-          .bind(accountId, accountId),
+          .prepare(`DELETE FROM cloud_sessions WHERE account_id = ? AND ${deletionGuard}`)
+          .bind(accountId, accountId, accountId),
         db
-          .prepare(
-            `DELETE FROM cloud_accounts
-             WHERE id = ?
-               AND NOT EXISTS (
-                 SELECT 1 FROM cloud_operations
-                 WHERE account_id = ? AND status = 'pending'
-               )`
-          )
-          .bind(accountId, accountId)
+          .prepare(`DELETE FROM cloud_accounts WHERE id = ? AND ${deletionGuard}`)
+          .bind(accountId, accountId, accountId)
       ]);
       const remaining = await accountById(db, accountId);
       if (!remaining) return { status: "deleted", deletedAt: now };
       const pending = await db
         .prepare(
-          `SELECT 1 AS pending
-           FROM cloud_operations
+          `SELECT 1 AS pending FROM cloud_operations
            WHERE account_id = ? AND status = 'pending'
+           UNION ALL
+           SELECT 1 AS pending FROM cloud_payment_orders
+           WHERE account_id = ? AND status IN ('creating', 'pending')
            LIMIT 1`
         )
-        .bind(accountId)
+        .bind(accountId, accountId)
         .first();
       return pending ? { status: "processing" } : { status: "not_found" };
     },

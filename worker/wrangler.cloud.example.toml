@@ -4,10 +4,17 @@ compatibility_date = "2026-08-07"
 
 [vars]
 CLOUD_PROVIDER_ENABLED = "false"
+OPENAI_MODEL_APPROVED = "false"
 OPENAI_ANALYSIS_MODEL = "REPLACE_WITH_APPROVED_MODEL"
 OPENAI_TRANSCRIPTION_MODEL = "gpt-transcribe"
+CLOUD_PAYMENT_ENABLED = "false"
+CLOUD_PAYMENT_LIVE_ENABLED = "false"
+STRIPE_PACKAGES_JSON = "REPLACE_WITH_REVIEWED_STRIPE_PACKAGES_JSON"
+STRIPE_SUCCESS_URL = "https://tryrevive.online/#/payment/success?session_id={CHECKOUT_SESSION_ID}"
+STRIPE_CANCEL_URL = "https://tryrevive.online/#/payment/canceled"
 
-# OPENAI_API_KEY must be configured as a Wrangler secret, never committed here.
+# OPENAI_API_KEY, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured
+# as Wrangler secrets, never committed here.
 
 [[d1_databases]]
 binding = "CLOUD_DB"

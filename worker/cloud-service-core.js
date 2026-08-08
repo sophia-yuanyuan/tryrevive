@@ -9,6 +9,7 @@ import {
 } from "./cloud-core.js";
 
 const MAX_JSON_BODY_BYTES = 36 * 1024 * 1024;
+const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 const DEFAULT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_QUOTE_MS = 10 * 60 * 1000;
 const DEFAULT_RESERVATION_MS = 10 * 60 * 1000;
@@ -81,6 +82,18 @@ async function readJson(request) {
     throw new HttpError(400, "invalid_request", "请求内容不完整");
   }
   return value;
+}
+
+async function readRawBody(request, maximum = MAX_WEBHOOK_BODY_BYTES) {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maximum) {
+    throw new HttpError(413, "request_too_large", "回调内容超过安全上限");
+  }
+  const raw = await request.text();
+  if (!raw || textEncoder.encode(raw).byteLength > maximum) {
+    throw new HttpError(400, "invalid_webhook", "支付回调内容无效");
+  }
+  return raw;
 }
 
 function parseBearer(request) {
@@ -183,9 +196,22 @@ function providerAvailable(provider) {
   return Boolean(provider && provider.available === true && typeof provider.analyze === "function");
 }
 
+function paymentProviderAvailable(provider) {
+  return Boolean(
+    provider &&
+      provider.available === true &&
+      typeof provider.publicPackages === "function" &&
+      typeof provider.getPackage === "function" &&
+      typeof provider.createCheckoutSession === "function" &&
+      typeof provider.verifyWebhook === "function" &&
+      typeof provider.retrieveCheckoutSession === "function"
+  );
+}
+
 export function createCloudService({
   repository,
   provider = null,
+  paymentProvider = null,
   now = () => Date.now(),
   randomToken,
   randomId = () => crypto.randomUUID(),
@@ -203,6 +229,7 @@ export function createCloudService({
       service: "tryrevive-cloud",
       available: true,
       analysisAvailable: providerAvailable(provider),
+      paymentAvailable: paymentProviderAvailable(paymentProvider),
       units: ["speechMinutes", "projectAnalyses"],
       limits: {
         sourceBytes: 25 * 1024 * 1024,
@@ -210,6 +237,146 @@ export function createCloudService({
         audioSeconds: 3600
       }
     });
+  }
+
+  async function handlePaymentPackages() {
+    if (!paymentProviderAvailable(paymentProvider)) {
+      throw new HttpError(503, "payment_not_enabled", "真实付款尚未启用；不会创建订单或扣款");
+    }
+    return json({
+      provider: "stripe",
+      mode: paymentProvider.mode,
+      packages: paymentProvider.publicPackages()
+    });
+  }
+
+  async function handlePaymentCheckout(request) {
+    if (!paymentProviderAvailable(paymentProvider)) {
+      throw new HttpError(503, "payment_not_enabled", "真实付款尚未启用；不会创建订单或扣款");
+    }
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const body = await readJson(request);
+    const packageId = boundedString(body.packageId, 48, "算力包");
+    const idempotencyKey = boundedString(body.idempotencyKey, 120, "支付请求号");
+    if (idempotencyKey.length < 12) {
+      throw new HttpError(400, "invalid_idempotency_key", "支付请求号格式无效");
+    }
+    const selectedPackage = paymentProvider.getPackage(packageId);
+    if (!selectedPackage) {
+      throw new HttpError(404, "payment_package_not_found", "这个算力包当前不可购买");
+    }
+    const creationNonce = `payment_create_${randomId()}`;
+    const created = await repository.createPaymentOrder({
+      id: `payment_${randomId()}`,
+      accountId: account.id,
+      package: selectedPackage,
+      idempotencyKey,
+      creationNonce,
+      now: timestamp
+    });
+    if (created.status === "ready" || created.status === "paid") {
+      return json({ order: created.order });
+    }
+    if (created.status === "processing") {
+      throw new HttpError(409, "payment_processing", "这笔付款正在创建，请不要重复提交");
+    }
+    if (created.status === "conflict") {
+      throw new HttpError(409, "payment_idempotency_conflict", "支付请求号已用于另一笔订单");
+    }
+    if (created.status !== "created") {
+      throw new HttpError(409, "payment_order_unavailable", "这笔付款无法继续，请重新发起");
+    }
+    try {
+      const checkout = await paymentProvider.createCheckoutSession({
+        orderId: created.orderId,
+        package: selectedPackage
+      });
+      const order = await repository.attachPaymentCheckout({
+        orderId: created.orderId,
+        accountId: account.id,
+        creationNonce,
+        sessionId: checkout.sessionId,
+        checkoutUrl: checkout.checkoutUrl,
+        now: now()
+      });
+      return json({ order });
+    } catch {
+      await repository.markPaymentCreationFailed({
+        orderId: created.orderId,
+        accountId: account.id,
+        creationNonce,
+        now: now()
+      });
+      throw new HttpError(502, "payment_provider_failed", "支付页面创建失败；本次没有扣款或增加额度");
+    }
+  }
+
+  async function handlePaymentWebhook(request) {
+    if (!paymentProviderAvailable(paymentProvider)) {
+      throw new HttpError(503, "payment_not_enabled", "支付回调尚未启用");
+    }
+    const timestamp = now();
+    const payload = await readRawBody(request);
+    let event;
+    try {
+      event = await paymentProvider.verifyWebhook({
+        payload,
+        signature: request.headers.get("stripe-signature"),
+        now: timestamp
+      });
+    } catch {
+      throw new HttpError(400, "invalid_webhook", "支付回调签名无效或已经过期");
+    }
+
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded"
+    ) {
+      const session = await paymentProvider.retrieveCheckoutSession(event.sessionId);
+      if (
+        session.id !== event.sessionId ||
+        !session.clientReferenceId ||
+        session.paymentStatus !== "paid" ||
+        !Number.isInteger(session.amountTotal) ||
+        !session.currency ||
+        session.priceIds.length !== 1
+      ) {
+        await repository.recordPaymentEvent({ ...event, now: timestamp });
+        return json({ received: true, status: "ignored" });
+      }
+      const fulfilled = await repository.fulfillPayment({
+        eventId: event.id,
+        eventType: event.type,
+        sessionId: event.sessionId,
+        orderId: session.clientReferenceId,
+        amount: session.amountTotal,
+        currency: session.currency,
+        priceId: session.priceIds[0],
+        now: timestamp
+      });
+      if (fulfilled.status === "unknown_order") {
+        await repository.recordPaymentEvent({ ...event, now: timestamp });
+      }
+      return json({ received: true, status: fulfilled.status });
+    }
+
+    if (
+      event.type === "checkout.session.async_payment_failed" ||
+      event.type === "checkout.session.expired"
+    ) {
+      const failed = await repository.failPayment({
+        eventId: event.id,
+        eventType: event.type,
+        sessionId: event.sessionId,
+        status: event.type === "checkout.session.expired" ? "expired" : "failed",
+        now: timestamp
+      });
+      return json({ received: true, status: failed.status });
+    }
+
+    await repository.recordPaymentEvent({ ...event, now: timestamp });
+    return json({ received: true, status: "ignored" });
   }
 
   async function handleRedeem(request) {
@@ -300,7 +467,7 @@ export function createCloudService({
       throw new HttpError(
         409,
         "account_processing",
-        "仍有一项云端分析正在处理，请等待完成或退款后再删除账户"
+        "仍有云端分析或付款正在处理，请等待完成、失败或过期后再删除账户"
       );
     }
     if (result.status !== "deleted") {
@@ -483,6 +650,15 @@ export function createCloudService({
     try {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/v1/cloud/catalog") return handleCatalog();
+      if (request.method === "GET" && url.pathname === "/v1/cloud/payments/packages") {
+        return await handlePaymentPackages();
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/payments/checkout") {
+        return await handlePaymentCheckout(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/payments/webhook") {
+        return await handlePaymentWebhook(request);
+      }
       if (request.method === "POST" && url.pathname === "/v1/cloud/redeem") {
         return await handleRedeem(request);
       }

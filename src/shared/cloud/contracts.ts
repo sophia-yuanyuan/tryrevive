@@ -109,7 +109,35 @@ export const CloudDataExportSchema = z.object({
       projectAnalysesDelta: z.number().int(),
       createdAt: CloudTimestampSchema
     })
-  )
+  ),
+  payments: z
+    .object({
+      orders: z.array(
+        z.object({
+          id: z.string().trim().min(1).max(200),
+          packageId: z.string().trim().min(1).max(48),
+          amount: z.number().int().positive(),
+          currency: z.string().regex(/^[a-z]{3}$/),
+          units: CloudBalanceSchema,
+          status: z.enum(["creating", "pending", "paid", "failed", "expired"]),
+          createdAt: CloudTimestampSchema,
+          updatedAt: CloudTimestampSchema,
+          paidAt: CloudTimestampSchema.nullable()
+        })
+      ),
+      ledger: z.array(
+        z.object({
+          orderId: z.string().trim().min(1).max(200),
+          units: CloudBalanceSchema,
+          amount: z.number().int().positive(),
+          currency: z.string().regex(/^[a-z]{3}$/),
+          provider: z.literal("stripe"),
+          createdAt: CloudTimestampSchema,
+          appliedAt: CloudTimestampSchema.nullable()
+        })
+      )
+    })
+    .default({ orders: [], ledger: [] })
 });
 
 export const CloudSourceDeletionResultSchema = z.object({
