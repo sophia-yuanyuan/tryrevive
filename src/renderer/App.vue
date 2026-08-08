@@ -236,6 +236,14 @@ async function startNewProject(): Promise<void> {
               >
                 TryRevive 如何工作
               </RouterLink>
+
+              <RouterLink
+                class="text-button ml-4 mt-6 inline-flex"
+                to="/privacy"
+                @click="settingsOpen = false"
+              >
+                隐私与数据控制
+              </RouterLink>
             </DialogContent>
           </DialogPortal>
         </DialogRoot>
@@ -273,6 +281,9 @@ async function startNewProject(): Promise<void> {
     <RouterView v-else />
     <footer class="px-4 pb-7 text-center text-xs leading-5 text-[var(--muted)]">
       TryRevive 不替代老师、同伴或专业支持；项目方向与完成状态由你决定。
+      <RouterLink class="ml-2 underline underline-offset-4" to="/privacy">
+        隐私与数据控制
+      </RouterLink>
     </footer>
   </div>
 </template>

@@ -18,7 +18,10 @@ import type { LoadStateResult } from "../src/shared/platform/contracts";
 import { parseAudioExportRequest } from "../src/shared/audio/export";
 import {
   analyzeCloudContext,
+  deleteCloudAccount,
+  deleteCloudSourceContent,
   disconnectCloud,
+  getCloudDataExport,
   getCloudStatus,
   quoteCloudContext,
   redeemCloudCode
@@ -259,6 +262,26 @@ function registerIpc(): void {
   ipcMain.handle(IPC_CHANNELS.disconnectCloud, async (event) => {
     assertTrustedSender(event);
     return disconnectCloud();
+  });
+  ipcMain.handle(IPC_CHANNELS.exportCloudData, async (event) => {
+    assertTrustedSender(event);
+    const result = await dialog.showSaveDialog({
+      title: "导出 TryRevive 云端数据",
+      defaultPath: `tryrevive-cloud-data-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const exported = await getCloudDataExport();
+    await fs.writeFile(result.filePath, JSON.stringify(exported, null, 2), "utf8");
+    return { canceled: false, path: result.filePath };
+  });
+  ipcMain.handle(IPC_CHANNELS.deleteCloudSourceContent, async (event) => {
+    assertTrustedSender(event);
+    return deleteCloudSourceContent();
+  });
+  ipcMain.handle(IPC_CHANNELS.deleteCloudAccount, async (event, confirmation: unknown) => {
+    assertTrustedSender(event);
+    return deleteCloudAccount(confirmation);
   });
   ipcMain.handle(IPC_CHANNELS.redeemCloudCode, async (event, code: unknown) => {
     assertTrustedSender(event);

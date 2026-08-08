@@ -43,9 +43,7 @@ async function completeRevivalLoop(page) {
 
   await page.getByRole("button", { name: "保存，下次从这里继续" }).click();
   await expect(page.getByRole("heading", { name: "下次不用从头回忆" })).toBeVisible();
-  await expect(
-    page.getByText("导航已经可以在 390px 下打开和关闭", { exact: true })
-  ).toBeVisible();
+  await expect(page.getByText("导航已经可以在 390px 下打开和关闭", { exact: true })).toBeVisible();
 }
 
 test("student can complete the P0 loop and resume after reload", async ({ page }) => {
@@ -61,6 +59,21 @@ test("settings exposes local backup controls without requiring an account", asyn
   await expect(page.getByRole("dialog")).toContainText("备份与恢复");
   await expect(page.getByRole("button", { name: "导出备份" })).toBeVisible();
   await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+});
+
+test("privacy center explains the real data boundary without pretending web cloud access", async ({
+  page
+}) => {
+  await page.goto("/#/privacy");
+  await expect(
+    page.getByRole("heading", { name: "你的项目原文不应该变成一笔糊涂账" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("TryRevive 不把上传原文写入 D1 数据库", { exact: false })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "导出我的云端数据" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "检查并清除原文副本" })).toBeDisabled();
+  await expect(page.getByText("云端理解当前仅在桌面版内测", { exact: false })).toBeVisible();
 });
 
 test("an unreadable JSON backup cannot replace existing local projects", async ({ page }) => {
@@ -103,7 +116,9 @@ test("multiple unfinished projects can be collected in one local intake", async 
   await expect(dialog.getByText("完成 TryRevive 桌面版", { exact: true })).toBeVisible();
 });
 
-test("initial intake exposes cloud choices safely and never asks for an API key", async ({ page }) => {
+test("initial intake exposes cloud choices safely and never asks for an API key", async ({
+  page
+}) => {
   await page.goto("/");
   await expect(page.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
   await expect(page.getByText("当前不会上传任何内容")).toBeVisible();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAffordCloudQuote,
   CloudAnalysisResultSchema,
+  CloudDataExportSchema,
   CloudReservationResultSchema,
   estimateCloudCost
 } from "@/shared/cloud/contracts";
@@ -98,5 +99,40 @@ describe("cloud usage contracts", () => {
     expect(normalizeCloudMimeType("项目说明.mp3", "application/octet-stream")).toBe("audio/mpeg");
     expect(isCloudAudioFile("项目说明.mp3", "")).toBe(true);
     expect(normalizeCloudMimeType("未知文件.bin", "")).toBe("application/octet-stream");
+  });
+
+  it("accepts a privacy export only when it contains no stored source-content claim", () => {
+    const exported = CloudDataExportSchema.safeParse({
+      schemaVersion: 1,
+      service: "tryrevive-cloud",
+      generatedAt: 1_800_000_000_000,
+      sourceContent: {
+        storedByTryRevive: false,
+        deletionStatus: "not_stored",
+        note: "TryRevive does not persist source content."
+      },
+      account: {
+        id: "account-1",
+        balance: { speechMinutes: 2, projectAnalyses: 1 },
+        createdAt: 1_799_000_000_000,
+        updatedAt: 1_800_000_000_000
+      },
+      sessions: [],
+      redeemEvents: [],
+      quotes: [],
+      operations: [],
+      ledger: []
+    });
+    expect(exported.success).toBe(true);
+
+    const falseClaim = CloudDataExportSchema.safeParse({
+      ...(exported.success ? exported.data : {}),
+      sourceContent: {
+        storedByTryRevive: true,
+        deletionStatus: "stored",
+        note: "Source was retained."
+      }
+    });
+    expect(falseClaim.success).toBe(false);
   });
 });

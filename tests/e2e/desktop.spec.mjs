@@ -93,6 +93,7 @@ async function startCloudSessionHarness() {
       path: request.url,
       authorization,
       reservation: request.headers["x-tryrevive-reservation"] ?? "",
+      deletionConfirmation: request.headers["x-tryrevive-delete-confirmation"] ?? "",
       body
     });
     const send = (status, value) => {
@@ -134,6 +135,62 @@ async function startCloudSessionHarness() {
       return send(200, {
         remoteRevoked: true,
         message: "测试凭据已撤销。"
+      });
+    }
+    if (request.method === "GET" && request.url === "/v1/cloud/data-export") {
+      const balance = sessions.get(token);
+      if (!balance) return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      const timestamp = Date.now();
+      return send(200, {
+        schemaVersion: 1,
+        service: "tryrevive-cloud",
+        generatedAt: timestamp,
+        sourceContent: {
+          storedByTryRevive: false,
+          deletionStatus: "not_stored",
+          note: "测试服务没有保存原文。"
+        },
+        account: {
+          id: "test-account",
+          balance,
+          createdAt: timestamp - 1_000,
+          updatedAt: timestamp
+        },
+        sessions: [],
+        redeemEvents: [],
+        quotes: [],
+        operations: [],
+        ledger: []
+      });
+    }
+    if (request.method === "DELETE" && request.url === "/v1/cloud/source-content") {
+      if (!sessions.has(token)) {
+        return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      }
+      return send(200, {
+        status: "not_stored",
+        sourceDeleted: true,
+        storedByTryRevive: false,
+        message: "测试服务没有持久化原文；第三方安全日志不在本次删除范围。"
+      });
+    }
+    if (request.method === "DELETE" && request.url === "/v1/cloud/account") {
+      if (!sessions.has(token)) {
+        return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      }
+      if (request.headers["x-tryrevive-delete-confirmation"] !== "DELETE CLOUD DATA") {
+        return send(400, {
+          error: "deletion_confirmation_required",
+          message: "测试删除确认缺失"
+        });
+      }
+      const unusedBalanceDeleted = sessions.get(token);
+      sessions.delete(token);
+      return send(200, {
+        deleted: true,
+        remoteSessionsRevoked: true,
+        unusedBalanceDeleted,
+        message: "测试云端账户和派生记录已经删除。"
       });
     }
     if (request.method === "POST" && request.url === "/v1/cloud/quote") {
@@ -747,6 +804,71 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
       (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
     );
     expect(revoke.authorization).toMatch(/^Bearer session_token_/);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop privacy center exports data, verifies no source copy, and deletes cloud access", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  test.setTimeout(90_000);
+  const harness = await startCloudSessionHarness();
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-privacy-e2e-"));
+  const exportPath = path.join(userData, "cloud-data-export.json");
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("隐私验收项目", "privacy-project")),
+    "utf8"
+  );
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await window.getByLabel("算力兑换码").fill("PRIVACY-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+
+    await window.getByRole("button", { name: "打开项目与数据设置" }).click();
+    await window.getByRole("link", { name: "隐私与数据控制" }).first().click();
+    await expect(
+      window.getByRole("heading", { name: "你的项目原文不应该变成一笔糊涂账" })
+    ).toBeVisible();
+
+    await window.getByRole("button", { name: "检查并清除原文副本" }).click();
+    await expect(
+      window.getByText("第三方安全日志不在本次删除范围", { exact: false })
+    ).toBeVisible();
+
+    await desktop.evaluate(({ dialog }, destination) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: destination });
+    }, exportPath);
+    await window.getByRole("button", { name: "导出我的云端数据" }).click();
+    await expect(window.getByText("云端数据已经导出", { exact: false })).toBeVisible();
+    const exported = JSON.parse(await readFile(exportPath, "utf8"));
+    expect(exported.sourceContent.storedByTryRevive).toBe(false);
+    expect(JSON.stringify(exported)).not.toContain("session_token_");
+
+    await window.getByLabel("永久删除云端账户").fill("删除云端数据");
+    await window.getByRole("button", { name: "永久删除" }).click();
+    await expect(
+      window.getByText("测试云端账户和派生记录已经删除", { exact: false })
+    ).toBeVisible();
+    await window.getByRole("link", { name: "返回工作台" }).click();
+    await expect(window.getByRole("heading", { name: /隐私验收项目/ })).toBeVisible();
+    const deletion = harness.calls.find(
+      (call) => call.method === "DELETE" && call.path === "/v1/cloud/account"
+    );
+    expect(deletion.deletionConfirmation).toBe("DELETE CLOUD DATA");
   } finally {
     await desktop.close().catch(() => undefined);
     await harness.close().catch(() => undefined);

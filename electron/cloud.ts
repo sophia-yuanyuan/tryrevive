@@ -5,6 +5,12 @@ import { z } from "zod";
 import {
   CloudDisconnectResultSchema,
   type CloudDisconnectResult,
+  CloudDataExportSchema,
+  type CloudDataExport,
+  CloudSourceDeletionResultSchema,
+  type CloudSourceDeletionResult,
+  CloudAccountDeletionResultSchema,
+  type CloudAccountDeletionResult,
   CloudAnalysisResultSchema,
   type CloudAnalysisResult,
   type CloudAnalyzeRequest,
@@ -248,6 +254,40 @@ export async function disconnectCloud(): Promise<CloudDisconnectResult> {
       ? "这台设备已经退出云端算力；本地项目仍可继续使用。"
       : "本机凭据已移除，但暂时无法确认云端撤销；请勿在共享设备上继续使用旧凭据。"
   });
+}
+
+export async function getCloudDataExport(): Promise<CloudDataExport> {
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先连接云端账户，再导出云端数据");
+  return requestJson("/v1/cloud/data-export", CloudDataExportSchema, {}, token);
+}
+
+export async function deleteCloudSourceContent(): Promise<CloudSourceDeletionResult> {
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先连接云端账户，再检查原文副本");
+  return requestJson(
+    "/v1/cloud/source-content",
+    CloudSourceDeletionResultSchema,
+    { method: "DELETE" },
+    token
+  );
+}
+
+export async function deleteCloudAccount(input: unknown): Promise<CloudAccountDeletionResult> {
+  const confirmation = z.literal("DELETE CLOUD DATA").parse(input);
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先连接云端账户，再删除云端数据");
+  const result = await requestJson(
+    "/v1/cloud/account",
+    CloudAccountDeletionResultSchema,
+    {
+      method: "DELETE",
+      headers: { "x-tryrevive-delete-confirmation": confirmation }
+    },
+    token
+  );
+  await clearSessionToken();
+  return result;
 }
 
 export async function quoteCloudContext(input: unknown): Promise<CloudQuote> {

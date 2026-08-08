@@ -22,6 +22,10 @@ const bridge: DesktopBridge = {
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   cloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.cloudStatus),
   disconnectCloud: () => ipcRenderer.invoke(IPC_CHANNELS.disconnectCloud),
+  exportCloudData: () => ipcRenderer.invoke(IPC_CHANNELS.exportCloudData),
+  deleteCloudSourceContent: () => ipcRenderer.invoke(IPC_CHANNELS.deleteCloudSourceContent),
+  deleteCloudAccount: (confirmation) =>
+    ipcRenderer.invoke(IPC_CHANNELS.deleteCloudAccount, confirmation),
   redeemCloudCode: (code: string) => ipcRenderer.invoke(IPC_CHANNELS.redeemCloudCode, code),
   quoteCloudContext: (source) => ipcRenderer.invoke(IPC_CHANNELS.quoteCloudContext, source),
   analyzeCloudContext: (request) => ipcRenderer.invoke(IPC_CHANNELS.analyzeCloudContext, request),

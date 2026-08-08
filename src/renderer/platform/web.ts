@@ -159,6 +159,15 @@ const webPlatform: AppPlatform = {
       message: "网页版没有保存云端算力凭据。"
     };
   },
+  async exportCloudData() {
+    throw new Error("云端数据导出当前仅在 TryRevive Windows 桌面版提供");
+  },
+  async deleteCloudSourceContent() {
+    throw new Error("云端原文检查当前仅在 TryRevive Windows 桌面版提供");
+  },
+  async deleteCloudAccount() {
+    throw new Error("云端账户删除当前仅在 TryRevive Windows 桌面版提供");
+  },
   async redeemCloudCode() {
     throw new Error("云端理解当前仅在桌面版内测");
   },
@@ -212,6 +221,9 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     openExternal: (url) => bridge.openExternal(url),
     cloudStatus: () => bridge.cloudStatus(),
     disconnectCloud: () => bridge.disconnectCloud(),
+    exportCloudData: () => bridge.exportCloudData(),
+    deleteCloudSourceContent: () => bridge.deleteCloudSourceContent(),
+    deleteCloudAccount: (confirmation) => bridge.deleteCloudAccount(confirmation),
     redeemCloudCode: (code) => bridge.redeemCloudCode(code),
     quoteCloudContext: (source) => bridge.quoteCloudContext(source),
     analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),

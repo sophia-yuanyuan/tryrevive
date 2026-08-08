@@ -2,7 +2,9 @@ import type { AppState } from "../domain/model";
 import type { AudioExportRequest } from "../audio/export";
 import type {
   CloudAnalysisResult,
+  CloudAccountDeletionResult,
   CloudAnalyzeRequest,
+  CloudSourceDeletionResult,
   CloudDisconnectResult,
   CloudQuote,
   CloudRedeemResult,
@@ -49,6 +51,9 @@ export interface AppPlatform {
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
   disconnectCloud(): Promise<CloudDisconnectResult>;
+  exportCloudData(): Promise<ExportResult>;
+  deleteCloudSourceContent(): Promise<CloudSourceDeletionResult>;
+  deleteCloudAccount(confirmation: string): Promise<CloudAccountDeletionResult>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
@@ -73,6 +78,9 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<boolean>;
   cloudStatus(): Promise<CloudStatus>;
   disconnectCloud(): Promise<CloudDisconnectResult>;
+  exportCloudData(): Promise<ExportResult>;
+  deleteCloudSourceContent(): Promise<CloudSourceDeletionResult>;
+  deleteCloudAccount(confirmation: string): Promise<CloudAccountDeletionResult>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;

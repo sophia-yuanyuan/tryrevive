@@ -50,6 +50,82 @@ export const CloudDisconnectResultSchema = z.object({
   message: z.string().trim().min(1).max(300)
 });
 
+const CloudTimestampSchema = z.number().int().nonnegative();
+
+export const CloudDataExportSchema = z.object({
+  schemaVersion: z.literal(1),
+  service: z.literal("tryrevive-cloud"),
+  generatedAt: CloudTimestampSchema,
+  sourceContent: z.object({
+    storedByTryRevive: z.literal(false),
+    deletionStatus: z.literal("not_stored"),
+    note: z.string().trim().min(1).max(500)
+  }),
+  account: z.object({
+    id: z.string().trim().min(1).max(200),
+    balance: CloudBalanceSchema,
+    createdAt: CloudTimestampSchema,
+    updatedAt: CloudTimestampSchema
+  }),
+  sessions: z.array(
+    z.object({
+      createdAt: CloudTimestampSchema,
+      expiresAt: CloudTimestampSchema
+    })
+  ),
+  redeemEvents: z.array(
+    z.object({
+      units: CloudBalanceSchema,
+      redeemedAt: CloudTimestampSchema
+    })
+  ),
+  quotes: z.array(
+    z.object({
+      id: z.string().trim().min(1).max(200),
+      cost: CloudBalanceSchema,
+      createdAt: CloudTimestampSchema,
+      expiresAt: CloudTimestampSchema
+    })
+  ),
+  operations: z.array(
+    z.object({
+      idempotencyKey: z.string().trim().min(1).max(120),
+      quoteId: z.string().trim().min(1).max(200),
+      status: z.enum(["pending", "succeeded", "failed", "rejected"]),
+      cost: CloudBalanceSchema,
+      result: z.unknown().nullable(),
+      errorCode: z.string().trim().max(80).nullable(),
+      createdAt: CloudTimestampSchema,
+      updatedAt: CloudTimestampSchema,
+      claimedAt: CloudTimestampSchema.nullable(),
+      releasedAt: CloudTimestampSchema.nullable()
+    })
+  ),
+  ledger: z.array(
+    z.object({
+      operationId: z.string().trim().min(1).max(120).nullable(),
+      kind: z.enum(["redeem", "reserve", "settle", "release"]),
+      speechMinutesDelta: z.number().int(),
+      projectAnalysesDelta: z.number().int(),
+      createdAt: CloudTimestampSchema
+    })
+  )
+});
+
+export const CloudSourceDeletionResultSchema = z.object({
+  status: z.literal("not_stored"),
+  sourceDeleted: z.literal(true),
+  storedByTryRevive: z.literal(false),
+  message: z.string().trim().min(1).max(500)
+});
+
+export const CloudAccountDeletionResultSchema = z.object({
+  deleted: z.literal(true),
+  remoteSessionsRevoked: z.literal(true),
+  unusedBalanceDeleted: CloudBalanceSchema,
+  message: z.string().trim().min(1).max(500)
+});
+
 export const CloudAnalysisResultSchema = z.object({
   draft: ProjectAnalysisSchema,
   balance: CloudBalanceSchema,
@@ -77,6 +153,9 @@ export type CloudStatus = z.infer<typeof CloudStatusSchema>;
 export type CloudQuote = z.infer<typeof CloudQuoteSchema>;
 export type CloudRedeemResult = z.infer<typeof CloudRedeemResultSchema>;
 export type CloudDisconnectResult = z.infer<typeof CloudDisconnectResultSchema>;
+export type CloudDataExport = z.infer<typeof CloudDataExportSchema>;
+export type CloudSourceDeletionResult = z.infer<typeof CloudSourceDeletionResultSchema>;
+export type CloudAccountDeletionResult = z.infer<typeof CloudAccountDeletionResultSchema>;
 export type CloudAnalysisResult = z.infer<typeof CloudAnalysisResultSchema>;
 export type CloudReservationResult = z.infer<typeof CloudReservationResultSchema>;
 
