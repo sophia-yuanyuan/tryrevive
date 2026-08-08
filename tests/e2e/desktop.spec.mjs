@@ -286,7 +286,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     await expect(window.getByText("已保存到本地 · 桌面版", { exact: true })).toBeVisible();
     await expect(window.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
     await window
-      .getByLabel("项目材料或你记得的内容")
+      .getByLabel("本地文字材料或你记得的内容")
       .fill(
         "桌面端课程项目\n我想完成桌面端课程项目。\n上次已经完成了项目入口。\n现在卡在没有进入下一步。"
       );
@@ -762,11 +762,6 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
   test.setTimeout(90_000);
   const harness = await startCloudSessionHarness();
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-inference-e2e-"));
-  await writeFile(
-    path.join(userData, "tryrevive-state.json"),
-    JSON.stringify(createCurrentState("云端推理验收项目", "cloud-inference-project")),
-    "utf8"
-  );
   const desktop = await electron.launch({
     args: [`--user-data-dir=${userData}`, projectRoot],
     cwd: projectRoot,
@@ -775,7 +770,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
 
   try {
     const window = await desktop.firstWindow();
-    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await expect(window.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
     await window.getByLabel("算力兑换码").fill("FIRST-CODE");
     await window.getByRole("button", { name: "兑换算力" }).click();
     await window.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
@@ -794,8 +789,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(harness.calls.some((call) => call.path === "/v1/cloud/analyze")).toBe(false);
 
     await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
-    await expect(window.getByText("待你确认的草稿", { exact: true })).toBeVisible();
-    await expect(window.getByLabel("最开始的目标")).toHaveValue("完成黑客松报名");
+    await expect(window.getByText("恢复草稿已生成", { exact: true })).toBeVisible();
 
     const relevantCalls = harness.calls.filter((call) =>
       ["/v1/cloud/quote", "/v1/cloud/reservations", "/v1/cloud/analyze"].includes(call.path)
@@ -816,8 +810,19 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
       "还没有整理个人分工"
     );
 
-    await window.getByRole("button", { name: "采用这份草稿，进入项目判断" }).click();
-    await expect(window.getByRole("heading", { name: "现在最诚实的选择是什么？" })).toBeVisible();
+    await window.getByRole("button", { name: "查看 TryRevive 的恢复判断" }).click();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    await expect(window.getByText("完成黑客松报名", { exact: true }).first()).toBeVisible();
+    const pendingState = JSON.parse(
+      await readFile(path.join(userData, "tryrevive-state.json"), "utf8")
+    );
+    expect(pendingState.projects).toHaveLength(0);
+    expect(pendingState.pendingInference.sourceKind).toBe("material");
+
+    await window.getByRole("button", { name: "正确，继续" }).click();
+    await expect(
+      window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+    ).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
     await harness.close().catch(() => undefined);

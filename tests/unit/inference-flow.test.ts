@@ -3,7 +3,8 @@ import { ProjectAnalysisSchema } from "@/shared/domain/model";
 import {
   confirmPendingInference,
   correctPendingInference,
-  createPendingInference
+  createPendingInference,
+  titleFromAnalysis
 } from "@/shared/domain/inference-flow";
 import { inferLocalProject } from "@/shared/domain/local-inference";
 import { assignAction } from "@/shared/domain/revival";
@@ -48,6 +49,18 @@ const repository = {
 };
 
 describe("inference-first confirmation", () => {
+  it("derives a short project title from cloud analysis without trusting a private filename", () => {
+    expect(
+      titleFromAnalysis(
+        { ...analysis(), originalGoal: "我想完成黑客松报名。整理所有材料。" },
+        "真实姓名-报名材料.md"
+      )
+    ).toBe("完成黑客松报名");
+    expect(titleFromAnalysis({ ...analysis(), originalGoal: "项目" }, "黑客松报名材料.md")).toBe(
+      "黑客松报名材料"
+    );
+  });
+
   it("keeps a repository result as a draft until explicit confirmation", () => {
     const pending = createPendingInference(
       {

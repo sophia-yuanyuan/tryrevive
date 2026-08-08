@@ -2,6 +2,8 @@
 import { computed, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import { parseProjectDump } from "@/shared/domain/intake";
+import type { ProjectAnalysis } from "@/shared/domain/model";
+import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
 
 const store = useRevivalStore();
 const context = ref("");
@@ -71,6 +73,22 @@ async function analyzeContext(): Promise<void> {
   }
 }
 
+async function acceptCloudAnalysis(
+  analysis: ProjectAnalysis,
+  sourceKind: "material" | "voice",
+  titleHint: string
+): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    await store.inferProvidedAnalysis({ analysis, sourceKind, titleHint });
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "云端恢复草稿保存失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function collectProjectNames(): Promise<void> {
   if (!parsedProjectNames.value.length) {
     error.value = "先写下至少一个项目名称。";
@@ -94,7 +112,7 @@ async function collectProjectNames(): Promise<void> {
       <p class="eyebrow">重新接上一个真实项目</p>
       <h1 id="intake-title" class="intake-title">先把现场交给 TryRevive。</h1>
       <p class="intake-description">
-        选择项目文件夹、上传一份文字材料，或写下你记得的内容。TryRevive
+        选择项目文件夹、上传常见附件、说一段话，或写下你记得的内容。TryRevive
         会先猜“你做到这里”，由你点正确或修改。
       </p>
       <div class="intake-principles" aria-label="理解边界">
@@ -124,21 +142,21 @@ async function collectProjectNames(): Promise<void> {
         </p>
       </section>
 
+      <CloudContextAssist
+        presentation="intake"
+        :initially-expanded="true"
+        @accepted="acceptCloudAnalysis"
+      />
+
+      <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+
       <form class="space-y-4" @submit.prevent="analyzeContext">
         <div class="intake-toolbar">
           <div>
-            <label class="field-label" for="project-context">项目材料或你记得的内容</label>
+            <label class="field-label" for="project-context">本地文字材料或你记得的内容</label>
             <p class="field-help">最好包含：最初目标、上次做到哪里、现在卡在哪里。</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button
-              class="secondary-button"
-              type="button"
-              disabled
-              title="等待明确语音处理目的地与保留策略"
-            >
-              语音理解暂缓
-            </button>
             <button
               class="secondary-button"
               type="button"
@@ -168,7 +186,6 @@ async function collectProjectNames(): Promise<void> {
         <p class="voice-status">
           当前只做本地文字推断；不会把这段内容发送给 TryRevive 后端或 OpenAI。
         </p>
-        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary-button w-full" type="submit" :disabled="busy">
           {{ busy ? "正在整理恢复摘要…" : "让 TryRevive 先猜一遍" }}
         </button>

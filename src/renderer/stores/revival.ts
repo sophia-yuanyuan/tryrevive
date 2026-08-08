@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   type AppState,
   type Decision,
+  type InferenceSource,
   type ProjectMood,
   type ProjectAnalysis,
   type RestoreContext,
@@ -16,6 +17,7 @@ import {
   confirmPendingInference,
   correctPendingInference,
   createPendingInference,
+  titleFromAnalysis,
   type InferenceCorrection
 } from "@/shared/domain/inference-flow";
 import { inferLocalProject, type LocalInferenceRequest } from "@/shared/domain/local-inference";
@@ -205,6 +207,22 @@ export const useRevivalStore = defineStore("revival", () => {
       sourceKind: request.sourceKind,
       title: inferred.title,
       analysis: inferred.analysis,
+      repository: null
+    });
+    await commitCandidate(candidate);
+  }
+
+  async function inferProvidedAnalysis(input: {
+    analysis: ProjectAnalysis;
+    sourceKind: Extract<InferenceSource, "material" | "voice">;
+    titleHint?: string;
+  }): Promise<void> {
+    const candidate = stateSnapshot();
+    candidate.activeProjectId = null;
+    candidate.pendingInference = createPendingInference({
+      sourceKind: input.sourceKind,
+      title: titleFromAnalysis(input.analysis, input.titleHint),
+      analysis: input.analysis,
       repository: null
     });
     await commitCandidate(candidate);
@@ -519,6 +537,7 @@ export const useRevivalStore = defineStore("revival", () => {
     newProjects,
     inferRepository,
     inferLocalContext,
+    inferProvidedAnalysis,
     correctInference,
     discardInference,
     confirmInference,

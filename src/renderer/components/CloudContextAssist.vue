@@ -1,15 +1,28 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
-import type { ProjectAnalysis } from "@/shared/domain/model";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { ProjectAnalysisSchema, type ProjectAnalysis } from "@/shared/domain/model";
 import type { CloudQuote, CloudSourcePayload, CloudStatus } from "@/shared/cloud/contracts";
 import { MAX_CLOUD_SOURCE_BYTES } from "@/shared/cloud/contracts";
 import { isCloudAudioFile, normalizeCloudMimeType } from "@/shared/cloud/intake-security";
 import { platform } from "@/renderer/platform/web";
 
-const props = defineProps<{ projectTitle: string }>();
-const emit = defineEmits<{ accepted: [analysis: ProjectAnalysis] }>();
+const props = withDefaults(
+  defineProps<{
+    projectTitle?: string;
+    initiallyExpanded?: boolean;
+    presentation?: "embedded" | "intake";
+  }>(),
+  {
+    projectTitle: "",
+    initiallyExpanded: false,
+    presentation: "embedded"
+  }
+);
+const emit = defineEmits<{
+  accepted: [analysis: ProjectAnalysis, sourceKind: "material" | "voice", titleHint: string];
+}>();
 
-const expanded = ref(false);
+const expanded = ref(props.initiallyExpanded);
 const status = ref<CloudStatus | null>(null);
 const source = ref<CloudSourcePayload | null>(null);
 const quote = ref<CloudQuote | null>(null);
@@ -21,6 +34,7 @@ const recordingSeconds = ref(0);
 const notice = ref("");
 const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
+const isIntake = computed(() => props.presentation === "intake");
 let recorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
 let recordingStartedAt = 0;
@@ -81,15 +95,22 @@ function audioDuration(file: File): Promise<number> {
   });
 }
 
-async function toggle(): Promise<void> {
-  expanded.value = !expanded.value;
-  if (!expanded.value || status.value) return;
+async function loadStatus(): Promise<void> {
+  if (status.value || busy.value) return;
   busy.value = true;
+  error.value = "";
   try {
     status.value = await platform.cloudStatus();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "无法检查云端服务";
   } finally {
     busy.value = false;
   }
+}
+
+async function toggle(): Promise<void> {
+  expanded.value = !expanded.value;
+  if (expanded.value) await loadStatus();
 }
 
 async function redeem(): Promise<void> {
@@ -237,7 +258,7 @@ async function confirmUpload(): Promise<void> {
     const result = await platform.analyzeCloudContext({
       idempotencyKey: idempotencyKey || crypto.randomUUID(),
       quoteId: quote.value.id,
-      projectTitle: props.projectTitle,
+      projectTitle: props.projectTitle.trim() || "待恢复项目",
       source: plainSourcePayload()
     });
     draft.value = result.draft;
@@ -260,8 +281,23 @@ async function confirmUpload(): Promise<void> {
 }
 
 function acceptDraft(): void {
-  if (draft.value) emit("accepted", draft.value);
+  if (!draft.value || !source.value) return;
+  const parsed = ProjectAnalysisSchema.safeParse(draft.value);
+  if (!parsed.success) {
+    error.value = "这份恢复草稿缺少必要内容，请补全后再继续。";
+    return;
+  }
+  emit(
+    "accepted",
+    parsed.data,
+    source.value.metadata.kind === "audio" ? "voice" : "material",
+    source.value.metadata.kind === "audio" ? "" : source.value.metadata.name
+  );
 }
+
+onMounted(() => {
+  if (expanded.value) void loadStatus();
+});
 
 onBeforeUnmount(() => {
   if (recorder?.state === "recording") recorder.stop();
@@ -273,13 +309,15 @@ onBeforeUnmount(() => {
   <section class="mb-7 rounded-2xl border border-[var(--line)] bg-white/45 p-4 sm:p-5">
     <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
       <div>
-        <p class="summary-label">可选 · 云端理解</p>
-        <h2 class="mt-2 text-base font-semibold">把语音或附件整理成一份待确认草稿</h2>
+        <p class="summary-label">{{ isIntake ? "语音或常见附件" : "可选 · 云端理解" }}</p>
+        <h2 class="mt-2 text-base font-semibold">
+          {{ isIntake ? "说一段话，或上传现有材料" : "把语音或附件整理成一份待确认草稿" }}
+        </h2>
         <p class="mt-1 text-xs leading-5 text-[var(--muted)]">
           不需要 API Key。只有确认报价后才上传；也可以继续手动填写。
         </p>
       </div>
-      <button class="secondary-button shrink-0" type="button" @click="toggle">
+      <button v-if="!isIntake" class="secondary-button shrink-0" type="button" @click="toggle">
         {{ expanded ? "收起云端入口" : "查看云端入口" }}
       </button>
     </div>
@@ -362,6 +400,7 @@ onBeforeUnmount(() => {
             class="secondary-button"
             :class="{ 'voice-button-active': recording }"
             type="button"
+            :disabled="busy"
             @click="toggleRecording"
           >
             {{ recording ? `停止录音 · ${recordingSeconds}s` : "录一段项目说明" }}
@@ -373,7 +412,7 @@ onBeforeUnmount(() => {
             ref="fileInput"
             class="sr-only"
             type="file"
-            accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.json,.html,.xml,.csv,.xls,.xlsx,.ppt,.pptx,audio/*"
+            accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.json,.html,.xml,.csv,.xls,.xlsx,.ppt,.pptx,.mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm"
             @change="chooseFile"
           />
         </div>
@@ -442,7 +481,22 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="draft"
+          v-if="draft && isIntake"
+          class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4"
+        >
+          <div>
+            <p class="summary-label">恢复草稿已生成</p>
+            <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+              下一页只需要判断“正确”或“修改”；确认前不会创建正式项目。
+            </p>
+          </div>
+          <button class="primary-button w-full" type="button" @click="acceptDraft">
+            查看 TryRevive 的恢复判断
+          </button>
+        </div>
+
+        <div
+          v-if="draft && !isIntake"
           class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4"
         >
           <div>

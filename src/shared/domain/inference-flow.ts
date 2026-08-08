@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   PendingInferenceSchema,
+  ProjectAnalysisSchema,
   ProjectSchema,
   createId,
   createProject,
@@ -19,6 +20,21 @@ const InferenceCorrectionSchema = z.object({
 });
 
 export type InferenceCorrection = z.infer<typeof InferenceCorrectionSchema>;
+
+export function titleFromAnalysis(analysisInput: ProjectAnalysis, titleHint = ""): string {
+  const analysis = ProjectAnalysisSchema.parse(analysisInput);
+  const goalTitle = analysis.originalGoal
+    .replace(/^(?:我(?:最初)?想要?|我希望|目标是|计划是|准备要?|需要)\s*/u, "")
+    .split(/[。！？!?；;\r\n]/u)[0]
+    ?.trim();
+  const hintedTitle = titleHint
+    .trim()
+    .replace(/\.[a-z0-9]{1,8}$/iu, "")
+    .replace(/[\t\r\n ]+/gu, " ")
+    .slice(0, 80);
+  const goalIsGeneric = /^(?:项目|待恢复项目|继续项目)$/u.test(goalTitle ?? "");
+  return ((!goalIsGeneric && goalTitle) || hintedTitle || goalTitle || "待恢复项目").slice(0, 80);
+}
 
 export function createPendingInference(
   input: {

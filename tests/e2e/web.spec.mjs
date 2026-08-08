@@ -5,7 +5,7 @@ async function completeRevivalLoop(page) {
   await expect(page.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
 
   await page
-    .getByLabel("项目材料或你记得的内容")
+    .getByLabel("本地文字材料或你记得的内容")
     .fill(
       "课程作品集\n我想完成课程作品集。\n上次已经完成了首页布局。\n现在卡在移动端导航无法收起。"
     );
@@ -103,12 +103,9 @@ test("multiple unfinished projects can be collected in one local intake", async 
   await expect(dialog.getByText("完成 TryRevive 桌面版", { exact: true })).toBeVisible();
 });
 
-test("cloud context entry stays explicit and never asks for an API key", async ({ page }) => {
+test("initial intake exposes cloud choices safely and never asks for an API key", async ({ page }) => {
   await page.goto("/");
-  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
-  await page.getByLabel("所有还在心里的项目").fill("申请黑客松");
-  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
-  await page.getByRole("button", { name: "查看云端入口" }).click();
+  await expect(page.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
   await expect(page.getByText("当前不会上传任何内容")).toBeVisible();
   await expect(page.getByText(/仅在桌面版内测/)).toBeVisible();
   await expect(page.getByText(/API Key/)).toHaveCount(1);

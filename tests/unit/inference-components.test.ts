@@ -7,6 +7,11 @@ import { ProjectAnalysisSchema, createEmptyState } from "@/shared/domain/model";
 
 const mocks = vi.hoisted(() => ({
   chooseRepository: vi.fn(),
+  cloudStatus: vi.fn(),
+  quoteCloudContext: vi.fn(),
+  analyzeCloudContext: vi.fn(),
+  redeemCloudCode: vi.fn(),
+  disconnectCloud: vi.fn(),
   importState: vi.fn(),
   saveState: vi.fn()
 }));
@@ -15,6 +20,11 @@ vi.mock("@/renderer/platform/web", () => ({
   platform: {
     kind: "desktop",
     chooseRepository: mocks.chooseRepository,
+    cloudStatus: mocks.cloudStatus,
+    quoteCloudContext: mocks.quoteCloudContext,
+    analyzeCloudContext: mocks.analyzeCloudContext,
+    redeemCloudCode: mocks.redeemCloudCode,
+    disconnectCloud: mocks.disconnectCloud,
     importState: mocks.importState,
     saveState: mocks.saveState
   }
@@ -78,6 +88,17 @@ describe("inference-first components", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mocks.chooseRepository.mockReset().mockResolvedValue(scanResult());
+    mocks.cloudStatus.mockReset().mockResolvedValue({
+      available: false,
+      authenticated: false,
+      balance: null,
+      secureSessionStorage: true,
+      message: "云端服务未配置；当前不会上传任何内容。"
+    });
+    mocks.quoteCloudContext.mockReset();
+    mocks.analyzeCloudContext.mockReset();
+    mocks.redeemCloudCode.mockReset();
+    mocks.disconnectCloud.mockReset();
     mocks.importState.mockReset();
     mocks.saveState.mockReset().mockResolvedValue(undefined);
   });
@@ -92,6 +113,37 @@ describe("inference-first components", () => {
     expect(mocks.chooseRepository).toHaveBeenCalledTimes(1);
     expect(store.data.projects).toHaveLength(0);
     expect(store.pendingInference?.title).toBe("course-demo");
+    expect(mocks.saveState).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows folder, voice, attachment, and local text as first-page intake choices", async () => {
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("从项目文件夹恢复");
+    expect(wrapper.text()).toContain("语音或常见附件");
+    expect(wrapper.text()).toContain("说一段话，或上传现有材料");
+    expect(wrapper.text()).toContain("本地文字材料或你记得的内容");
+    expect(wrapper.text()).toContain("当前不会上传任何内容");
+    expect(wrapper.text()).not.toContain("语音理解暂缓");
+    expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a provided cloud analysis pending until the shared confirmation step", async () => {
+    const store = useRevivalStore();
+
+    await store.inferProvidedAnalysis({
+      analysis: { ...scanResult().analysis, originalGoal: "我想完成黑客松报名。" },
+      sourceKind: "material",
+      titleHint: "真实姓名-黑客松报名材料.md"
+    });
+
+    expect(store.data.projects).toHaveLength(0);
+    expect(store.pendingInference).toMatchObject({
+      sourceKind: "material",
+      title: "完成黑客松报名",
+      repository: null
+    });
     expect(mocks.saveState).toHaveBeenCalledTimes(1);
   });
 
