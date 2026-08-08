@@ -168,6 +168,192 @@ export function createCloudD1Repository(db) {
         .run();
     },
 
+    async exportAccountData(accountId, generatedAt) {
+      const account = await db
+        .prepare(
+          `SELECT id, speech_minutes, project_analyses, created_at, updated_at
+           FROM cloud_accounts
+           WHERE id = ?`
+        )
+        .bind(accountId)
+        .first();
+      if (!account) return null;
+
+      const [sessions, redeemEvents, quotes, operations, ledger] = await Promise.all([
+        db
+          .prepare(
+            `SELECT created_at, expires_at
+             FROM cloud_sessions
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT speech_minutes, project_analyses, redeemed_at
+             FROM cloud_redeem_codes
+             WHERE account_id = ? AND redeemed_at IS NOT NULL
+             ORDER BY redeemed_at ASC`
+          )
+          .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT id, speech_minutes, project_analyses, expires_at, created_at
+             FROM cloud_quotes
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT idempotency_key, quote_id, status, speech_minutes,
+                    project_analyses, result_json, error_code, created_at,
+                    updated_at, claimed_at, released_at
+             FROM cloud_operations
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
+          .all(),
+        db
+          .prepare(
+            `SELECT operation_id, kind, speech_minutes_delta,
+                    project_analyses_delta, created_at
+             FROM cloud_ledger
+             WHERE account_id = ?
+             ORDER BY created_at ASC`
+          )
+          .bind(accountId)
+          .all()
+      ]);
+
+      return {
+        account: {
+          id: account.id,
+          balance: balanceFrom(account),
+          createdAt: Number(account.created_at),
+          updatedAt: Number(account.updated_at)
+        },
+        sessions: sessions.results.map((row) => ({
+          createdAt: Number(row.created_at),
+          expiresAt: Number(row.expires_at)
+        })),
+        redeemEvents: redeemEvents.results.map((row) => ({
+          units: costFrom(row),
+          redeemedAt: Number(row.redeemed_at)
+        })),
+        quotes: quotes.results.map((row) => ({
+          id: row.id,
+          cost: costFrom(row),
+          createdAt: Number(row.created_at),
+          expiresAt: Number(row.expires_at)
+        })),
+        operations: operations.results.map((row) => ({
+          idempotencyKey: row.idempotency_key,
+          quoteId: row.quote_id,
+          status: row.status,
+          cost: costFrom(row),
+          result: parseStoredDraft(row.result_json),
+          errorCode: row.error_code || null,
+          createdAt: Number(row.created_at),
+          updatedAt: Number(row.updated_at),
+          claimedAt: row.claimed_at === null ? null : Number(row.claimed_at),
+          releasedAt: row.released_at === null ? null : Number(row.released_at)
+        })),
+        ledger: ledger.results.map((row) => ({
+          operationId: row.operation_id || null,
+          kind: row.kind,
+          speechMinutesDelta: Number(row.speech_minutes_delta),
+          projectAnalysesDelta: Number(row.project_analyses_delta),
+          createdAt: Number(row.created_at)
+        })),
+        generatedAt
+      };
+    },
+
+    async deleteAccountData(accountId, now) {
+      const account = await accountById(db, accountId);
+      if (!account) return { status: "not_found" };
+      await db.batch([
+        db
+          .prepare(
+            `UPDATE cloud_redeem_codes
+             SET account_id = NULL
+             WHERE account_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_ledger
+             WHERE account_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_operations
+             WHERE account_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_quotes
+             WHERE account_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_sessions
+             WHERE account_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId),
+        db
+          .prepare(
+            `DELETE FROM cloud_accounts
+             WHERE id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE account_id = ? AND status = 'pending'
+               )`
+          )
+          .bind(accountId, accountId)
+      ]);
+      const remaining = await accountById(db, accountId);
+      if (!remaining) return { status: "deleted", deletedAt: now };
+      const pending = await db
+        .prepare(
+          `SELECT 1 AS pending
+           FROM cloud_operations
+           WHERE account_id = ? AND status = 'pending'
+           LIMIT 1`
+        )
+        .bind(accountId)
+        .first();
+      return pending ? { status: "processing" } : { status: "not_found" };
+    },
+
     async redeem(input) {
       const accountId = input.existingAccountId || input.newAccountId;
       await db.batch([

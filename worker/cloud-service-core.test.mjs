@@ -214,6 +214,65 @@ class MemoryCloudRepository {
     operation.errorCode = input.errorCode;
     return { balance: copyBalance(account.balance), refunded: true };
   }
+
+  async exportAccountData(accountId, generatedAt) {
+    const account = this.accounts.get(accountId);
+    if (!account) return null;
+    return {
+      account: {
+        id: accountId,
+        balance: copyBalance(account.balance),
+        createdAt: generatedAt,
+        updatedAt: generatedAt
+      },
+      sessions: [...this.sessions.values()]
+        .filter((session) => session.accountId === accountId)
+        .map((session) => ({ createdAt: generatedAt, expiresAt: session.expiresAt })),
+      redeemEvents: [],
+      quotes: [...this.quotes.values()]
+        .filter((quote) => quote.accountId === accountId)
+        .map((quote) => ({
+          id: quote.id,
+          cost: copyBalance(quote.cost),
+          createdAt: quote.now,
+          expiresAt: quote.expiresAt
+        })),
+      operations: [],
+      ledger: this.ledger
+        .filter((entry) => entry.accountId === accountId)
+        .map((entry) => ({
+          operationId: entry.operationId || null,
+          kind: entry.kind,
+          speechMinutesDelta: entry.speechDelta,
+          projectAnalysesDelta: entry.analysesDelta,
+          createdAt: generatedAt
+        }))
+    };
+  }
+
+  async deleteAccountData(accountId) {
+    const account = this.accounts.get(accountId);
+    if (!account) return { status: "not_found" };
+    if (
+      [...this.operations.values()].some(
+        (operation) => operation.accountId === accountId && operation.status === "pending"
+      )
+    ) {
+      return { status: "processing" };
+    }
+    this.accounts.delete(accountId);
+    for (const [token, session] of this.sessions) {
+      if (session.accountId === accountId) this.sessions.delete(token);
+    }
+    for (const [id, quote] of this.quotes) {
+      if (quote.accountId === accountId) this.quotes.delete(id);
+    }
+    for (const [key, operation] of this.operations) {
+      if (operation.accountId === accountId) this.operations.delete(key);
+    }
+    this.ledger = this.ledger.filter((entry) => entry.accountId !== accountId);
+    return { status: "deleted" };
+  }
 }
 
 function createHarness({ provider = null, now = 1_800_000_000_000 } = {}) {
@@ -521,4 +580,117 @@ test("production-disabled providers reject reservations without charging anythin
   const storedAccount = [...repository.accounts.values()][0];
   assert.deepEqual(storedAccount.balance, { speechMinutes: 2, projectAnalyses: 1 });
   assert.equal(repository.operations.size, 0);
+});
+
+test("authenticated users can export cloud data without credential hashes or source content", async () => {
+  const { repository, service } = createHarness();
+  const account = await redeem(service, repository, "EXPORT-PRIVATE-CODE", {
+    speechMinutes: 3,
+    projectAnalyses: 2
+  });
+  const exported = await request(service, "/v1/cloud/data-export", {
+    token: account.sessionToken
+  });
+
+  assert.equal(exported.response.status, 200);
+  assert.equal(exported.body.schemaVersion, 1);
+  assert.equal(exported.body.service, "tryrevive-cloud");
+  assert.equal(exported.body.sourceContent.storedByTryRevive, false);
+  assert.equal(exported.body.sourceContent.deletionStatus, "not_stored");
+  assert.deepEqual(exported.body.account.balance, {
+    speechMinutes: 3,
+    projectAnalyses: 2
+  });
+  const serialized = JSON.stringify(exported.body);
+  assert.equal(serialized.includes("EXPORT-PRIVATE-CODE"), false);
+  assert.equal(serialized.includes(account.sessionToken), false);
+  assert.equal(serialized.includes("tokenHash"), false);
+  assert.equal(serialized.includes("sourceFingerprint"), false);
+});
+
+test("source deletion reports the truthful not-stored boundary", async () => {
+  const { repository, service } = createHarness();
+  const account = await redeem(service, repository, "SOURCE-DELETE-CODE", {
+    speechMinutes: 1,
+    projectAnalyses: 1
+  });
+  const deleted = await request(service, "/v1/cloud/source-content", {
+    method: "DELETE",
+    token: account.sessionToken
+  });
+
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.body.status, "not_stored");
+  assert.equal(deleted.body.sourceDeleted, true);
+  assert.equal(deleted.body.storedByTryRevive, false);
+  assert.match(deleted.body.message, /第三方安全日志/);
+});
+
+test("account deletion requires explicit confirmation and revokes all cloud access", async () => {
+  const { repository, service } = createHarness();
+  const account = await redeem(service, repository, "ACCOUNT-DELETE-CODE", {
+    speechMinutes: 6,
+    projectAnalyses: 4
+  });
+  const refused = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken
+  });
+  assert.equal(refused.response.status, 400);
+  assert.equal(refused.body.error, "deletion_confirmation_required");
+
+  const deleted = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.body.deleted, true);
+  assert.deepEqual(deleted.body.unusedBalanceDeleted, {
+    speechMinutes: 6,
+    projectAnalyses: 4
+  });
+
+  const afterDelete = await request(service, "/v1/cloud/account", {
+    token: account.sessionToken
+  });
+  assert.equal(afterDelete.response.status, 401);
+  assert.equal(repository.accounts.size, 0);
+  assert.equal(repository.sessions.size, 0);
+});
+
+test("account deletion cannot race an in-flight cloud analysis", async () => {
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const { repository, service } = createHarness({ provider });
+  const account = await redeem(service, repository, "DELETE-WHILE-PROCESSING", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const source = {
+    kind: "text",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const estimate = await quote(service, account.sessionToken, source);
+  const reserved = await request(service, "/v1/cloud/reservations", {
+    method: "POST",
+    token: account.sessionToken,
+    body: {
+      idempotencyKey: "delete-processing-request",
+      quoteId: estimate.id,
+      source
+    }
+  });
+  assert.equal(reserved.response.status, 200);
+
+  const deleted = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(deleted.response.status, 409);
+  assert.equal(deleted.body.error, "account_processing");
+  assert.equal(repository.accounts.size, 1);
 });

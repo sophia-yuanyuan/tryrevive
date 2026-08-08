@@ -490,3 +490,105 @@ test("an abandoned D1 reservation is returned after expiry without a second char
     1
   );
 });
+
+test("D1 data export omits credential hashes and account deletion removes personal rows", async (t) => {
+  const { database, service } = await createHarness(t);
+  const account = await redeem(service, database, "D1-PRIVACY-EXPORT", {
+    speechMinutes: 9,
+    projectAnalyses: 3
+  });
+  const source = {
+    kind: "attachment",
+    name: "project.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 3,
+    durationSeconds: null
+  };
+  const quoted = await request(service, "/v1/cloud/quote", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { source }
+  });
+  assert.equal(quoted.response.status, 200);
+
+  const exported = await request(service, "/v1/cloud/data-export", {
+    token: account.sessionToken
+  });
+  assert.equal(exported.response.status, 200);
+  assert.equal(exported.body.quotes.length, 1);
+  assert.deepEqual(exported.body.quotes[0].cost, {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const serialized = JSON.stringify(exported.body);
+  assert.equal(serialized.includes("D1-PRIVACY-EXPORT"), false);
+  assert.equal(serialized.includes(account.sessionToken), false);
+  assert.equal(serialized.includes("token_hash"), false);
+  assert.equal(serialized.includes("code_hash"), false);
+  assert.equal(serialized.includes("source_fingerprint"), false);
+
+  const deleted = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(deleted.response.status, 200);
+  for (const table of [
+    "cloud_accounts",
+    "cloud_sessions",
+    "cloud_quotes",
+    "cloud_operations",
+    "cloud_ledger"
+  ]) {
+    assert.equal(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0);
+  }
+  const redeemRow = database
+    .prepare("SELECT account_id, redeemed_at FROM cloud_redeem_codes")
+    .get();
+  assert.equal(redeemRow.account_id, null);
+  assert.notEqual(redeemRow.redeemed_at, null);
+});
+
+test("D1 account deletion remains atomic while a reservation is pending", async (t) => {
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const { database, service } = await createHarness(t, { provider });
+  const account = await redeem(service, database, "D1-DELETE-PENDING", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const source = {
+    kind: "text",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const quoted = await request(service, "/v1/cloud/quote", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { source }
+  });
+  const reserved = await request(service, "/v1/cloud/reservations", {
+    method: "POST",
+    token: account.sessionToken,
+    body: {
+      idempotencyKey: "d1-delete-pending-request",
+      quoteId: quoted.body.id,
+      source
+    }
+  });
+  assert.equal(reserved.response.status, 200);
+
+  const deleted = await request(service, "/v1/cloud/account", {
+    method: "DELETE",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+  });
+  assert.equal(deleted.response.status, 409);
+  assert.equal(deleted.body.error, "account_processing");
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_accounts").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_sessions").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_quotes").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_operations").get().count, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger").get().count, 2);
+});

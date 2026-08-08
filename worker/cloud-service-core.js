@@ -254,6 +254,66 @@ export function createCloudService({
     });
   }
 
+  async function handleDataExport(request) {
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const exported = await repository.exportAccountData(account.id, timestamp);
+    if (!exported) {
+      throw new HttpError(404, "account_not_found", "云端账户不存在或已经删除");
+    }
+    return json({
+      schemaVersion: 1,
+      service: "tryrevive-cloud",
+      generatedAt: timestamp,
+      sourceContent: {
+        storedByTryRevive: false,
+        deletionStatus: "not_stored",
+        note: "TryRevive 不持久化上传的原文、语音或附件；导出只包含账户、用量和派生分析记录。"
+      },
+      ...exported
+    });
+  }
+
+  async function handleSourceContentDelete(request) {
+    await requireAccount(request, repository, now());
+    return json({
+      status: "not_stored",
+      sourceDeleted: true,
+      storedByTryRevive: false,
+      message:
+        "TryRevive 没有持久化本次或历史上传的原文、语音和附件，因此云端没有原文副本需要删除。此结果不代表第三方安全日志已经删除。"
+    });
+  }
+
+  async function handleAccountDelete(request) {
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    if (request.headers.get("x-tryrevive-delete-confirmation") !== "DELETE CLOUD DATA") {
+      throw new HttpError(
+        400,
+        "deletion_confirmation_required",
+        "删除云端账户前需要再次确认；未使用的算力额度也会一起删除"
+      );
+    }
+    const result = await repository.deleteAccountData(account.id, timestamp);
+    if (result.status === "processing") {
+      throw new HttpError(
+        409,
+        "account_processing",
+        "仍有一项云端分析正在处理，请等待完成或退款后再删除账户"
+      );
+    }
+    if (result.status !== "deleted") {
+      throw new HttpError(404, "account_not_found", "云端账户不存在或已经删除");
+    }
+    return json({
+      deleted: true,
+      remoteSessionsRevoked: true,
+      unusedBalanceDeleted: account.balance,
+      message: "TryRevive 云端账户、会话、用量账本和派生分析记录已经删除。"
+    });
+  }
+
   async function handleQuote(request) {
     const timestamp = now();
     const account = await requireAccount(request, repository, timestamp);
@@ -431,6 +491,15 @@ export function createCloudService({
       }
       if (request.method === "POST" && url.pathname === "/v1/cloud/session/revoke") {
         return await handleSessionRevoke(request);
+      }
+      if (request.method === "GET" && url.pathname === "/v1/cloud/data-export") {
+        return await handleDataExport(request);
+      }
+      if (request.method === "DELETE" && url.pathname === "/v1/cloud/source-content") {
+        return await handleSourceContentDelete(request);
+      }
+      if (request.method === "DELETE" && url.pathname === "/v1/cloud/account") {
+        return await handleAccountDelete(request);
       }
       if (request.method === "POST" && url.pathname === "/v1/cloud/quote") {
         return await handleQuote(request);
