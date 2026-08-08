@@ -15,6 +15,8 @@ export const IPC_CHANNELS = {
   exportCloudData: "cloud:export-data",
   deleteCloudSourceContent: "cloud:delete-source-content",
   deleteCloudAccount: "cloud:delete-account",
+  cloudPaymentPackages: "cloud:payment-packages",
+  createCloudPaymentCheckout: "cloud:create-payment-checkout",
   redeemCloudCode: "cloud:redeem-code",
   quoteCloudContext: "cloud:quote-context",
   analyzeCloudContext: "cloud:analyze-context",

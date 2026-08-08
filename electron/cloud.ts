@@ -11,6 +11,10 @@ import {
   type CloudSourceDeletionResult,
   CloudAccountDeletionResultSchema,
   type CloudAccountDeletionResult,
+  CloudPaymentCatalogSchema,
+  type CloudPaymentCatalog,
+  CloudPaymentCheckoutSchema,
+  type CloudPaymentCheckout,
   CloudAnalysisResultSchema,
   type CloudAnalysisResult,
   type CloudAnalyzeRequest,
@@ -40,7 +44,8 @@ const AccountResponseSchema = z.object({
 const CatalogResponseSchema = z.object({
   service: z.literal("tryrevive-cloud"),
   available: z.literal(true),
-  analysisAvailable: z.boolean()
+  analysisAvailable: z.boolean(),
+  paymentAvailable: z.boolean().default(false)
 });
 
 class CloudRequestError extends Error {
@@ -150,6 +155,7 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       authenticated: false,
       balance: null,
       secureSessionStorage,
+      paymentAvailable: false,
       message: "此版本尚未接通经过验证的云端服务；不会上传你的项目内容。"
     };
   }
@@ -159,18 +165,22 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       authenticated: false,
       balance: null,
       secureSessionStorage,
+      paymentAvailable: false,
       message: "当前系统无法安全保存云端凭据，因此不会使用兑换码或上传项目内容。"
     };
   }
   const token = await loadSessionToken();
+  let paymentAvailable = false;
   try {
     const catalog = await requestJson("/v1/cloud/catalog", CatalogResponseSchema);
+    paymentAvailable = catalog.paymentAvailable;
     if (!catalog.analysisAvailable) {
       return {
         available: false,
         authenticated: Boolean(token),
         balance: null,
         secureSessionStorage,
+        paymentAvailable,
         message: "云端账本已就绪，但真实语音和附件处理尚未启用；不会上传你的内容。"
       };
     }
@@ -180,6 +190,7 @@ export async function getCloudStatus(): Promise<CloudStatus> {
         authenticated: false,
         balance: null,
         secureSessionStorage,
+        paymentAvailable,
         message: "云端服务可用；使用前需要兑换已购买的算力。"
       };
     }
@@ -189,6 +200,7 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       authenticated: true,
       balance: account.balance,
       secureSessionStorage,
+      paymentAvailable,
       message: "算力已连接。每次上传前都会再次显示预计消耗。"
     };
   } catch (error) {
@@ -199,6 +211,7 @@ export async function getCloudStatus(): Promise<CloudStatus> {
         authenticated: false,
         balance: null,
         secureSessionStorage,
+        paymentAvailable,
         message: "算力凭据已失效，请重新兑换。原有项目仍保存在本机。"
       };
     }
@@ -207,6 +220,7 @@ export async function getCloudStatus(): Promise<CloudStatus> {
       authenticated: Boolean(token),
       balance: null,
       secureSessionStorage,
+      paymentAvailable: false,
       message: error instanceof Error ? error.message : "云端服务暂时不可用"
     };
   }
@@ -288,6 +302,31 @@ export async function deleteCloudAccount(input: unknown): Promise<CloudAccountDe
   );
   await clearSessionToken();
   return result;
+}
+
+export async function getCloudPaymentPackages(): Promise<CloudPaymentCatalog> {
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先连接云端账户，再购买算力");
+  return requestJson("/v1/cloud/payments/packages", CloudPaymentCatalogSchema, {}, token);
+}
+
+export async function createCloudPaymentCheckout(
+  packageInput: unknown,
+  idempotencyInput: unknown
+): Promise<CloudPaymentCheckout> {
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先连接云端账户，再购买算力");
+  const packageId = z.string().trim().min(1).max(48).parse(packageInput);
+  const idempotencyKey = z.string().trim().min(12).max(120).parse(idempotencyInput);
+  return requestJson(
+    "/v1/cloud/payments/checkout",
+    CloudPaymentCheckoutSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ packageId, idempotencyKey })
+    },
+    token
+  );
 }
 
 export async function quoteCloudContext(input: unknown): Promise<CloudQuote> {

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ProjectAnalysisSchema, type ProjectAnalysis } from "@/shared/domain/model";
-import type { CloudQuote, CloudSourcePayload, CloudStatus } from "@/shared/cloud/contracts";
+import type {
+  CloudPaymentCatalog,
+  CloudQuote,
+  CloudSourcePayload,
+  CloudStatus
+} from "@/shared/cloud/contracts";
 import { MAX_CLOUD_SOURCE_BYTES } from "@/shared/cloud/contracts";
 import { isCloudAudioFile, normalizeCloudMimeType } from "@/shared/cloud/intake-security";
 import { platform } from "@/renderer/platform/web";
@@ -24,6 +29,7 @@ const emit = defineEmits<{
 
 const expanded = ref(props.initiallyExpanded);
 const status = ref<CloudStatus | null>(null);
+const paymentCatalog = ref<CloudPaymentCatalog | null>(null);
 const source = ref<CloudSourcePayload | null>(null);
 const quote = ref<CloudQuote | null>(null);
 const draft = ref<ProjectAnalysis | null>(null);
@@ -52,6 +58,13 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatMoney(amount: number, currency: string): string {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: currency.toUpperCase()
+  }).format(amount / 100);
 }
 
 function clearQuote(): void {
@@ -138,6 +151,56 @@ async function disconnectAccount(): Promise<void> {
     status.value = await platform.cloudStatus();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "无法退出云端算力";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function loadPaymentPackages(): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    paymentCatalog.value = await platform.cloudPaymentPackages();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "无法读取当前算力包";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function purchasePackage(packageId: string): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    const checkout = await platform.createCloudPaymentCheckout(
+      packageId,
+      `payment-${crypto.randomUUID()}`
+    );
+    if (checkout.order.status === "paid") {
+      status.value = await platform.cloudStatus();
+      notice.value = "这笔订单已经入账，余额已刷新。";
+      return;
+    }
+    if (!checkout.order.checkoutUrl) throw new Error("付款页面暂时不可用，请重新发起");
+    const opened = await platform.openExternal(checkout.order.checkoutUrl);
+    if (!opened) throw new Error("无法打开 Stripe 付款页面");
+    notice.value = "Stripe 付款页面已经打开。付款后回到 TryRevive，点击“付款后刷新余额”。";
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "无法创建付款订单";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function refreshBalanceAfterPayment(): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    status.value = await platform.cloudStatus();
+    notice.value = "余额已经从 TryRevive 服务端刷新；只有签名回调确认的付款才会入账。";
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "无法刷新云端余额";
   } finally {
     busy.value = false;
   }
@@ -267,6 +330,7 @@ async function confirmUpload(): Promise<void> {
         available: true,
         authenticated: true,
         secureSessionStorage: true,
+        paymentAvailable: false,
         message: ""
       }),
       balance: result.balance,
@@ -394,6 +458,61 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </form>
+
+        <div v-if="status.paymentAvailable" class="rounded-xl bg-black/[0.025] p-3">
+          <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <p class="field-label">购买 TryRevive 算力</p>
+              <p class="mt-1 text-xs leading-5 text-[var(--muted)]">
+                付款由 Stripe 页面完成；返回页面不能自行增加额度，只有签名回调可以入账。
+              </p>
+            </div>
+            <button
+              v-if="!paymentCatalog"
+              class="secondary-button shrink-0"
+              type="button"
+              :disabled="busy"
+              @click="loadPaymentPackages"
+            >
+              查看可购买算力
+            </button>
+          </div>
+          <div v-if="paymentCatalog" class="mt-3 space-y-2">
+            <p
+              v-if="paymentCatalog.mode === 'test'"
+              class="rounded-lg bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]"
+              role="status"
+            >
+              当前是 Stripe 测试环境，不会收取真实款项。
+            </p>
+            <button
+              v-for="item in paymentCatalog.packages"
+              :key="item.id"
+              class="project-row w-full"
+              type="button"
+              :disabled="busy"
+              @click="purchasePackage(item.id)"
+            >
+              <span class="min-w-0 text-left">
+                <strong class="block text-sm">{{ item.name }}</strong>
+                <small class="mt-1 block text-xs text-[var(--muted)]">
+                  {{ item.speechMinutes }} 分钟语音 · {{ item.projectAnalyses }} 次项目理解
+                </small>
+              </span>
+              <strong class="shrink-0 text-sm">{{
+                formatMoney(item.amount, item.currency)
+              }}</strong>
+            </button>
+            <button
+              class="text-button"
+              type="button"
+              :disabled="busy"
+              @click="refreshBalanceAfterPayment"
+            >
+              付款后刷新余额
+            </button>
+          </div>
+        </div>
 
         <div v-if="!source" class="grid gap-3 sm:grid-cols-2">
           <button

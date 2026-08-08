@@ -7,6 +7,8 @@ import type {
   CloudSourceDeletionResult,
   CloudDisconnectResult,
   CloudQuote,
+  CloudPaymentCatalog,
+  CloudPaymentCheckout,
   CloudRedeemResult,
   CloudSourceMetadata,
   CloudStatus
@@ -54,6 +56,11 @@ export interface AppPlatform {
   exportCloudData(): Promise<ExportResult>;
   deleteCloudSourceContent(): Promise<CloudSourceDeletionResult>;
   deleteCloudAccount(confirmation: string): Promise<CloudAccountDeletionResult>;
+  cloudPaymentPackages(): Promise<CloudPaymentCatalog>;
+  createCloudPaymentCheckout(
+    packageId: string,
+    idempotencyKey: string
+  ): Promise<CloudPaymentCheckout>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
@@ -81,6 +88,11 @@ export interface DesktopBridge {
   exportCloudData(): Promise<ExportResult>;
   deleteCloudSourceContent(): Promise<CloudSourceDeletionResult>;
   deleteCloudAccount(confirmation: string): Promise<CloudAccountDeletionResult>;
+  cloudPaymentPackages(): Promise<CloudPaymentCatalog>;
+  createCloudPaymentCheckout(
+    packageId: string,
+    idempotencyKey: string
+  ): Promise<CloudPaymentCheckout>;
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;

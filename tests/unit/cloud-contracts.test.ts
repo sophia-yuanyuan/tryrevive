@@ -3,6 +3,7 @@ import {
   canAffordCloudQuote,
   CloudAnalysisResultSchema,
   CloudDataExportSchema,
+  CloudPaymentCheckoutSchema,
   CloudReservationResultSchema,
   estimateCloudCost
 } from "@/shared/cloud/contracts";
@@ -134,5 +135,31 @@ describe("cloud usage contracts", () => {
       }
     });
     expect(falseClaim.success).toBe(false);
+  });
+
+  it("accepts only Stripe-hosted checkout URLs from the payment service", () => {
+    const order = {
+      id: "payment-1",
+      packageId: "starter",
+      amount: 500,
+      currency: "sgd",
+      units: { speechMinutes: 30, projectAnalyses: 10 },
+      status: "pending",
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test_123",
+      createdAt: 1_800_000_000_000,
+      updatedAt: 1_800_000_000_001,
+      paidAt: null
+    };
+    expect(CloudPaymentCheckoutSchema.safeParse({ order }).success).toBe(true);
+    expect(
+      CloudPaymentCheckoutSchema.safeParse({
+        order: { ...order, checkoutUrl: "https://stripe.example.com/fake" }
+      }).success
+    ).toBe(false);
+    expect(
+      CloudPaymentCheckoutSchema.safeParse({
+        order: { ...order, checkoutUrl: "http://checkout.stripe.com/fake" }
+      }).success
+    ).toBe(false);
   });
 });

@@ -26,6 +26,9 @@ const bridge: DesktopBridge = {
   deleteCloudSourceContent: () => ipcRenderer.invoke(IPC_CHANNELS.deleteCloudSourceContent),
   deleteCloudAccount: (confirmation) =>
     ipcRenderer.invoke(IPC_CHANNELS.deleteCloudAccount, confirmation),
+  cloudPaymentPackages: () => ipcRenderer.invoke(IPC_CHANNELS.cloudPaymentPackages),
+  createCloudPaymentCheckout: (packageId, idempotencyKey) =>
+    ipcRenderer.invoke(IPC_CHANNELS.createCloudPaymentCheckout, packageId, idempotencyKey),
   redeemCloudCode: (code: string) => ipcRenderer.invoke(IPC_CHANNELS.redeemCloudCode, code),
   quoteCloudContext: (source) => ipcRenderer.invoke(IPC_CHANNELS.quoteCloudContext, source),
   analyzeCloudContext: (request) => ipcRenderer.invoke(IPC_CHANNELS.analyzeCloudContext, request),

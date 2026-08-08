@@ -80,6 +80,7 @@ async function startCloudSessionHarness() {
   const sessions = new Map();
   const quotes = new Map();
   const reservations = new Map();
+  const paymentOrders = new Map();
   let redeemCount = 0;
   let rejectAccounts = false;
   const server = createServer(async (request, response) => {
@@ -108,7 +109,8 @@ async function startCloudSessionHarness() {
       return send(200, {
         service: "tryrevive-cloud",
         available: true,
-        analysisAvailable: true
+        analysisAvailable: true,
+        paymentAvailable: true
       });
     }
     if (request.method === "POST" && request.url === "/v1/cloud/redeem") {
@@ -192,6 +194,47 @@ async function startCloudSessionHarness() {
         unusedBalanceDeleted,
         message: "测试云端账户和派生记录已经删除。"
       });
+    }
+    if (request.method === "GET" && request.url === "/v1/cloud/payments/packages") {
+      if (!sessions.has(token)) {
+        return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      }
+      return send(200, {
+        provider: "stripe",
+        mode: "test",
+        packages: [
+          {
+            id: "starter",
+            name: "测试入门算力包",
+            currency: "sgd",
+            amount: 500,
+            speechMinutes: 30,
+            projectAnalyses: 10
+          }
+        ]
+      });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/payments/checkout") {
+      if (!sessions.has(token)) {
+        return send(401, { error: "session_expired", message: "测试凭据已失效" });
+      }
+      const existing = paymentOrders.get(body.idempotencyKey);
+      if (existing) return send(200, { order: existing });
+      const timestamp = Date.now();
+      const order = {
+        id: `payment_${String(paymentOrders.size + 1).padStart(8, "0")}`,
+        packageId: body.packageId,
+        amount: 500,
+        currency: "sgd",
+        units: { speechMinutes: 30, projectAnalyses: 10 },
+        status: "pending",
+        checkoutUrl: `https://checkout.stripe.com/c/pay/cs_test_${"4".repeat(32)}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        paidAt: null
+      };
+      paymentOrders.set(body.idempotencyKey, order);
+      return send(200, { order });
     }
     if (request.method === "POST" && request.url === "/v1/cloud/quote") {
       const balance = sessions.get(token);
@@ -299,6 +342,7 @@ async function startCloudSessionHarness() {
     calls,
     quotes,
     reservations,
+    paymentOrders,
     url: `http://127.0.0.1:${address.port}`,
     rejectAccounts(value) {
       rejectAccounts = value;
@@ -804,6 +848,64 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
       (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
     );
     expect(revoke.authorization).toMatch(/^Bearer session_token_/);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop creates a Stripe-hosted checkout without crediting balance from the client", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  test.setTimeout(90_000);
+  const harness = await startCloudSessionHarness();
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-payment-e2e-"));
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("付款验收项目", "payment-project")),
+    "utf8"
+  );
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await window.getByLabel("算力兑换码").fill("PAYMENT-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+
+    await window.getByRole("button", { name: "查看可购买算力" }).click();
+    await expect(window.getByText("当前是 Stripe 测试环境，不会收取真实款项。")).toBeVisible();
+    await desktop.evaluate(({ shell }) => {
+      globalThis.__tryReviveOpenedCheckout = "";
+      shell.openExternal = async (url) => {
+        globalThis.__tryReviveOpenedCheckout = url;
+      };
+    });
+    await window.getByRole("button", { name: /测试入门算力包/ }).click();
+    await expect(window.getByText("Stripe 付款页面已经打开", { exact: false })).toBeVisible();
+    const opened = await desktop.evaluate(() => globalThis.__tryReviveOpenedCheckout);
+    expect(opened).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+    const checkoutCall = harness.calls.find(
+      (call) => call.method === "POST" && call.path === "/v1/cloud/payments/checkout"
+    );
+    expect(checkoutCall.authorization).toMatch(/^Bearer session_token_/);
+    expect(checkoutCall.body.packageId).toBe("starter");
+    expect(checkoutCall.body.idempotencyKey).toMatch(/^payment-/);
+    expect(JSON.stringify(checkoutCall.body)).not.toContain("paid");
+
+    await window.getByRole("button", { name: "付款后刷新余额" }).click();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+    await expect(
+      window.getByText("只有签名回调确认的付款才会入账", { exact: false })
+    ).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
     await harness.close().catch(() => undefined);

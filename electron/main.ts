@@ -21,7 +21,9 @@ import {
   deleteCloudAccount,
   deleteCloudSourceContent,
   disconnectCloud,
+  createCloudPaymentCheckout,
   getCloudDataExport,
+  getCloudPaymentPackages,
   getCloudStatus,
   quoteCloudContext,
   redeemCloudCode
@@ -283,6 +285,17 @@ function registerIpc(): void {
     assertTrustedSender(event);
     return deleteCloudAccount(confirmation);
   });
+  ipcMain.handle(IPC_CHANNELS.cloudPaymentPackages, async (event) => {
+    assertTrustedSender(event);
+    return getCloudPaymentPackages();
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.createCloudPaymentCheckout,
+    async (event, packageId: unknown, idempotencyKey: unknown) => {
+      assertTrustedSender(event);
+      return createCloudPaymentCheckout(packageId, idempotencyKey);
+    }
+  );
   ipcMain.handle(IPC_CHANNELS.redeemCloudCode, async (event, code: unknown) => {
     assertTrustedSender(event);
     return redeemCloudCode(code);

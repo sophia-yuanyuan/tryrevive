@@ -150,6 +150,7 @@ const webPlatform: AppPlatform = {
       authenticated: false,
       balance: null,
       secureSessionStorage: false,
+      paymentAvailable: false,
       message: "云端理解当前仅在桌面版内测；网页版仍可完成全部本地流程。"
     };
   },
@@ -167,6 +168,12 @@ const webPlatform: AppPlatform = {
   },
   async deleteCloudAccount() {
     throw new Error("云端账户删除当前仅在 TryRevive Windows 桌面版提供");
+  },
+  async cloudPaymentPackages() {
+    throw new Error("真实算力购买当前仅在 TryRevive Windows 桌面版提供");
+  },
+  async createCloudPaymentCheckout() {
+    throw new Error("真实算力购买当前仅在 TryRevive Windows 桌面版提供");
   },
   async redeemCloudCode() {
     throw new Error("云端理解当前仅在桌面版内测");
@@ -224,6 +231,9 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     exportCloudData: () => bridge.exportCloudData(),
     deleteCloudSourceContent: () => bridge.deleteCloudSourceContent(),
     deleteCloudAccount: (confirmation) => bridge.deleteCloudAccount(confirmation),
+    cloudPaymentPackages: () => bridge.cloudPaymentPackages(),
+    createCloudPaymentCheckout: (packageId, idempotencyKey) =>
+      bridge.createCloudPaymentCheckout(packageId, idempotencyKey),
     redeemCloudCode: (code) => bridge.redeemCloudCode(code),
     quoteCloudContext: (source) => bridge.quoteCloudContext(source),
     analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),

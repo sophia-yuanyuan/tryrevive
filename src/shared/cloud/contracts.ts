@@ -21,12 +21,58 @@ export const CloudBalanceSchema = z.object({
   projectAnalyses: z.number().int().min(0)
 });
 
+const CloudTimestampSchema = z.number().int().nonnegative();
+
 export const CloudStatusSchema = z.object({
   available: z.boolean(),
   authenticated: z.boolean(),
   balance: CloudBalanceSchema.nullable(),
   secureSessionStorage: z.boolean(),
+  paymentAvailable: z.boolean().default(false),
   message: z.string().trim().max(300)
+});
+
+export const CloudPaymentPackageSchema = z.object({
+  id: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9_-]*$/)
+    .max(48),
+  name: z.string().trim().min(1).max(80),
+  currency: z.string().regex(/^[a-z]{3}$/),
+  amount: z.number().int().positive(),
+  speechMinutes: z.number().int().min(0),
+  projectAnalyses: z.number().int().positive()
+});
+
+export const CloudPaymentCatalogSchema = z.object({
+  provider: z.literal("stripe"),
+  mode: z.enum(["test", "live"]),
+  packages: z.array(CloudPaymentPackageSchema).min(1).max(8)
+});
+
+const StripeCheckoutUrlSchema = z
+  .url()
+  .refine(
+    (value) =>
+      new URL(value).protocol === "https:" && new URL(value).hostname === "checkout.stripe.com"
+  );
+
+export const CloudPaymentOrderSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  packageId: z.string().trim().min(1).max(48),
+  amount: z.number().int().positive(),
+  currency: z.string().regex(/^[a-z]{3}$/),
+  units: CloudBalanceSchema,
+  status: z.enum(["creating", "pending", "paid", "failed", "expired"]),
+  checkoutUrl: StripeCheckoutUrlSchema.nullable(),
+  createdAt: CloudTimestampSchema,
+  updatedAt: CloudTimestampSchema,
+  paidAt: CloudTimestampSchema.nullable()
+});
+
+export const CloudPaymentCheckoutSchema = z.object({
+  order: CloudPaymentOrderSchema
 });
 
 export const CloudQuoteSchema = z.object({
@@ -49,8 +95,6 @@ export const CloudDisconnectResultSchema = z.object({
   remoteRevoked: z.boolean(),
   message: z.string().trim().min(1).max(300)
 });
-
-const CloudTimestampSchema = z.number().int().nonnegative();
 
 export const CloudDataExportSchema = z.object({
   schemaVersion: z.literal(1),
@@ -178,6 +222,9 @@ export const CloudReservationResultSchema = z.discriminatedUnion("status", [
 export type CloudSourceMetadata = z.infer<typeof CloudSourceMetadataSchema>;
 export type CloudBalance = z.infer<typeof CloudBalanceSchema>;
 export type CloudStatus = z.infer<typeof CloudStatusSchema>;
+export type CloudPaymentPackage = z.infer<typeof CloudPaymentPackageSchema>;
+export type CloudPaymentCatalog = z.infer<typeof CloudPaymentCatalogSchema>;
+export type CloudPaymentCheckout = z.infer<typeof CloudPaymentCheckoutSchema>;
 export type CloudQuote = z.infer<typeof CloudQuoteSchema>;
 export type CloudRedeemResult = z.infer<typeof CloudRedeemResultSchema>;
 export type CloudDisconnectResult = z.infer<typeof CloudDisconnectResultSchema>;
