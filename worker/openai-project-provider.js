@@ -1,7 +1,7 @@
 import { extractResponseText } from "./cloud-core.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_TRANSCRIPTION_MODEL = "gpt-transcribe";
+const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 
 const PROJECT_ANALYSIS_SCHEMA = {
   type: "object",

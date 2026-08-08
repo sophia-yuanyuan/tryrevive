@@ -98,7 +98,7 @@ test("audio is transcribed first and only the transcript enters project analysis
 
   assert.equal(calls.length, 2);
   assert.equal(calls[0].url, "https://api.openai.com/v1/audio/transcriptions");
-  assert.equal(calls[0].options.body.get("model"), "gpt-transcribe");
+  assert.equal(calls[0].options.body.get("model"), "gpt-4o-mini-transcribe");
   const uploadedFile = calls[0].options.body.get("file");
   assert.equal(uploadedFile.name, "tryrevive-audio.webm");
   const analysisBody = JSON.parse(calls[1].options.body);

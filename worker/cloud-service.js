@@ -23,7 +23,7 @@ export function createProviderFromEnvironment(env) {
     return createOpenAIProjectProvider({
       apiKey: env.OPENAI_API_KEY,
       analysisModel: env.OPENAI_ANALYSIS_MODEL,
-      transcriptionModel: env.OPENAI_TRANSCRIPTION_MODEL || "gpt-transcribe"
+      transcriptionModel: env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe"
     });
   } catch {
     return null;
