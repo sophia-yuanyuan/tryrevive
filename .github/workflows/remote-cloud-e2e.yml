@@ -1,0 +1,34 @@
+name: Remote cloud acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-cloud:
+    runs-on: windows-latest
+    environment: tryrevive-staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Create synthetic voice, PDF, and DOCX fixtures
+        shell: powershell
+        run: >-
+          ./scripts/create-remote-e2e-fixtures.ps1
+          -OutputDirectory "${{ runner.temp }}\tryrevive-remote-fixtures"
+      - name: Run real staging protocol acceptance
+        run: npm run test:e2e:remote-cloud
+        env:
+          TRYREVIVE_REMOTE_E2E: "1"
+          TRYREVIVE_REMOTE_BASE_URL: "https://staging-api.tryrevive.online"
+          TRYREVIVE_REMOTE_FIXTURE_DIR: "${{ runner.temp }}\tryrevive-remote-fixtures"
+          TRYREVIVE_REMOTE_FUNDED_SESSION: "${{ secrets.TRYREVIVE_REMOTE_FUNDED_SESSION }}"
+          TRYREVIVE_REMOTE_INSUFFICIENT_SESSION: "${{ secrets.TRYREVIVE_REMOTE_INSUFFICIENT_SESSION }}"

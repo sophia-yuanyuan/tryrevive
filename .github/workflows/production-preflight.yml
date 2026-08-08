@@ -1,0 +1,21 @@
+name: Production control-plane preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: tryrevive-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify DNS ownership, HTTPS, API, model, and payment gates
+        run: npm run verify:production
+        env:
+          TRYREVIVE_DOMAIN_VERIFICATION_TOKEN: "${{ secrets.TRYREVIVE_DOMAIN_VERIFICATION_TOKEN }}"
