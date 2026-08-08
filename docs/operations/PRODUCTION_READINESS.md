@@ -2,6 +2,8 @@
 
 状态：`BLOCKED BY EXTERNAL CONTROL PLANE`
 
+控制台逐步操作、每一步通过标准和回退方式见 [`DEPLOY_TRYREVIVE_ONLINE.md`](./DEPLOY_TRYREVIVE_ONLINE.md)。
+
 核验日期：2026-08-08
 
 ## 当前已确认的公开事实

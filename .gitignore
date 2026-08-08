@@ -35,3 +35,5 @@ test-results/
 
 # wrangler local cache (contains account info)
 .wrangler/
+worker/wrangler.cloud.staging.toml
+worker/wrangler.cloud.production.toml
