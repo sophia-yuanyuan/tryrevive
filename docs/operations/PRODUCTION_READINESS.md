@@ -42,6 +42,8 @@
 - 远端 SQLite 元数据已确认账本、会话、兑换码、报价、操作、支付订单、支付事件和支付流水表存在；复查查询 `rows_written=0`。
 - Worker `tryrevive-cloud-staging` 已部署到 `https://tryrevive-cloud-staging.tryrevive.workers.dev`，首次公开请求在 TLS 传播完成后返回 HTTP 200。
 - `/v1/cloud/catalog` 当前真实报告 `available=true`、`analysisAvailable=false`、`paymentAvailable=false`。这证明 Worker 与 D1 在线，同时 OpenAI、模型批准、Stripe 和 live 支付仍安全关闭。
+- 已创建两组只用于合成 E2E 的 staging 账户：一个拥有 60 分钟语音/20 次项目分析，另一个为 0/0；D1 独立聚合复查显示 2 个账户、2 个有效会话和 2 个已兑换 code，且复查 `rows_written=0`。
+- 两枚会话令牌只从内存写入 GitHub `tryrevive-staging` Environment Secrets `TRYREVIVE_REMOTE_FUNDED_SESSION` 与 `TRYREVIVE_REMOTE_INSUFFICIENT_SESSION`；原始兑换码和会话令牌没有输出、落盘或进入 Git。
 - 当前 Cloudflare 账户仍没有 `tryrevive.online` Zone、TryRevive Pages 项目或 production Worker/D1；staging Worker 也尚未配置任何 OpenAI/Stripe Secret，因此不能运行真实远端分析或支付验收。
 
 ## 必须由产品负责人或账户管理员完成的控制面动作
