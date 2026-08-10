@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./cloud-core.js";
 import { createCloudService } from "./cloud-service-core.js";
+import { OPENAI_RETENTION_NOTICE } from "./cloud-service.js";
 
 const BASE_URL = "https://cloud.tryrevive.test";
 const VALID_ANALYSIS = {
@@ -19,6 +20,15 @@ const VALID_ANALYSIS = {
   },
   uncertainties: ["队友是否最终参加"]
 };
+
+test("OpenAI upload disclosure states the stable anonymous linking boundary", () => {
+  assert.match(OPENAI_RETENTION_NOTICE, /固定用途前缀/);
+  assert.match(OPENAI_RETENTION_NOTICE, /SHA-256/);
+  assert.match(OPENAI_RETENTION_NOTICE, /关联同一匿名账号的多次分析请求/);
+  assert.match(OPENAI_RETENTION_NOTICE, /原始账号 ID/);
+  assert.match(OPENAI_RETENTION_NOTICE, /姓名、邮箱、项目名、文件名和材料内容都不用于该标识/);
+  assert.ok(OPENAI_RETENTION_NOTICE.length <= 500);
+});
 
 function copyBalance(balance) {
   return {

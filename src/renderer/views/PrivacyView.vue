@@ -85,7 +85,7 @@ onMounted(() => {
       <h1 class="stage-title">你的项目原文不应该变成一笔糊涂账</h1>
       <p class="stage-description">
         本说明适用于 TryRevive
-        本地功能，以及你主动确认后才会启用的云端项目理解。版本日期：2026-08-08。
+        本地功能，以及你主动确认后才会启用的云端项目理解。版本日期：2026-08-10。
       </p>
 
       <section class="mt-9" aria-labelledby="privacy-local-title">
@@ -116,6 +116,11 @@ onMounted(() => {
           TryRevive 不把上传原文写入 D1 数据库，也不使用 OpenAI Files API 持久化文件；分析请求使用
           <code>store: false</code>。这不等于第三方没有任何安全日志。OpenAI
           的滥用监测日志可能按其数据控制规则短期保留，当前产品提示上限为 30 天。
+        </p>
+        <p class="mt-3 text-sm leading-7 text-[var(--muted)]">
+          为协助识别滥用，每次项目分析还会向 OpenAI 发送一个稳定匿名标识。TryRevive
+          使用随机云账号 ID、固定用途前缀和 SHA-256 生成该标识；OpenAI
+          可以据此关联同一匿名账号的多次分析请求。原始账号 ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不会用于生成该标识。
         </p>
         <button class="text-button mt-3" type="button" @click="openOpenAiDataControls">
           查看 OpenAI 官方数据控制说明

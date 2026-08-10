@@ -4,6 +4,12 @@ import { createCloudService } from "./cloud-service-core.js";
 import { createOpenAIProjectProvider } from "./openai-project-provider.js";
 import { createStripeCheckoutProvider } from "./stripe-checkout-provider.js";
 
+export const OPENAI_UPLOAD_NOTICE =
+  "只有在你确认后，所选内容才会发送给 TryRevive 云端，并由 OpenAI 完成转写或项目理解。";
+
+export const OPENAI_RETENTION_NOTICE =
+  "TryRevive 不在项目账本中保存原始内容，OpenAI Responses 请求设置为 store:false。每次项目分析还会发送由随机云账号 ID、固定用途前缀和 SHA-256 生成的稳定匿名标识；OpenAI 可以据此关联同一匿名账号的多次分析请求，但原始账号 ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不用于该标识。OpenAI 仍可能按默认安全策略保留滥用监测日志最多 30 天；可在隐私中心导出或删除云端账户。";
+
 function unavailable(message) {
   return Response.json(
     { error: "service_unavailable", message },
@@ -82,10 +88,10 @@ export default {
       paymentProvider,
       randomToken,
       uploadNotice: provider
-        ? "只有在你确认后，所选内容才会发送给 TryRevive 云端，并由 OpenAI 完成转写或项目理解。"
+        ? OPENAI_UPLOAD_NOTICE
         : "只有在你确认后，所选内容才会发送给 TryRevive 云端处理。",
       retentionNotice: provider
-        ? "TryRevive 不在项目账本中保存原始内容；OpenAI Responses 请求设置为不保存应用状态。OpenAI 仍可能按默认安全策略保留滥用监测日志最多 30 天；可在隐私中心检查原文未存储状态、导出或删除云端账户。"
+        ? OPENAI_RETENTION_NOTICE
         : "真实处理方和保留期限尚未启用；当前服务不会接收项目内容。"
     });
     return service(request);
