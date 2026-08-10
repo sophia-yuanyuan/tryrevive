@@ -86,6 +86,19 @@ nslookup -type=ns tryrevive.online 8.8.8.8
 
 这一阶段不改根域，也不启用云端算力。
 
+### 3.1 当前可验收的隔离预览
+
+截至 2026-08-10，commit `9bc880c` 已作为 Direct Upload preview 部署到：
+
+- 功能分支别名：`https://codex-frontend-platform.tryrevive-web-preview.pages.dev`
+- 本次不可变地址：`https://1bb4ae8b.tryrevive-web-preview.pages.dev`
+
+这个临时项目名是 `tryrevive-web-preview`，没有绑定自定义域名，也不连接云端分析。公网 Chrome 已在桌面和手机尺寸走通本地纵向链路与刷新恢复，并确认云端安全降级、隐私禁用边界、黑胶播放和 WAV 导出；网页产物不包含 source map。
+
+Direct Upload 项目不能转换成 Git 集成。因此不要把 `tryrevive-web-preview` 改名或绑定 `tryrevive.online`；需要回退时直接删除这个临时项目。未来正式站点仍按下面步骤新建独立的 `tryrevive-web` Git 集成项目。
+
+### 3.2 未来正式预览与持续部署
+
 1. Cloudflare Dashboard → `Workers & Pages` → `Create application` → `Pages` → `Connect to Git`。
 2. 只授权 GitHub 仓库 `sophia-yuanyuan/tryrevive`。
 3. 项目名填 `tryrevive-web`。
@@ -104,7 +117,7 @@ nslookup -type=ns tryrevive.online 8.8.8.8
 - `/privacy` 使用 Hash Router，地址应类似 `/#/privacy`；
 - Web 端云服务不可用时明确降级，不出现 API Key 输入框。
 
-官方参考：[Cloudflare Pages Git 集成](https://developers.cloudflare.com/pages/get-started/git-integration/)。
+官方参考：[Cloudflare Pages Git 集成](https://developers.cloudflare.com/pages/get-started/git-integration/)、[Cloudflare Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/)。
 
 ## 4. 人工验收后再绑定 tryrevive.online
 

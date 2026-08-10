@@ -1,6 +1,6 @@
 # TryRevive 生产控制面与远端验收
 
-状态：`STAGING BASELINE ONLINE / PRODUCTION BLOCKED`
+状态：`WEB PREVIEW + STAGING BASELINE ONLINE / PRODUCTION BLOCKED`
 
 控制台逐步操作、每一步通过标准和回退方式见 [`DEPLOY_TRYREVIVE_ONLINE.md`](./DEPLOY_TRYREVIVE_ONLINE.md)。
 
@@ -12,7 +12,7 @@
 - 根域当前没有公开 A 或 AAAA 记录。
 - `www.tryrevive.online`、`api.tryrevive.online`、`staging-api.tryrevive.online` 当前返回 NXDOMAIN。
 - 父区没有公开 DS 记录；根域也没有公开 MX、TXT 或 CAA 记录。迁移前仍须在阿里云控制台截图或导出记录，不能把公共查询当作完整 Zone 导出。
-- GitHub CLI 已登录仓库所有者账号并具备 `repo` 与 `workflow` scope；仓库已精确锁定 Wrangler `4.120.0`，本机 `workerd 2026-08-01` 与 Worker dry-run 已通过，但尚未登录 Cloudflare，也没有发现 `CLOUDFLARE_*`、`STRIPE_*`、`OPENAI_*`、`TRYREVIVE_*` 环境变量名称。
+- GitHub CLI 已登录仓库所有者账号并具备 `repo` 与 `workflow` scope；仓库已精确锁定 Wrangler `4.120.0`，本机 `workerd 2026-08-01` 与 Worker dry-run 已通过；Wrangler 已授权到当前用于 TryRevive staging 的 Cloudflare 账户。
 - 因此，仓库现在不能诚实声称生产域名、真实 OpenAI、真实 Stripe 付款或远端 E2E 已经上线/通过。
 
 以上事实来自公开 DNS-over-HTTPS 与本机只读检查，不证明域名注册人身份，也不读取任何 Secret 值。
@@ -31,10 +31,20 @@
 
 ## 已完成的 GitHub 控制面准备
 
-- `tryrevive-staging` Environment 已创建，只允许 `codex/frontend-platform` 与 `master` 分支；当前 Environment Secrets 数量为 0。
+- `tryrevive-staging` Environment 已创建，只允许 `codex/frontend-platform` 与 `master` 分支；其中已有两枚专供合成远端 E2E 使用的会话 Secret，不含 OpenAI 或 Stripe 凭据。
 - `tryrevive-production` Environment 已创建，只允许 `master` 分支，并要求 `sophia-yuanyuan` 人工批准；当前 Environment Secrets 数量为 0。
-- 普通 CI 在 commit `bdb3497` 对应的 GitHub Actions run `31344474476` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、打包后 E2E 与 artifact 上传；官方 Actions 已使用 Node 24 runtime，run 没有 annotations。
-- GitHub 环境保护壳本身不包含 Secret，也没有触发 workflow、部署或域名修改；实际 staging 服务状态以紧接着的 Cloudflare 核验为准。
+- 普通 CI 在 commit `9bc880c` 对应的 GitHub Actions run `31347497527` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、打包后 E2E 与 artifact 上传；官方 Actions 使用 Node 24 runtime。
+- GitHub Environment Secret 只对引用对应 Environment 的 job 可见；普通 CI 没有读取它们，也没有触发 Worker、Pages 或域名部署。
+
+## 已完成的 Cloudflare Pages 安全预览
+
+- 独立 Direct Upload 项目 `tryrevive-web-preview` 已创建；它不绑定 `tryrevive.online`，也不作为未来正式 Git 集成项目。
+- commit `9bc880c` 的功能分支预览已部署到 `https://codex-frontend-platform.tryrevive-web-preview.pages.dev`；本次不可变部署地址为 `https://1bb4ae8b.tryrevive-web-preview.pages.dev`。
+- Web 生产构建已关闭 source map；公网主脚本不含 `sourceMappingURL`，对应 `.map` 请求只返回 955 字节的单页应用 HTML 回退，不含 `sourcesContent`。
+- 公网 Chrome 已在 1440×900 与 390×844 两种尺寸走通：输入材料 → 本地推断 → Confirm → 最小下一步 → 唱针专注 → 留下成果 → 保存返回位置 → 刷新恢复；两次均无控制台错误或失败请求。
+- 第二轮公网验收确认云端安全降级、隐私操作禁用边界、黑胶播放和 WAV 导出均正常，控制台无错误。
+- Web 预览继续诚实降级：不连接 staging/production Worker、不要求 API Key，系统级文件夹扫描、云端理解和偏离提醒仍只在受支持的 Windows 桌面链路中提供。
+- Cloudflare 规定 Direct Upload 项目不能改成 Git 集成；因此未来正式站点仍须按运行手册另建 `tryrevive-web` Git 集成项目。删除 `tryrevive-web-preview` 即可回退这次预览，不影响 Worker、D1 或域名。
 
 ## 已完成的 Cloudflare staging 基线
 
@@ -44,7 +54,7 @@
 - `/v1/cloud/catalog` 当前真实报告 `available=true`、`analysisAvailable=false`、`paymentAvailable=false`。这证明 Worker 与 D1 在线，同时 OpenAI、模型批准、Stripe 和 live 支付仍安全关闭。
 - 已创建两组只用于合成 E2E 的 staging 账户：一个拥有 60 分钟语音/20 次项目分析，另一个为 0/0；D1 独立聚合复查显示 2 个账户、2 个有效会话和 2 个已兑换 code，且复查 `rows_written=0`。
 - 两枚会话令牌只从内存写入 GitHub `tryrevive-staging` Environment Secrets `TRYREVIVE_REMOTE_FUNDED_SESSION` 与 `TRYREVIVE_REMOTE_INSUFFICIENT_SESSION`；原始兑换码和会话令牌没有输出、落盘或进入 Git。
-- 当前 Cloudflare 账户仍没有 `tryrevive.online` Zone、TryRevive Pages 项目或 production Worker/D1；staging Worker 也尚未配置任何 OpenAI/Stripe Secret，因此不能运行真实远端分析或支付验收。
+- 当前 Cloudflare 账户仍没有 `tryrevive.online` Zone 或 production Worker/D1；仅有上述隔离的 Pages 预览和 staging Worker。staging Worker 尚未配置任何 OpenAI/Stripe Secret，因此不能运行真实远端分析或支付验收。
 
 ## 必须由产品负责人或账户管理员完成的控制面动作
 
@@ -55,8 +65,8 @@
 3. staging 验收全部通过后，重新创建独立的 production Worker 与 D1，并按顺序应用 `0001`、`0002`、`0003`；不得复制 staging 会话、订单或测试材料，也不要部署旧 `worker/wrangler.toml` 代理。
 4. 在 Worker Secret 中设置 `OPENAI_API_KEY`；由产品负责人记录审核模型后，再设置 `OPENAI_MODEL_APPROVED=true`。
 5. 在 Stripe 商户后台确认运营主体、币种、税务、退款与商品价格；创建 Price、live Secret 与 webhook endpoint。只订阅 Checkout 完成、异步成功、异步失败和过期事件。
-6. 在已经创建的 GitHub `tryrevive-staging` Environment 中放入专用的有余额/余额不足测试会话。测试会消耗真实 staging 算力，不能使用真实用户内容。
-7. 手动运行 `Remote cloud acceptance`，再运行 `Production control-plane preflight`。只有两者均为绿色，才能把“远端 E2E 已通过”和“生产域名已验证”写入交付结果。
+6. 接通经过审核的 staging OpenAI 配置后，使用已经准备好的有余额/余额不足测试会话手动运行 `Remote cloud acceptance`；测试会消耗真实 staging 算力，不能使用真实用户内容。
+7. 再运行 `Production control-plane preflight`。只有远端验收与生产预检均为绿色，才能把“远端 E2E 已通过”和“生产域名已验证”写入交付结果。
 
 ## 仍需产品负责人提供的法律事实
 
