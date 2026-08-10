@@ -83,6 +83,7 @@ async function startCloudSessionHarness() {
   const paymentOrders = new Map();
   let redeemCount = 0;
   let rejectAccounts = false;
+  let analysisMode = "approved";
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -109,7 +110,9 @@ async function startCloudSessionHarness() {
       return send(200, {
         service: "tryrevive-cloud",
         available: true,
-        analysisAvailable: true,
+        analysisAvailable: analysisMode !== "disabled",
+        analysisMode,
+        analysisModel: analysisMode === "disabled" ? null : "approved-test-model",
         paymentAvailable: true
       });
     }
@@ -346,6 +349,9 @@ async function startCloudSessionHarness() {
     url: `http://127.0.0.1:${address.port}`,
     rejectAccounts(value) {
       rejectAccounts = value;
+    },
+    setAnalysisMode(value) {
+      analysisMode = value;
     },
     close: () => new Promise((resolve) => server.close(resolve))
   };
@@ -793,6 +799,42 @@ test("desktop camera gestures stay off by default and load the packaged local mo
     await expect(window.getByText("摄像头已关闭")).toBeVisible();
   } finally {
     await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop blocks all uploads while the cloud model is still under review", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  const harness = await startCloudSessionHarness();
+  harness.setAnalysisMode("review");
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-review-e2e-"));
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("模型审核闸门验收项目", "cloud-review-project")),
+    "utf8"
+  );
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await expect(window.getByText("当前不会上传任何内容")).toBeVisible();
+    await expect(window.getByText(/合成材料审核，尚未批准给普通用户/)).toBeVisible();
+    await expect(window.getByText(/不会上传你的内容/)).toBeVisible();
+    await expect(window.getByLabel("算力兑换码")).toHaveCount(0);
+    expect(
+      harness.calls.map(({ method, path: requestPath }) => `${method} ${requestPath}`)
+    ).toEqual(["GET /v1/cloud/catalog"]);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });
   }
 });

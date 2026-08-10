@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createProviderFromEnvironment } from "./cloud-service.js";
+import { createProviderFromEnvironment, providerModeFromEnvironment } from "./cloud-service.js";
 import { createOpenAIProjectProvider } from "./openai-project-provider.js";
 
 const ANALYSIS = {
@@ -213,9 +213,46 @@ test("the production provider remains off until every server-side gate is explic
     createProviderFromEnvironment({
       CLOUD_PROVIDER_ENABLED: "true",
       OPENAI_MODEL_APPROVED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "approved"
     })?.available,
     true
+  );
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "review-candidate"
+    }),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "review-candidate"
+    })?.available,
+    true
+  );
+  assert.equal(
+    providerModeFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true"
+    }),
+    "review"
+  );
+  assert.equal(
+    providerModeFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true"
+    }),
+    "approved"
   );
 });

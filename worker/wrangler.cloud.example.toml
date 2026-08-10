@@ -3,7 +3,9 @@ main = "cloud-service.js"
 compatibility_date = "2026-08-07"
 
 [vars]
+CLOUD_DEPLOYMENT_ENVIRONMENT = "disabled"
 CLOUD_PROVIDER_ENABLED = "false"
+OPENAI_MODEL_REVIEW_ENABLED = "false"
 OPENAI_MODEL_APPROVED = "false"
 OPENAI_ANALYSIS_MODEL = "REPLACE_WITH_APPROVED_MODEL"
 OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"

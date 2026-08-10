@@ -369,13 +369,21 @@ class MemoryCloudRepository {
   }
 }
 
-function createHarness({ provider = null, paymentProvider = null, now = 1_800_000_000_000 } = {}) {
+function createHarness({
+  provider = null,
+  analysisMode = null,
+  analysisModel = null,
+  paymentProvider = null,
+  now = 1_800_000_000_000
+} = {}) {
   const repository = new MemoryCloudRepository();
   let tokenIndex = 0;
   let idIndex = 0;
   const service = createCloudService({
     repository,
     provider,
+    analysisMode,
+    analysisModel,
     paymentProvider,
     now: () => now,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
@@ -709,6 +717,8 @@ test("production-disabled providers reject reservations without charging anythin
   });
   const catalog = await request(service, "/v1/cloud/catalog");
   assert.equal(catalog.body.analysisAvailable, false);
+  assert.equal(catalog.body.analysisMode, "disabled");
+  assert.equal(catalog.body.analysisModel, null);
 
   const source = {
     kind: "text",
@@ -727,6 +737,30 @@ test("production-disabled providers reject reservations without charging anythin
   const storedAccount = [...repository.accounts.values()][0];
   assert.deepEqual(storedAccount.balance, { speechMinutes: 2, projectAnalyses: 1 });
   assert.equal(repository.operations.size, 0);
+});
+
+test("catalog separates a staging review provider from an approved provider", async () => {
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const review = createHarness({
+    provider,
+    analysisMode: "review",
+    analysisModel: "review-candidate"
+  });
+  const approved = createHarness({
+    provider,
+    analysisMode: "approved",
+    analysisModel: "approved-model"
+  });
+
+  const reviewCatalog = await request(review.service, "/v1/cloud/catalog");
+  assert.equal(reviewCatalog.body.analysisAvailable, true);
+  assert.equal(reviewCatalog.body.analysisMode, "review");
+  assert.equal(reviewCatalog.body.analysisModel, "review-candidate");
+
+  const approvedCatalog = await request(approved.service, "/v1/cloud/catalog");
+  assert.equal(approvedCatalog.body.analysisAvailable, true);
+  assert.equal(approvedCatalog.body.analysisMode, "approved");
+  assert.equal(approvedCatalog.body.analysisModel, "approved-model");
 });
 
 test("authenticated users can export cloud data without credential hashes or source content", async () => {

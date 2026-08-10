@@ -4,6 +4,7 @@ const DOMAIN = "tryrevive.online";
 const API_ORIGIN = "https://api.tryrevive.online";
 const VERIFICATION_NAME = `_tryrevive-owner.${DOMAIN}`;
 const EXPECTED_TOKEN = process.env.TRYREVIVE_DOMAIN_VERIFICATION_TOKEN || "";
+const EXPECTED_MODEL = process.env.TRYREVIVE_APPROVED_MODEL || "";
 
 async function dns(name, type) {
   const response = await fetch(
@@ -74,6 +75,10 @@ async function verifyHttps() {
   assert.equal(body.service, "tryrevive-cloud");
   assert.equal(body.available, true);
   assert.equal(body.analysisAvailable, true, "approved OpenAI analysis is not enabled");
+  assert.equal(body.analysisMode, "approved", "production analysis is still in review mode");
+  assert.match(body.analysisModel || "", /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
+  assert.match(EXPECTED_MODEL, /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
+  assert.equal(body.analysisModel, EXPECTED_MODEL, "production model differs from signed review");
   assert.equal(body.paymentAvailable, true, "reviewed payment provider is not enabled");
 }
 

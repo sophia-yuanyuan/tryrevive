@@ -211,6 +211,8 @@ function paymentProviderAvailable(provider) {
 export function createCloudService({
   repository,
   provider = null,
+  analysisMode = null,
+  analysisModel = null,
   paymentProvider = null,
   now = () => Date.now(),
   randomToken,
@@ -223,12 +225,28 @@ export function createCloudService({
 }) {
   if (!repository) throw new Error("cloud repository is required");
   if (typeof randomToken !== "function") throw new Error("secure random token generator is required");
+  const effectiveAnalysisMode = providerAvailable(provider)
+    ? analysisMode === null
+      ? "approved"
+      : analysisMode
+    : "disabled";
+  if (!new Set(["disabled", "review", "approved"]).has(effectiveAnalysisMode)) {
+    throw new Error("analysis mode is invalid");
+  }
+  if (providerAvailable(provider) && effectiveAnalysisMode === "disabled") {
+    throw new Error("an available provider must declare review or approved mode");
+  }
 
   async function handleCatalog() {
     return json({
       service: "tryrevive-cloud",
       available: true,
       analysisAvailable: providerAvailable(provider),
+      analysisMode: effectiveAnalysisMode,
+      analysisModel:
+        providerAvailable(provider) && typeof analysisModel === "string"
+          ? analysisModel.trim().slice(0, 120) || null
+          : null,
       paymentAvailable: paymentProviderAvailable(paymentProvider),
       units: ["speechMinutes", "projectAnalyses"],
       limits: {

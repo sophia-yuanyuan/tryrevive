@@ -15,9 +15,17 @@ function repositoryFrom(env) {
   return env?.CLOUD_DB ? createCloudD1Repository(env.CLOUD_DB) : null;
 }
 
-export function createProviderFromEnvironment(env) {
+export function providerModeFromEnvironment(env) {
   if (env?.CLOUD_PROVIDER_ENABLED !== "true") return null;
-  if (env?.OPENAI_MODEL_APPROVED !== "true") return null;
+  const deployment = env?.CLOUD_DEPLOYMENT_ENVIRONMENT;
+  if (deployment !== "staging" && deployment !== "production") return null;
+  if (env?.OPENAI_MODEL_APPROVED === "true") return "approved";
+  if (deployment === "staging" && env?.OPENAI_MODEL_REVIEW_ENABLED === "true") return "review";
+  return null;
+}
+
+export function createProviderFromEnvironment(env) {
+  if (!providerModeFromEnvironment(env)) return null;
   if (!env?.OPENAI_API_KEY || !env?.OPENAI_ANALYSIS_MODEL) return null;
   try {
     return createOpenAIProjectProvider({
@@ -64,10 +72,13 @@ export default {
       return unavailable("TryRevive 云端账本尚未配置；本次不会上传或扣除算力。");
     }
     const provider = createProviderFromEnvironment(env);
+    const analysisMode = provider ? providerModeFromEnvironment(env) : null;
     const paymentProvider = createPaymentProviderFromEnvironment(env);
     const service = createCloudService({
       repository,
       provider,
+      analysisMode,
+      analysisModel: provider ? env.OPENAI_ANALYSIS_MODEL : null,
       paymentProvider,
       randomToken,
       uploadNotice: provider
