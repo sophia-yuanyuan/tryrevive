@@ -34,7 +34,7 @@
 
 - `tryrevive-staging` Environment 已创建，只允许 `codex/frontend-platform` 与 `master` 分支；其中已有两枚专供合成远端 E2E 使用的会话 Secret，不含 OpenAI 或 Stripe 凭据。
 - `tryrevive-production` Environment 已创建，只允许 `master` 分支，并要求 `sophia-yuanyuan` 人工批准；当前 Environment Secrets 数量为 0。
-- 普通 CI 在 commit `e9a8d54` 对应的 GitHub Actions run `31358544119` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、打包后 E2E 与 artifact 上传；官方 Actions 使用 Node 24 runtime。
+- 普通 CI 在 commit `b34ab5b` 对应的 GitHub Actions run `31360057039` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、安装包校验、打包后 E2E 与 artifact 上传；官方 Actions 使用 Node 24 runtime。
 - GitHub Environment Secret 只对引用对应 Environment 的 job 可见；普通 CI 没有读取它们，也没有触发 Worker、Pages 或域名部署。
 - `Remote cloud acceptance` 与 `Staging model quality review` 都要求人工确认真实 staging 用量；后者固定审核 10 份合成样本并上传保留 30 天的 Markdown 报告。两个工作流目前均未在真实 OpenAI staging 上运行。
 
@@ -53,7 +53,7 @@
 - Cloudflare 账户中已创建唯一的 D1 数据库 `tryrevive-cloud-staging`，位置提示为 APAC；`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql` 已依次应用，独立复查显示无待应用迁移。
 - 远端 SQLite 元数据已确认账本、会话、兑换码、报价、操作、支付订单、支付事件和支付流水表存在；复查查询 `rows_written=0`。
 - Worker `tryrevive-cloud-staging` 已部署到 `https://tryrevive-cloud-staging.tryrevive.workers.dev`，首次公开请求在 TLS 传播完成后返回 HTTP 200。
-- commit `e9a8d54` 的安全闸门、匿名 OpenAI `safety_identifier` 边界及用户可见披露已在所有上游开关关闭的状态部署到 staging，Cloudflare Version ID 为 `44608b4f-f2c2-4d7b-a94e-9c16ecef5544`；没有向 OpenAI 发送请求，也没有部署 production 或修改域名。
+- commit `b34ab5b` 的安全闸门、匿名 OpenAI `safety_identifier` 边界及用户可见披露已在所有上游开关关闭的状态部署到 staging；关于 `store: false` 与滥用监测日志默认保留期及法定/安全例外的说明已按 OpenAI 官方数据控制文档校正。Cloudflare Version ID 为 `07202319-2269-4ff0-adf7-0700811cb22c`；没有向 OpenAI 发送请求，也没有部署 production 或修改域名。
 - `/v1/cloud/catalog` 当前真实报告 `available=true`、`analysisAvailable=false`、`analysisMode=disabled`、`analysisModel=null`、`paymentAvailable=false`，并返回 `cache-control: no-store`。这证明新版 Worker 与 D1 在线，同时 OpenAI、模型审核/批准、Stripe 和 live 支付仍安全关闭。
 - 本轮部署前后的 D1 只读聚合复查均为 0 次分析操作、0 个支付订单、0 个支付事件，且 `rows_written=0`；既有 2 个合成测试账户与 2 个会话未被改动。
 - 已创建两组只用于合成 E2E 的 staging 账户：一个拥有 60 分钟语音/20 次项目分析，另一个为 0/0；D1 独立聚合复查显示 2 个账户、2 个有效会话和 2 个已兑换 code，且复查 `rows_written=0`。
