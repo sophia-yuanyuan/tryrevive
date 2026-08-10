@@ -613,11 +613,13 @@ test("insufficient balance is rejected during metadata reservation before provid
 
 test("duplicate requests reserve once, reject the duplicate token, and return the stored result", async () => {
   let providerCalls = 0;
+  let receivedSafetyIdentifier = null;
   const provider = {
     available: true,
-    async analyze({ source }) {
+    async analyze({ source, safetyIdentifier }) {
       providerCalls += 1;
       assert.equal(source.bytes.byteLength, 3);
+      receivedSafetyIdentifier = safetyIdentifier;
       return VALID_ANALYSIS;
     }
   };
@@ -658,6 +660,14 @@ test("duplicate requests reserve once, reject the duplicate token, and return th
   });
   assert.equal(analyzed.response.status, 200);
   assert.equal(providerCalls, 1);
+  const accountId = repository.sessions.get(await sha256Hex(account.sessionToken)).accountId;
+  assert.equal(
+    receivedSafetyIdentifier,
+    await sha256Hex(`tryrevive-openai-safety-v1:${accountId}`)
+  );
+  assert.match(receivedSafetyIdentifier, /^[a-f0-9]{64}$/);
+  assert.notEqual(receivedSafetyIdentifier, accountId);
+  assert.notEqual(receivedSafetyIdentifier, account.sessionToken);
   assert.deepEqual(analyzed.body.balance, { speechMinutes: 8, projectAnalyses: 1 });
 
   const duplicate = await request(service, "/v1/cloud/reservations", reservationRequest);

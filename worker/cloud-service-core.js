@@ -631,7 +631,8 @@ export function createCloudService({
       throw new HttpError(409, "reservation_unavailable", "上传确认已过期、已使用或与当前内容不一致");
     }
     try {
-      const rawAnalysis = await provider.analyze({ projectTitle, source });
+      const safetyIdentifier = await sha256Hex(`tryrevive-openai-safety-v1:${account.id}`);
+      const rawAnalysis = await provider.analyze({ projectTitle, source, safetyIdentifier });
       const draft = normalizeAnalysis(rawAnalysis, {
         sourceLabel: source.metadata.kind === "audio" ? "语音" : source.metadata.kind === "text" ? "文字" : "附件",
         createdAt: now()

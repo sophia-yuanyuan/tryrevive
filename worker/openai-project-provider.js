@@ -81,6 +81,14 @@ function safeModel(value, label) {
   return model;
 }
 
+function safeSafetyIdentifier(value) {
+  const identifier = requiredSecret(value, "OpenAI safety identifier");
+  if (!/^[a-f0-9]{64}$/.test(identifier)) {
+    throw new Error("OpenAI safety identifier must be a SHA-256 hex digest");
+  }
+  return identifier;
+}
+
 function safeBaseUrl(value) {
   const baseUrl = (typeof value === "string" && value.trim()) || DEFAULT_BASE_URL;
   const parsed = new URL(baseUrl);
@@ -169,7 +177,7 @@ function userPrompt(projectTitle, sourceDescription) {
   return `项目名称：${projectTitle}\n\n请从下面的${sourceDescription}中恢复项目现场。先判断用户最初想完成什么、目前有明确证据做到哪里、卡点是什么，再给出唯一一个最小下一步。输出只作为待用户确认或修改的草稿。`;
 }
 
-function responseBody({ analysisModel, projectTitle, source }) {
+function responseBody({ analysisModel, projectTitle, source, safetyIdentifier }) {
   const content = [];
   if (source.metadata.kind === "attachment") {
     content.push({
@@ -187,6 +195,7 @@ function responseBody({ analysisModel, projectTitle, source }) {
   }
   return {
     model: analysisModel,
+    safety_identifier: safetyIdentifier,
     store: false,
     max_output_tokens: 1800,
     input: [
@@ -239,7 +248,8 @@ export function createOpenAIProjectProvider({
     return transcript;
   }
 
-  async function analyze({ projectTitle, source }) {
+  async function analyze({ projectTitle, source, safetyIdentifier }) {
+    const safeIdentifier = safeSafetyIdentifier(safetyIdentifier);
     const analysisSource =
       source.metadata.kind === "audio"
         ? { metadata: source.metadata, text: await transcribe(source) }
@@ -250,7 +260,14 @@ export function createOpenAIProjectProvider({
         ...authorizationHeaders,
         "content-type": "application/json"
       },
-      body: JSON.stringify(responseBody({ analysisModel: model, projectTitle, source: analysisSource }))
+      body: JSON.stringify(
+        responseBody({
+          analysisModel: model,
+          projectTitle,
+          source: analysisSource,
+          safetyIdentifier: safeIdentifier
+        })
+      )
     });
     const outputText = extractResponseText(response);
     if (!outputText) throw new OpenAIProjectProviderError("openai_empty_analysis");

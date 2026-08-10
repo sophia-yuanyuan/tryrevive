@@ -19,6 +19,8 @@ const ANALYSIS = {
   uncertainties: ["队友是否最终参加"]
 };
 
+const SAFETY_IDENTIFIER = "a".repeat(64);
+
 function jsonResponse(value, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -56,7 +58,8 @@ test("text analysis uses server authorization, store:false and strict structured
 
   const result = await provider.analyze({
     projectTitle: "报名项目",
-    source: textSource()
+    source: textSource(),
+    safetyIdentifier: SAFETY_IDENTIFIER
   });
 
   assert.deepEqual(result, ANALYSIS);
@@ -65,6 +68,7 @@ test("text analysis uses server authorization, store:false and strict structured
   assert.equal(calls[0].options.headers.authorization, "Bearer server-secret");
   const body = JSON.parse(calls[0].options.body);
   assert.equal(body.model, "approved-analysis-model");
+  assert.equal(body.safety_identifier, SAFETY_IDENTIFIER);
   assert.equal(body.store, false);
   assert.equal(body.text.format.type, "json_schema");
   assert.equal(body.text.format.strict, true);
@@ -84,6 +88,7 @@ test("audio is transcribed first and only the transcript enters project analysis
 
   await provider.analyze({
     projectTitle: "报名项目",
+    safetyIdentifier: SAFETY_IDENTIFIER,
     source: {
       metadata: {
         kind: "audio",
@@ -101,7 +106,9 @@ test("audio is transcribed first and only the transcript enters project analysis
   assert.equal(calls[0].options.body.get("model"), "gpt-4o-mini-transcribe");
   const uploadedFile = calls[0].options.body.get("file");
   assert.equal(uploadedFile.name, "tryrevive-audio.webm");
+  assert.equal(calls[0].options.body.has("safety_identifier"), false);
   const analysisBody = JSON.parse(calls[1].options.body);
+  assert.equal(analysisBody.safety_identifier, SAFETY_IDENTIFIER);
   assert.match(analysisBody.input[1].content[0].text, /我做到报名说明/);
   assert.doesNotMatch(calls[1].options.body, /我的秘密录音/);
 });
@@ -115,6 +122,7 @@ test("attachment uses a private filename and an inline file input without Files 
 
   await provider.analyze({
     projectTitle: "报名项目",
+    safetyIdentifier: SAFETY_IDENTIFIER,
     source: {
       metadata: {
         kind: "attachment",
@@ -143,7 +151,12 @@ test("provider failures expose only stable codes and never upstream response con
   );
 
   await assert.rejects(
-    () => provider.analyze({ projectTitle: "报名项目", source: textSource() }),
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: SAFETY_IDENTIFIER
+      }),
     (error) => {
       assert.equal(error.code, "openai_rate_limited");
       assert.doesNotMatch(error.message, /private material/);
@@ -156,9 +169,37 @@ test("invalid structured output is rejected instead of entering the project stat
   const provider = providerWith(async () => jsonResponse({ output_text: "not-json" }));
 
   await assert.rejects(
-    () => provider.analyze({ projectTitle: "报名项目", source: textSource() }),
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: SAFETY_IDENTIFIER
+      }),
     (error) => error.code === "openai_invalid_analysis"
   );
+});
+
+test("analysis rejects missing or raw safety identifiers before sending content upstream", async () => {
+  let calls = 0;
+  const provider = providerWith(async () => {
+    calls += 1;
+    return jsonResponse({ output_text: JSON.stringify(ANALYSIS) });
+  });
+
+  await assert.rejects(
+    () => provider.analyze({ projectTitle: "报名项目", source: textSource() }),
+    /safety identifier is required/
+  );
+  await assert.rejects(
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: "acct_raw-identifier"
+      }),
+    /must be a SHA-256 hex digest/
+  );
+  assert.equal(calls, 0);
 });
 
 test("configuration rejects missing, placeholder, and insecure provider settings", () => {
