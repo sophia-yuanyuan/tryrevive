@@ -2,12 +2,22 @@ name: Remote cloud acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_staging_usage:
+        description: This run consumes at least 4 project analyses and 1 speech minute
+        required: true
+        default: CANCEL
+        type: choice
+        options:
+          - CANCEL
+          - I_ACCEPT_REMOTE_E2E_USAGE
 
 permissions:
   contents: read
 
 jobs:
   staging-cloud:
+    if: inputs.confirm_staging_usage == 'I_ACCEPT_REMOTE_E2E_USAGE'
     runs-on: windows-latest
     environment: tryrevive-staging
     steps:
@@ -28,7 +38,7 @@ jobs:
         run: npm run test:e2e:remote-cloud
         env:
           TRYREVIVE_REMOTE_E2E: "1"
-          TRYREVIVE_REMOTE_BASE_URL: "https://staging-api.tryrevive.online"
+          TRYREVIVE_REMOTE_BASE_URL: "https://tryrevive-cloud-staging.tryrevive.workers.dev"
           TRYREVIVE_REMOTE_FIXTURE_DIR: "${{ runner.temp }}\tryrevive-remote-fixtures"
           TRYREVIVE_REMOTE_FUNDED_SESSION: "${{ secrets.TRYREVIVE_REMOTE_FUNDED_SESSION }}"
           TRYREVIVE_REMOTE_INSUFFICIENT_SESSION: "${{ secrets.TRYREVIVE_REMOTE_INSUFFICIENT_SESSION }}"

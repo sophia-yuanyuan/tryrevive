@@ -11,7 +11,10 @@ const FIXTURE_DIRECTORY = process.env.TRYREVIVE_REMOTE_FIXTURE_DIR || "";
 
 function assertRemoteConfiguration() {
   const url = new URL(BASE_URL);
-  const staging = url.origin === "https://staging-api.tryrevive.online";
+  const staging = new Set([
+    "https://staging-api.tryrevive.online",
+    "https://tryrevive-cloud-staging.tryrevive.workers.dev"
+  ]).has(url.origin);
   const productionApproved =
     url.origin === "https://api.tryrevive.online" &&
     process.env.TRYREVIVE_REMOTE_ALLOW_PRODUCTION === "I_ACCEPT_REAL_USAGE_CHARGES";
