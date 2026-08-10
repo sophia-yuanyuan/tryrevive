@@ -19,15 +19,16 @@
 
 ## 仓库已经具备的上线门禁
 
-1. OpenAI 只有在 `CLOUD_PROVIDER_ENABLED=true`、`OPENAI_MODEL_APPROVED=true`、服务端 Secret 和非占位模型同时存在时才启用。
+1. OpenAI staging 审核与正式批准分离：`review` 只允许合成审核，Windows 客户端拒绝上传；production 必须明确报告 `analysisMode=approved`。
 2. Stripe 测试付款与真实付款分开；live key 还必须有 `CLOUD_PAYMENT_LIVE_ENABLED=true`。
 3. 付款只由验签后的 Checkout webhook 入账。重复事件、不同事件重复指向同一订单都只入账一次。
 4. `npm run verify:production` 同时验证：
    - 根域、`www`、生产 API 与 staging API 均可解析；
    - `_tryrevive-owner.tryrevive.online` TXT 与受保护的 GitHub Environment Secret 完全一致；
    - 根域 HTTPS 不跳转到外部域名；
-   - 生产 `/v1/cloud/catalog` 明确报告 OpenAI 与支付已启用。
+   - 生产 `/v1/cloud/catalog` 明确报告 OpenAI 与支付已启用，处于 `approved` 模式，且实际模型与受保护的审核模型值一致。
 5. `Remote cloud acceptance` 只允许手动触发，只使用 `tryrevive-staging` GitHub Environment；在 Windows runner 现场生成无个人信息的 WAV、PDF、DOCX 和故障样本。
+6. `Staging model quality review` 使用 10 份中英文合成样本，输出待产品负责人逐项签字的审核 artifact；自动绿色不会修改任何批准开关。
 
 ## 已完成的 GitHub 控制面准备
 
@@ -35,6 +36,7 @@
 - `tryrevive-production` Environment 已创建，只允许 `master` 分支，并要求 `sophia-yuanyuan` 人工批准；当前 Environment Secrets 数量为 0。
 - 普通 CI 在 commit `9bc880c` 对应的 GitHub Actions run `31347497527` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、打包后 E2E 与 artifact 上传；官方 Actions 使用 Node 24 runtime。
 - GitHub Environment Secret 只对引用对应 Environment 的 job 可见；普通 CI 没有读取它们，也没有触发 Worker、Pages 或域名部署。
+- `Remote cloud acceptance` 与 `Staging model quality review` 都要求人工确认真实 staging 用量；后者固定审核 10 份合成样本并上传保留 30 天的 Markdown 报告。两个工作流目前均未在真实 OpenAI staging 上运行。
 
 ## 已完成的 Cloudflare Pages 安全预览
 
@@ -52,6 +54,7 @@
 - 远端 SQLite 元数据已确认账本、会话、兑换码、报价、操作、支付订单、支付事件和支付流水表存在；复查查询 `rows_written=0`。
 - Worker `tryrevive-cloud-staging` 已部署到 `https://tryrevive-cloud-staging.tryrevive.workers.dev`，首次公开请求在 TLS 传播完成后返回 HTTP 200。
 - `/v1/cloud/catalog` 当前真实报告 `available=true`、`analysisAvailable=false`、`paymentAvailable=false`。这证明 Worker 与 D1 在线，同时 OpenAI、模型批准、Stripe 和 live 支付仍安全关闭。
+- 当前已部署 Worker 仍是引入 `analysisMode` 前的安全关闭版本；本分支只有在配置 review 模式并重新部署后才会报告 `analysisMode=review`。这不是已上线能力。
 - 已创建两组只用于合成 E2E 的 staging 账户：一个拥有 60 分钟语音/20 次项目分析，另一个为 0/0；D1 独立聚合复查显示 2 个账户、2 个有效会话和 2 个已兑换 code，且复查 `rows_written=0`。
 - 两枚会话令牌只从内存写入 GitHub `tryrevive-staging` Environment Secrets `TRYREVIVE_REMOTE_FUNDED_SESSION` 与 `TRYREVIVE_REMOTE_INSUFFICIENT_SESSION`；原始兑换码和会话令牌没有输出、落盘或进入 Git。
 - 当前 Cloudflare 账户仍没有 `tryrevive.online` Zone 或 production Worker/D1；仅有上述隔离的 Pages 预览和 staging Worker。staging Worker 尚未配置任何 OpenAI/Stripe Secret，因此不能运行真实远端分析或支付验收。
@@ -63,7 +66,7 @@
 1. 在当前实际管理 DNS 的阿里云控制台添加根域、`www`、`api`、`staging-api` 记录；或先完成经过确认的 DNS 托管迁移。
 2. 生成至少 24 位随机域名验证值；把它同时写入 `_tryrevive-owner.tryrevive.online` TXT 与 GitHub `tryrevive-production` Environment Secret `TRYREVIVE_DOMAIN_VERIFICATION_TOKEN`。
 3. staging 验收全部通过后，重新创建独立的 production Worker 与 D1，并按顺序应用 `0001`、`0002`、`0003`；不得复制 staging 会话、订单或测试材料，也不要部署旧 `worker/wrangler.toml` 代理。
-4. 在 Worker Secret 中设置 `OPENAI_API_KEY`；由产品负责人记录审核模型后，再设置 `OPENAI_MODEL_APPROVED=true`。
+4. 在 Worker Secret 中设置 `OPENAI_API_KEY`；先以 `analysisMode=review` 运行 10 份合成样本并保存人工签字记录，再关闭 review、设置 `OPENAI_MODEL_APPROVED=true`。具体见 [`MODEL_QUALITY_REVIEW.md`](./MODEL_QUALITY_REVIEW.md)。
 5. 在 Stripe 商户后台确认运营主体、币种、税务、退款与商品价格；创建 Price、live Secret 与 webhook endpoint。只订阅 Checkout 完成、异步成功、异步失败和过期事件。
 6. 接通经过审核的 staging OpenAI 配置后，使用已经准备好的有余额/余额不足测试会话手动运行 `Remote cloud acceptance`；测试会消耗真实 staging 算力，不能使用真实用户内容。
 7. 再运行 `Production control-plane preflight`。只有远端验收与生产预检均为绿色，才能把“远端 E2E 已通过”和“生产域名已验证”写入交付结果。

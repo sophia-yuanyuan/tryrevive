@@ -178,7 +178,8 @@ Copy-Item worker\wrangler.cloud.example.toml worker\wrangler.cloud.staging.toml
 - `name = "tryrevive-cloud-staging"`；
 - `database_name = "tryrevive-cloud-staging"`；
 - `database_id` 填刚才的真实 ID；
-- `CLOUD_PROVIDER_ENABLED`、`OPENAI_MODEL_APPROVED`、`CLOUD_PAYMENT_ENABLED`、`CLOUD_PAYMENT_LIVE_ENABLED` 暂时全部保持 `false`；
+- `CLOUD_DEPLOYMENT_ENVIRONMENT = "staging"`；
+- `CLOUD_PROVIDER_ENABLED`、`OPENAI_MODEL_REVIEW_ENABLED`、`OPENAI_MODEL_APPROVED`、`CLOUD_PAYMENT_ENABLED`、`CLOUD_PAYMENT_LIVE_ENABLED` 暂时全部保持 `false`；
 - 不在文件里写任何 Secret。
 
 这个本地配置已被部署手册定义为账户专属文件，不应提交。提交前每次用 `git status --short` 检查。
@@ -225,7 +226,18 @@ curl.exe https://staging-api.tryrevive.online/v1/cloud/catalog
 
 模型“审核通过”至少要用 10 份不含敏感信息、覆盖中英文字、PDF、DOCX 和语音的停滞项目样本，逐份回答：目标是否忠实、做到哪里是否有证据、卡点是否可修改、下一步是否只有一件且 5–20 分钟可做、是否虚构完成。不要只看文风。
 
-审核记录没有完成前，`OPENAI_MODEL_APPROVED` 保持 `false`。
+仓库已经提供 `Staging model quality review` 手动工作流和 10 份合成样本。完整配置、费用确认、报告签字与回退步骤见 [`MODEL_QUALITY_REVIEW.md`](./MODEL_QUALITY_REVIEW.md)。自动检查绿色只表示硬约束通过，不表示产品负责人已经批准模型。
+
+审核记录没有完成前，使用 staging 专用 review 模式：
+
+```toml
+CLOUD_DEPLOYMENT_ENVIRONMENT = "staging"
+CLOUD_PROVIDER_ENABLED = "true"
+OPENAI_MODEL_REVIEW_ENABLED = "true"
+OPENAI_MODEL_APPROVED = "false"
+```
+
+`analysisMode=review` 只允许合成审核工作流调用；Windows 客户端不会把它显示成可用云端服务，production 预检也不接受。
 
 ### 7.2 添加 Secret
 
@@ -237,22 +249,31 @@ npm exec wrangler -- secret put OPENAI_API_KEY --config worker\wrangler.cloud.st
 
 在提示中粘贴 Key。不要把 Key 写入命令本身、`.toml`、`.env`、聊天或截图。
 
-编辑 staging 配置：
+编辑 staging 配置时先保持 review 模式并填入候选模型：
 
 ```toml
+CLOUD_DEPLOYMENT_ENVIRONMENT = "staging"
 CLOUD_PROVIDER_ENABLED = "true"
-OPENAI_MODEL_APPROVED = "true"
+OPENAI_MODEL_REVIEW_ENABLED = "true"
+OPENAI_MODEL_APPROVED = "false"
 OPENAI_ANALYSIS_MODEL = "gpt-5.6-luna"
 OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 ```
 
-只有审核记录完成后才把批准开关改为 `true`，再部署：
+部署后先通过当前 workers.dev staging 地址确认 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel` 与候选模型 ID 完全一致，再手动运行 10 份样本审核。只有人工签字完成后才改为：
+
+```toml
+OPENAI_MODEL_REVIEW_ENABLED = "false"
+OPENAI_MODEL_APPROVED = "true"
+```
+
+然后重新部署：
 
 ```powershell
 npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 ```
 
-验收 `/v1/cloud/catalog`：`analysisAvailable=true`。如果仍为 false，检查四项是否同时存在：服务开关、批准开关、Secret、非占位模型名。
+验收 `/v1/cloud/catalog`：`analysisAvailable=true`、`analysisMode=approved`，且 `analysisModel` 与审核记录一致。如果仍不可用，检查部署环境、服务开关、review/approved 两个互斥开关、Secret 和非占位模型名。
 
 官方参考：[OpenAI 当前模型](https://developers.openai.com/api/docs/models)、[GPT-4o mini Transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe)、[Cloudflare Worker Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)。
 
@@ -378,7 +399,7 @@ GitHub 仓库 → Settings → Environments：
 
 如果仓库方案支持，限制只允许指定分支并添加 Required reviewer。Environment Secret 只有引用该 environment 的 job 才能读取。
 
-Actions → `Remote cloud acceptance` → Run workflow。它会在 Windows runner 现场生成合成 WAV、PDF、DOCX 与故障文件，并真实验收：
+Actions → `Remote cloud acceptance` → Run workflow，并选择 `I_ACCEPT_REMOTE_E2E_USAGE`。当前工作流直接使用准确的 staging workers.dev 地址，不必等待自定义域名；它会在 Windows runner 现场生成合成 WAV、PDF、DOCX 与故障文件，并真实验收：
 
 - 三种材料得到结构化恢复草稿；
 - 余额不足在上传前拒绝；
@@ -412,6 +433,10 @@ $domainToken
 
 - `TRYREVIVE_DOMAIN_VERIFICATION_TOKEN`
 
+模型质量人工审核通过后，再添加审核报告中的准确模型 ID：
+
+- `TRYREVIVE_APPROVED_MODEL`
+
 这个 TXT 值公开可见；Environment Secret 的作用是让受保护门禁证明“控制 DNS 的值与产品负责人保存的期望值一致”。
 
 官方参考：[GitHub Environments 与受保护 Secret](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)。
@@ -424,7 +449,7 @@ $domainToken
 2. 从示例重新创建 `worker/wrangler.cloud.production.toml`，填 production D1 ID。
 3. 依次应用三段迁移。
 4. 先以所有开关 false 部署 `tryrevive-cloud-production`。
-5. 配置 production 专用 OpenAI Project Key 与已审核模型。
+5. 配置 production 专用 OpenAI Project Key 与已审核模型；明确设置 `CLOUD_DEPLOYMENT_ENVIRONMENT="production"`、`OPENAI_MODEL_REVIEW_ENABLED="false"`、`OPENAI_MODEL_APPROVED="true"`。
 6. Stripe 切换 Live mode，重新创建 live Price 和 production webhook；test 的 `price_`、`sk_test_`、`whsec_` 不能复用。
 7. `CLOUD_PAYMENT_LIVE_ENABLED` 最后一个改为 `true`。在此之前 live key 即使误放入，也必须保持 `paymentAvailable=false`。
 8. 绑定 Worker Custom Domain：`api.tryrevive.online`。
@@ -435,7 +460,7 @@ production preflight 只有同时满足以下条件才会绿：
 - 根域、`www`、`api`、`staging-api` 都能解析；
 - 所有权 TXT 与 GitHub Environment Secret 完全一致；
 - 根域 HTTPS 不跳到外部域名；
-- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`paymentAvailable=true`。
+- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`analysisMode=approved`、`paymentAvailable=true`，且 `analysisModel` 与受保护的 `TRYREVIVE_APPROVED_MODEL` 完全一致。
 
 绿灯只能证明控制面接通，不证明模型质量、退款客服或法律文本已经被真实用户接受。
 
