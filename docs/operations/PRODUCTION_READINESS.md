@@ -4,14 +4,15 @@
 
 控制台逐步操作、每一步通过标准和回退方式见 [`DEPLOY_TRYREVIVE_ONLINE.md`](./DEPLOY_TRYREVIVE_ONLINE.md)。
 
-核验日期：2026-08-08
+核验日期：2026-08-10
 
 ## 当前已确认的公开事实
 
-- `tryrevive.online` 的权威 DNS 仍是 `dns1.hichina.com` 与 `dns2.hichina.com`。
+- 公共 RDAP 显示 `tryrevive.online` 的注册商为 Alibaba Cloud Computing Ltd. d/b/a HiChina；权威 DNS 仍是 `dns1.hichina.com` 与 `dns2.hichina.com`。
 - 根域当前没有公开 A 或 AAAA 记录。
 - `www.tryrevive.online`、`api.tryrevive.online`、`staging-api.tryrevive.online` 当前返回 NXDOMAIN。
-- 本机没有发现 Wrangler、GitHub CLI 或 `CLOUDFLARE_*`、`STRIPE_*`、`OPENAI_*`、`TRYREVIVE_*` 环境变量名称。
+- 父区没有公开 DS 记录；根域也没有公开 MX、TXT 或 CAA 记录。迁移前仍须在阿里云控制台截图或导出记录，不能把公共查询当作完整 Zone 导出。
+- GitHub CLI 已登录仓库所有者账号并具备 `repo` 与 `workflow` scope；本机项目依赖中仍没有 Wrangler，也没有发现 `CLOUDFLARE_*`、`STRIPE_*`、`OPENAI_*`、`TRYREVIVE_*` 环境变量名称。
 - 因此，仓库现在不能诚实声称生产域名、真实 OpenAI、真实 Stripe 付款或远端 E2E 已经上线/通过。
 
 以上事实来自公开 DNS-over-HTTPS 与本机只读检查，不证明域名注册人身份，也不读取任何 Secret 值。
@@ -28,6 +29,13 @@
    - 生产 `/v1/cloud/catalog` 明确报告 OpenAI 与支付已启用。
 5. `Remote cloud acceptance` 只允许手动触发，只使用 `tryrevive-staging` GitHub Environment；在 Windows runner 现场生成无个人信息的 WAV、PDF、DOCX 和故障样本。
 
+## 已完成的 GitHub 控制面准备
+
+- `tryrevive-staging` Environment 已创建，只允许 `codex/frontend-platform` 与 `master` 分支；当前 Environment Secrets 数量为 0。
+- `tryrevive-production` Environment 已创建，只允许 `master` 分支，并要求 `sophia-yuanyuan` 人工批准；当前 Environment Secrets 数量为 0。
+- 普通 CI 在 commit `bdb3497` 对应的 GitHub Actions run `31344474476` 上通过 Web、Windows Electron E2E、NSIS/portable 构建、打包后 E2E 与 artifact 上传；官方 Actions 已使用 Node 24 runtime，run 没有 annotations。
+- 创建环境保护壳没有触发 workflow、部署或域名修改，也不代表 staging 或 production 服务已经存在。
+
 ## 必须由产品负责人或账户管理员完成的控制面动作
 
 这些动作不能由仓库代码代替，也不会在普通 CI 中自动执行：
@@ -37,7 +45,7 @@
 3. 创建 Cloudflare Worker、D1 数据库并按顺序应用 `0001`、`0002`、`0003` 迁移。不要部署旧 `worker/wrangler.toml` 代理。
 4. 在 Worker Secret 中设置 `OPENAI_API_KEY`；由产品负责人记录审核模型后，再设置 `OPENAI_MODEL_APPROVED=true`。
 5. 在 Stripe 商户后台确认运营主体、币种、税务、退款与商品价格；创建 Price、live Secret 与 webhook endpoint。只订阅 Checkout 完成、异步成功、异步失败和过期事件。
-6. 在 GitHub `tryrevive-staging` Environment 中放入专用的有余额/余额不足测试会话。测试会消耗真实 staging 算力，不能使用真实用户内容。
+6. 在已经创建的 GitHub `tryrevive-staging` Environment 中放入专用的有余额/余额不足测试会话。测试会消耗真实 staging 算力，不能使用真实用户内容。
 7. 手动运行 `Remote cloud acceptance`，再运行 `Production control-plane preflight`。只有两者均为绿色，才能把“远端 E2E 已通过”和“生产域名已验证”写入交付结果。
 
 ## 仍需产品负责人提供的法律事实
