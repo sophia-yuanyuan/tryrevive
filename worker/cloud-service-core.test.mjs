@@ -27,6 +27,10 @@ test("OpenAI upload disclosure states the stable anonymous linking boundary", ()
   assert.match(OPENAI_RETENTION_NOTICE, /关联同一匿名账号的多次分析请求/);
   assert.match(OPENAI_RETENTION_NOTICE, /原始账号 ID/);
   assert.match(OPENAI_RETENTION_NOTICE, /姓名、邮箱、项目名、文件名和材料内容都不用于该标识/);
+  assert.match(OPENAI_RETENTION_NOTICE, /store:false；这不等于退出滥用监测日志/);
+  assert.match(OPENAI_RETENTION_NOTICE, /默认滥用监测日志最长保留 30 天/);
+  assert.match(OPENAI_RETENTION_NOTICE, /法律要求/);
+  assert.match(OPENAI_RETENTION_NOTICE, /保护服务与第三方免受伤害/);
   assert.ok(OPENAI_RETENTION_NOTICE.length <= 500);
 });
 

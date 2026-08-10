@@ -68,7 +68,9 @@ async function deleteCloudAccount(): Promise<void> {
 }
 
 function openOpenAiDataControls(): void {
-  void platform.openExternal("https://platform.openai.com/docs/guides/your-data");
+  void platform.openExternal(
+    "https://developers.openai.com/api/docs/guides/your-data#default-usage-policies-by-endpoint"
+  );
 }
 
 onMounted(() => {
@@ -114,8 +116,9 @@ onMounted(() => {
         </p>
         <p class="mt-3 text-sm leading-7 text-[var(--muted)]">
           TryRevive 不把上传原文写入 D1 数据库，也不使用 OpenAI Files API 持久化文件；分析请求使用
-          <code>store: false</code>。这不等于第三方没有任何安全日志。OpenAI
-          的滥用监测日志可能按其数据控制规则短期保留，当前产品提示上限为 30 天。
+          <code>store: false</code>，请求不把响应作为可复用应用状态保存。这不等于退出安全日志：OpenAI
+          默认滥用监测日志可能包含提示、输出和由内容派生的元数据，默认最长保留 30
+          天；如果法律要求，或为保护服务与第三方免受伤害而合理必要，可能保留更久。
         </p>
         <p class="mt-3 text-sm leading-7 text-[var(--muted)]">
           为协助识别滥用，每次项目分析还会向 OpenAI 发送一个稳定匿名标识。TryRevive

@@ -8,7 +8,7 @@ export const OPENAI_UPLOAD_NOTICE =
   "只有在你确认后，所选内容才会发送给 TryRevive 云端，并由 OpenAI 完成转写或项目理解。";
 
 export const OPENAI_RETENTION_NOTICE =
-  "TryRevive 不在项目账本中保存原始内容，OpenAI Responses 请求设置为 store:false。每次项目分析还会发送由随机云账号 ID、固定用途前缀和 SHA-256 生成的稳定匿名标识；OpenAI 可以据此关联同一匿名账号的多次分析请求，但原始账号 ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不用于该标识。OpenAI 仍可能按默认安全策略保留滥用监测日志最多 30 天；可在隐私中心导出或删除云端账户。";
+  "TryRevive 不在项目账本中保存原始内容，OpenAI Responses 请求设置为 store:false；这不等于退出滥用监测日志。每次项目分析还会发送由随机云账号 ID、固定用途前缀和 SHA-256 生成的稳定匿名标识；OpenAI 可以据此关联同一匿名账号的多次分析请求，但原始账号 ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不用于该标识。OpenAI 默认滥用监测日志最长保留 30 天；如果法律要求，或为保护服务与第三方免受伤害而合理必要，可能保留更久。";
 
 function unavailable(message) {
   return Response.json(
