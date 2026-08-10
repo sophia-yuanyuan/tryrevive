@@ -24,6 +24,6 @@ export default defineConfig({
   build: {
     outDir: path.resolve(projectRoot, "dist/web"),
     emptyOutDir: true,
-    sourcemap: true
+    sourcemap: false
   }
 });
