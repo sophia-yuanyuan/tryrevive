@@ -127,14 +127,18 @@ curl.exe -I https://www.tryrevive.online
 
 官方参考：[Pages 自定义域名](https://developers.cloudflare.com/pages/configuration/custom-domains/)。
 
-## 5. 安装 Wrangler，只登录自己的 Cloudflare 账户
+## 5. 使用仓库锁定的 Wrangler，只登录自己的 Cloudflare 账户
 
 在当前仓库根目录打开 PowerShell：
 
 ```powershell
-npx wrangler@4 login
-npx wrangler@4 whoami
+npm ci
+npm exec wrangler -- --version
+npm exec wrangler -- login
+npm exec wrangler -- whoami
 ```
+
+仓库把 Wrangler 精确锁定为 `4.120.0`，不要再用会临时下载不同版本的 `npx wrangler@4`。Windows 如果提示 `workerd` 退出码 `3221225781` 或缺少 `vcruntime140.dll`，先安装微软官方 [Visual C++ v14 x64 Redistributable](https://aka.ms/vc14/vc_redist.x64.exe)，再重新运行。当前开发机已验证 `workerd 2026-08-01` 和 Worker dry-run 可用。
 
 浏览器会打开 Cloudflare 授权页。只确认账户名与 Account ID，不要把授权结果截图公开。`whoami` 显示错误账户就立即停止并 logout。
 
@@ -145,7 +149,7 @@ Wrangler 的 Secret 命令会创建新的 Worker 版本；因此下面始终先�
 ### 6.1 创建 staging D1
 
 ```powershell
-npx wrangler@4 d1 create tryrevive-cloud-staging
+npm exec wrangler -- d1 create tryrevive-cloud-staging
 ```
 
 复制命令返回的 `database_id`。它不是 API Key，但也不要随意公开账户元数据。
@@ -169,8 +173,8 @@ Copy-Item worker\wrangler.cloud.example.toml worker\wrangler.cloud.staging.toml
 ### 6.2 应用三段 D1 迁移
 
 ```powershell
-npx wrangler@4 d1 migrations list tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
-npx wrangler@4 d1 migrations apply tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- d1 migrations list tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- d1 migrations apply tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 ```
 
 通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql` 都显示已应用。Cloudflare 会在应用迁移前创建备份；任何一段失败都不要手工跳号。
@@ -178,7 +182,7 @@ npx wrangler@4 d1 migrations apply tryrevive-cloud-staging --remote --config wor
 ### 6.3 以“全部关闭”状态首次部署
 
 ```powershell
-npx wrangler@4 deploy --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 ```
 
 打开返回的 `workers.dev` 地址并访问 `/v1/cloud/catalog`。通过条件：`available=true`，但 `analysisAvailable=false`、`paymentAvailable=false`。这证明账本在线、真实上游仍安全关闭。
@@ -215,7 +219,7 @@ curl.exe https://staging-api.tryrevive.online/v1/cloud/catalog
 在 OpenAI Project 创建 Project-scoped API Key，设置项目预算与告警。然后执行：
 
 ```powershell
-npx wrangler@4 secret put OPENAI_API_KEY --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- secret put OPENAI_API_KEY --config worker\wrangler.cloud.staging.toml
 ```
 
 在提示中粘贴 Key。不要把 Key 写入命令本身、`.toml`、`.env`、聊天或截图。
@@ -232,7 +236,7 @@ OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 只有审核记录完成后才把批准开关改为 `true`，再部署：
 
 ```powershell
-npx wrangler@4 deploy --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 ```
 
 验收 `/v1/cloud/catalog`：`analysisAvailable=true`。如果仍为 false，检查四项是否同时存在：服务开关、批准开关、Secret、非占位模型名。
@@ -273,8 +277,8 @@ Stripe Dashboard → Developers → Webhooks → 添加：
 ### 8.3 添加两个 Secret 并启用测试支付
 
 ```powershell
-npx wrangler@4 secret put STRIPE_SECRET_KEY --config worker\wrangler.cloud.staging.toml
-npx wrangler@4 secret put STRIPE_WEBHOOK_SECRET --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- secret put STRIPE_SECRET_KEY --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- secret put STRIPE_WEBHOOK_SECRET --config worker\wrangler.cloud.staging.toml
 ```
 
 分别粘贴 `sk_test_...` 与刚才 endpoint 的 `whsec_...`。然后配置：

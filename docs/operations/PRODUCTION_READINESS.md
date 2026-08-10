@@ -12,7 +12,7 @@
 - 根域当前没有公开 A 或 AAAA 记录。
 - `www.tryrevive.online`、`api.tryrevive.online`、`staging-api.tryrevive.online` 当前返回 NXDOMAIN。
 - 父区没有公开 DS 记录；根域也没有公开 MX、TXT 或 CAA 记录。迁移前仍须在阿里云控制台截图或导出记录，不能把公共查询当作完整 Zone 导出。
-- GitHub CLI 已登录仓库所有者账号并具备 `repo` 与 `workflow` scope；本机项目依赖中仍没有 Wrangler，也没有发现 `CLOUDFLARE_*`、`STRIPE_*`、`OPENAI_*`、`TRYREVIVE_*` 环境变量名称。
+- GitHub CLI 已登录仓库所有者账号并具备 `repo` 与 `workflow` scope；仓库已精确锁定 Wrangler `4.120.0`，本机 `workerd 2026-08-01` 与 Worker dry-run 已通过，但尚未登录 Cloudflare，也没有发现 `CLOUDFLARE_*`、`STRIPE_*`、`OPENAI_*`、`TRYREVIVE_*` 环境变量名称。
 - 因此，仓库现在不能诚实声称生产域名、真实 OpenAI、真实 Stripe 付款或远端 E2E 已经上线/通过。
 
 以上事实来自公开 DNS-over-HTTPS 与本机只读检查，不证明域名注册人身份，也不读取任何 Secret 值。
