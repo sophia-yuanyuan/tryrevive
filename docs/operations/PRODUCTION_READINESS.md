@@ -19,7 +19,7 @@
 
 ## 仓库已经具备的上线门禁
 
-1. OpenAI staging 审核与正式批准分离：`review` 只允许合成审核，Windows 客户端拒绝上传；production 必须明确报告 `analysisMode=approved`。
+1. OpenAI staging 审核与正式批准分离：`review` 只允许合成审核，Windows 客户端拒绝上传；审核报告和 production preflight 同时锁定模型与 `reasoning.effort`，production 必须明确报告 `analysisMode=approved`。
 2. Stripe 测试付款与真实付款分开；live key 还必须有 `CLOUD_PAYMENT_LIVE_ENABLED=true`。
 3. 付款只由验签后的 Checkout webhook 入账。重复事件、不同事件重复指向同一订单都只入账一次。
 4. `npm run verify:production` 同时验证：

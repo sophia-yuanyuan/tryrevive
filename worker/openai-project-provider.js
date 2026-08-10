@@ -2,6 +2,8 @@ import { extractResponseText } from "./cloud-core.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+const DEFAULT_REASONING_EFFORT = "medium";
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 const PROJECT_ANALYSIS_SCHEMA = {
   type: "object",
@@ -87,6 +89,14 @@ function safeSafetyIdentifier(value) {
     throw new Error("OpenAI safety identifier must be a SHA-256 hex digest");
   }
   return identifier;
+}
+
+function safeReasoningEffort(value) {
+  const effort = requiredSecret(value, "OpenAI reasoning effort").toLowerCase();
+  if (!REASONING_EFFORTS.has(effort)) {
+    throw new Error("OpenAI reasoning effort is invalid");
+  }
+  return effort;
 }
 
 function safeBaseUrl(value) {
@@ -177,7 +187,13 @@ function userPrompt(projectTitle, sourceDescription) {
   return `项目名称：${projectTitle}\n\n请从下面的${sourceDescription}中恢复项目现场。先判断用户最初想完成什么、目前有明确证据做到哪里、卡点是什么，再给出唯一一个最小下一步。输出只作为待用户确认或修改的草稿。`;
 }
 
-function responseBody({ analysisModel, projectTitle, source, safetyIdentifier }) {
+function responseBody({
+  analysisModel,
+  reasoningEffort,
+  projectTitle,
+  source,
+  safetyIdentifier
+}) {
   const content = [];
   if (source.metadata.kind === "attachment") {
     content.push({
@@ -195,6 +211,7 @@ function responseBody({ analysisModel, projectTitle, source, safetyIdentifier })
   }
   return {
     model: analysisModel,
+    reasoning: { effort: reasoningEffort },
     safety_identifier: safetyIdentifier,
     store: false,
     max_output_tokens: 1800,
@@ -216,12 +233,14 @@ function responseBody({ analysisModel, projectTitle, source, safetyIdentifier })
 export function createOpenAIProjectProvider({
   apiKey,
   analysisModel,
+  reasoningEffort = DEFAULT_REASONING_EFFORT,
   transcriptionModel = DEFAULT_TRANSCRIPTION_MODEL,
   baseUrl = DEFAULT_BASE_URL,
   fetchImpl = globalThis.fetch
 }) {
   const key = requiredSecret(apiKey, "OpenAI API key");
   const model = safeModel(analysisModel, "OpenAI analysis model");
+  const effort = safeReasoningEffort(reasoningEffort);
   const speechModel = safeModel(transcriptionModel, "OpenAI transcription model");
   const apiBaseUrl = safeBaseUrl(baseUrl);
   if (typeof fetchImpl !== "function") throw new Error("fetch implementation is required");
@@ -263,6 +282,7 @@ export function createOpenAIProjectProvider({
       body: JSON.stringify(
         responseBody({
           analysisModel: model,
+          reasoningEffort: effort,
           projectTitle,
           source: analysisSource,
           safetyIdentifier: safeIdentifier
@@ -282,5 +302,5 @@ export function createOpenAIProjectProvider({
     }
   }
 
-  return Object.freeze({ available: true, analyze });
+  return Object.freeze({ available: true, analysisModel: model, reasoningEffort: effort, analyze });
 }

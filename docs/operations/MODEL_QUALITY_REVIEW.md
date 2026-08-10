@@ -27,6 +27,7 @@ CLOUD_PROVIDER_ENABLED = "true"
 OPENAI_MODEL_REVIEW_ENABLED = "true"
 OPENAI_MODEL_APPROVED = "false"
 OPENAI_ANALYSIS_MODEL = "实际候选模型 ID"
+OPENAI_REASONING_EFFORT = "medium"
 OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 ```
 
@@ -43,18 +44,19 @@ npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 curl.exe https://tryrevive-cloud-staging.tryrevive.workers.dev/v1/cloud/catalog
 ```
 
-只有同时看到 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel` 与候选模型 ID 完全一致才进入审核。工作流也会自动核对这两个模型名。若返回 `approved`，立即停止：候选模型已被错误地提前标记批准。
+只有同时看到 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel`、`analysisReasoningEffort` 与候选配置完全一致才进入审核。工作流会自动核对模型与 reasoning effort。若返回 `approved`，立即停止：候选配置已被错误地提前标记批准。
 
 ## 3. 运行 10 份合成样本
 
 GitHub → Actions → `Staging model quality review` → `Run workflow`：
 
 1. `model_label` 填 staging 配置中的准确模型 ID；
-2. `confirm_staging_usage` 选择 `I_ACCEPT_10_MODEL_REVIEWS`；
-3. 运行只使用 `tryrevive-staging` Environment 与现有合成测试会话；
-4. 每次消耗 10 次项目分析和至少 1 分钟语音额度；取消选项不会启动 job；
-5. 工作流现场生成 WAV、PDF、DOCX，另使用 7 份中英文合成文字，共 10 份；
-6. 下载 artifact `tryrevive-model-review-<run id>` 中的 Markdown 报告。
+2. `reasoning_effort` 选择 staging 实际部署的准确值；
+3. `confirm_staging_usage` 选择 `I_ACCEPT_10_MODEL_REVIEWS`；
+4. 运行只使用 `tryrevive-staging` Environment 与现有合成测试会话；
+5. 每次消耗 10 次项目分析和至少 1 分钟语音额度；取消选项不会启动 job；
+6. 工作流现场生成 WAV、PDF、DOCX，另使用 7 份中英文合成文字，共 10 份；
+7. 下载 artifact `tryrevive-model-review-<run id>` 中的 Markdown 报告；报告必须同时写明模型与 reasoning effort。
 
 自动硬门禁检查：
 
@@ -78,13 +80,13 @@ GitHub → Actions → `Staging model quality review` → `Run workflow`：
 4. 下一步只有一件且 5–20 分钟可做吗？
 5. 是否存在任何虚构完成或偷偷猜测？
 
-任一项不通过：保持 `OPENAI_MODEL_APPROVED=false`，修改提示词或更换候选模型，用同一批样本重跑。不得挑选表现好的样本删除失败记录。
+任一项不通过：保持 `OPENAI_MODEL_APPROVED=false`，修改提示词、reasoning effort 或候选模型，用同一批样本重跑。不得挑选表现好的样本删除失败记录。
 
 全部通过后，把填完的报告保存为：
 
 `docs/operations/model-reviews/YYYY-MM-DD-<model-id>.md`
 
-并把同一个准确模型 ID 写入受保护的 GitHub `tryrevive-production` Environment Secret `TRYREVIVE_APPROVED_MODEL`。模型 ID 不是 API Key，但用受保护值可以让 production preflight 证明线上实际模型与签字报告一致。
+并把准确模型 ID 与 reasoning effort 分别写入受保护的 GitHub `tryrevive-production` Environment Secrets `TRYREVIVE_APPROVED_MODEL`、`TRYREVIVE_APPROVED_REASONING_EFFORT`。它们不是 API Key，但可以让 production preflight 证明线上实际推理配置与签字报告一致。
 
 由产品负责人确认后，staging 配置才改为：
 
@@ -93,6 +95,7 @@ CLOUD_DEPLOYMENT_ENVIRONMENT = "staging"
 CLOUD_PROVIDER_ENABLED = "true"
 OPENAI_MODEL_REVIEW_ENABLED = "false"
 OPENAI_MODEL_APPROVED = "true"
+OPENAI_REASONING_EFFORT = "与签字报告一致的值"
 ```
 
 重新部署并确认目录返回 `analysisMode=approved`，再运行 `Remote cloud acceptance` 验证语音/PDF/DOCX、余额不足、重复请求和上游退款。
@@ -105,9 +108,10 @@ production 必须使用独立 Worker、D1 和 OpenAI Project Key，并设置：
 CLOUD_DEPLOYMENT_ENVIRONMENT = "production"
 OPENAI_MODEL_REVIEW_ENABLED = "false"
 OPENAI_MODEL_APPROVED = "true"
+OPENAI_REASONING_EFFORT = "与签字报告一致的值"
 ```
 
-生产预检拒绝 `analysisMode=review`，也会比较 catalog 的 `analysisModel` 与受保护的 `TRYREVIVE_APPROVED_MODEL`。模型审核报告、远端 E2E、隐私法律事实、域名验证和支付验收缺一项，都不启用 production。
+生产预检拒绝 `analysisMode=review`，也会比较 catalog 的 `analysisModel`、`analysisReasoningEffort` 与受保护的审核配置。模型审核报告、远端 E2E、隐私法律事实、域名验证和支付验收缺一项，都不启用 production。
 
 ## 6. 回退
 

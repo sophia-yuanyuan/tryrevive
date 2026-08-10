@@ -37,6 +37,7 @@ export function createProviderFromEnvironment(env) {
     return createOpenAIProjectProvider({
       apiKey: env.OPENAI_API_KEY,
       analysisModel: env.OPENAI_ANALYSIS_MODEL,
+      reasoningEffort: env.OPENAI_REASONING_EFFORT || "medium",
       transcriptionModel: env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe"
     });
   } catch {
@@ -84,7 +85,8 @@ export default {
       repository,
       provider,
       analysisMode,
-      analysisModel: provider ? env.OPENAI_ANALYSIS_MODEL : null,
+      analysisModel: provider ? provider.analysisModel : null,
+      analysisReasoningEffort: provider ? provider.reasoningEffort : null,
       paymentProvider,
       randomToken,
       uploadNotice: provider

@@ -1,4 +1,5 @@
 const USER_FIELDS = ["originalGoal", "lastCompleted", "stuckAt", "deadline", "whyMatters"];
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 function normalized(value) {
   return typeof value === "string" ? value.trim().toLocaleLowerCase("zh-CN") : "";
@@ -22,6 +23,14 @@ export function validateModelLabel(value) {
     throw new Error("reviewed model label must be a non-placeholder model id");
   }
   return label;
+}
+
+export function validateReasoningEffort(value) {
+  const effort = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!REASONING_EFFORTS.has(effort)) {
+    throw new Error("reviewed reasoning effort must be explicit and supported");
+  }
+  return effort;
 }
 
 export function evaluateModelDraft(reviewCase, draft) {
@@ -78,7 +87,13 @@ function checkbox(label) {
   return `- [ ] ${label}`;
 }
 
-export function renderModelReviewReport({ modelLabel, commitSha, actor, results }) {
+export function renderModelReviewReport({
+  modelLabel,
+  reasoningEffort,
+  commitSha,
+  actor,
+  results
+}) {
   const hardIssueCount = results.reduce((total, result) => total + result.issues.length, 0);
   const lines = [
     "# TryRevive staging 模型恢复质量审核",
@@ -86,11 +101,12 @@ export function renderModelReviewReport({ modelLabel, commitSha, actor, results 
     `- 自动硬门禁：${hardIssueCount === 0 ? "PASS" : "FAIL"}`,
     "- 人工审核：REQUIRED（自动 PASS 不等于模型已批准）",
     `- 模型标签：\`${modelLabel}\``,
+    `- Reasoning effort：\`${reasoningEffort}\``,
     `- 代码 commit：\`${commitSha}\``,
     `- 工作流发起人：\`${actor}\``,
     `- 样本数：${results.length}`,
     "",
-    "只有 10 份样本全部完成人工复核并由产品负责人签字后，才能把 `OPENAI_MODEL_APPROVED` 改为 `true`。",
+    "只有 10 份样本全部完成人工复核并由产品负责人签字后，才能把同一模型和 reasoning effort 标记为已批准。",
     ""
   ];
 

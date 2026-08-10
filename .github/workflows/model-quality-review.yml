@@ -7,6 +7,18 @@ on:
         description: Exact staging analysis model id recorded for this review
         required: true
         type: string
+      reasoning_effort:
+        description: Exact GPT-5.6 reasoning effort deployed to staging
+        required: true
+        default: medium
+        type: choice
+        options:
+          - none
+          - low
+          - medium
+          - high
+          - xhigh
+          - max
       confirm_staging_usage:
         description: This run consumes 10 project analyses and at least 1 speech minute
         required: true
@@ -46,6 +58,7 @@ jobs:
           TRYREVIVE_REMOTE_FIXTURE_DIR: "${{ runner.temp }}\tryrevive-model-review-fixtures"
           TRYREVIVE_REMOTE_FUNDED_SESSION: "${{ secrets.TRYREVIVE_REMOTE_FUNDED_SESSION }}"
           TRYREVIVE_MODEL_REVIEW_LABEL: "${{ inputs.model_label }}"
+          TRYREVIVE_MODEL_REVIEW_REASONING_EFFORT: "${{ inputs.reasoning_effort }}"
           TRYREVIVE_MODEL_REVIEW_COMMIT: "${{ github.sha }}"
           TRYREVIVE_MODEL_REVIEW_ACTOR: "${{ github.actor }}"
           TRYREVIVE_MODEL_REVIEW_REPORT: "${{ runner.temp }}\tryrevive-model-review.md"

@@ -68,6 +68,7 @@ test("text analysis uses server authorization, store:false and strict structured
   assert.equal(calls[0].options.headers.authorization, "Bearer server-secret");
   const body = JSON.parse(calls[0].options.body);
   assert.equal(body.model, "approved-analysis-model");
+  assert.deepEqual(body.reasoning, { effort: "medium" });
   assert.equal(body.safety_identifier, SAFETY_IDENTIFIER);
   assert.equal(body.store, false);
   assert.equal(body.text.format.type, "json_schema");
@@ -204,6 +205,15 @@ test("analysis rejects missing or raw safety identifiers before sending content 
 
 test("configuration rejects missing, placeholder, and insecure provider settings", () => {
   assert.throws(
+    () =>
+      createOpenAIProjectProvider({
+        apiKey: "server-secret",
+        analysisModel: "approved",
+        reasoningEffort: "automatic"
+      }),
+    /reasoning effort is invalid/
+  );
+  assert.throws(
     () => createOpenAIProjectProvider({ apiKey: "", analysisModel: "approved" }),
     /API key is required/
   );
@@ -257,8 +267,8 @@ test("the production provider remains off until every server-side gate is explic
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "approved"
-    })?.available,
-    true
+    })?.reasoningEffort,
+    "medium"
   );
   assert.equal(
     createProviderFromEnvironment({
@@ -276,9 +286,10 @@ test("the production provider remains off until every server-side gate is explic
       CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
       OPENAI_API_KEY: "server-secret",
-      OPENAI_ANALYSIS_MODEL: "review-candidate"
-    })?.available,
-    true
+      OPENAI_ANALYSIS_MODEL: "review-candidate",
+      OPENAI_REASONING_EFFORT: "low"
+    })?.reasoningEffort,
+    "low"
   );
   assert.equal(
     providerModeFromEnvironment({

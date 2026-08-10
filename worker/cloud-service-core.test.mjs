@@ -387,6 +387,7 @@ function createHarness({
   provider = null,
   analysisMode = null,
   analysisModel = null,
+  analysisReasoningEffort = "medium",
   paymentProvider = null,
   now = 1_800_000_000_000
 } = {}) {
@@ -398,6 +399,7 @@ function createHarness({
     provider,
     analysisMode,
     analysisModel,
+    analysisReasoningEffort,
     paymentProvider,
     now: () => now,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
@@ -743,6 +745,7 @@ test("production-disabled providers reject reservations without charging anythin
   assert.equal(catalog.body.analysisAvailable, false);
   assert.equal(catalog.body.analysisMode, "disabled");
   assert.equal(catalog.body.analysisModel, null);
+  assert.equal(catalog.body.analysisReasoningEffort, null);
 
   const source = {
     kind: "text",
@@ -768,23 +771,27 @@ test("catalog separates a staging review provider from an approved provider", as
   const review = createHarness({
     provider,
     analysisMode: "review",
-    analysisModel: "review-candidate"
+    analysisModel: "review-candidate",
+    analysisReasoningEffort: "low"
   });
   const approved = createHarness({
     provider,
     analysisMode: "approved",
-    analysisModel: "approved-model"
+    analysisModel: "approved-model",
+    analysisReasoningEffort: "high"
   });
 
   const reviewCatalog = await request(review.service, "/v1/cloud/catalog");
   assert.equal(reviewCatalog.body.analysisAvailable, true);
   assert.equal(reviewCatalog.body.analysisMode, "review");
   assert.equal(reviewCatalog.body.analysisModel, "review-candidate");
+  assert.equal(reviewCatalog.body.analysisReasoningEffort, "low");
 
   const approvedCatalog = await request(approved.service, "/v1/cloud/catalog");
   assert.equal(approvedCatalog.body.analysisAvailable, true);
   assert.equal(approvedCatalog.body.analysisMode, "approved");
   assert.equal(approvedCatalog.body.analysisModel, "approved-model");
+  assert.equal(approvedCatalog.body.analysisReasoningEffort, "high");
 });
 
 test("authenticated users can export cloud data without credential hashes or source content", async () => {

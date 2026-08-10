@@ -5,6 +5,8 @@ const API_ORIGIN = "https://api.tryrevive.online";
 const VERIFICATION_NAME = `_tryrevive-owner.${DOMAIN}`;
 const EXPECTED_TOKEN = process.env.TRYREVIVE_DOMAIN_VERIFICATION_TOKEN || "";
 const EXPECTED_MODEL = process.env.TRYREVIVE_APPROVED_MODEL || "";
+const EXPECTED_REASONING_EFFORT = process.env.TRYREVIVE_APPROVED_REASONING_EFFORT || "";
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 async function dns(name, type) {
   const response = await fetch(
@@ -79,6 +81,15 @@ async function verifyHttps() {
   assert.match(body.analysisModel || "", /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
   assert.match(EXPECTED_MODEL, /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
   assert.equal(body.analysisModel, EXPECTED_MODEL, "production model differs from signed review");
+  assert.ok(
+    REASONING_EFFORTS.has(EXPECTED_REASONING_EFFORT),
+    "approved reasoning effort secret is missing or invalid"
+  );
+  assert.equal(
+    body.analysisReasoningEffort,
+    EXPECTED_REASONING_EFFORT,
+    "production reasoning effort differs from signed review"
+  );
   assert.equal(body.paymentAvailable, true, "reviewed payment provider is not enabled");
 }
 

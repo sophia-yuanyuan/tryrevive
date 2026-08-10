@@ -13,6 +13,7 @@ const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 const DEFAULT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_QUOTE_MS = 10 * 60 * 1000;
 const DEFAULT_RESERVATION_MS = 10 * 60 * 1000;
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 const textEncoder = new TextEncoder();
 
 class HttpError extends Error {
@@ -213,6 +214,7 @@ export function createCloudService({
   provider = null,
   analysisMode = null,
   analysisModel = null,
+  analysisReasoningEffort = "medium",
   paymentProvider = null,
   now = () => Date.now(),
   randomToken,
@@ -247,6 +249,11 @@ export function createCloudService({
         providerAvailable(provider) && typeof analysisModel === "string"
           ? analysisModel.trim().slice(0, 120) || null
           : null,
+      analysisReasoningEffort: providerAvailable(provider)
+        ? REASONING_EFFORTS.has(analysisReasoningEffort)
+          ? analysisReasoningEffort
+          : null
+        : null,
       paymentAvailable: paymentProviderAvailable(paymentProvider),
       units: ["speechMinutes", "projectAnalyses"],
       limits: {

@@ -5,7 +5,8 @@ import test from "node:test";
 import {
   evaluateModelDraft,
   renderModelReviewReport,
-  validateModelLabel
+  validateModelLabel,
+  validateReasoningEffort
 } from "./model-quality-core.mjs";
 import { MODEL_REVIEW_CASES } from "./model-review-cases.mjs";
 
@@ -15,6 +16,7 @@ const FUNDED_TOKEN = process.env.TRYREVIVE_REMOTE_FUNDED_SESSION || "";
 const FIXTURE_DIRECTORY = process.env.TRYREVIVE_REMOTE_FIXTURE_DIR || "";
 const REPORT_PATH = process.env.TRYREVIVE_MODEL_REVIEW_REPORT || "";
 const MODEL_LABEL = process.env.TRYREVIVE_MODEL_REVIEW_LABEL || "";
+const REASONING_EFFORT = process.env.TRYREVIVE_MODEL_REVIEW_REASONING_EFFORT || "";
 const COMMIT_SHA = process.env.TRYREVIVE_MODEL_REVIEW_COMMIT || "unknown";
 const ACTOR = process.env.TRYREVIVE_MODEL_REVIEW_ACTOR || "unknown";
 
@@ -30,7 +32,10 @@ function assertReviewConfiguration() {
   assert.ok(path.isAbsolute(FIXTURE_DIRECTORY), "absolute synthetic fixture directory is required");
   assert.ok(path.isAbsolute(REPORT_PATH), "absolute model review report path is required");
   assert.equal(MODEL_REVIEW_CASES.length, 10, "exactly ten model review cases are required");
-  return validateModelLabel(MODEL_LABEL);
+  return {
+    modelLabel: validateModelLabel(MODEL_LABEL),
+    reasoningEffort: validateReasoningEffort(REASONING_EFFORT)
+  };
 }
 
 async function api(endpoint, { method = "GET", token, body, headers = {} } = {}) {
@@ -133,7 +138,7 @@ test(
   "staging model preserves ten synthetic project contexts before human approval",
   { skip: !ENABLED, timeout: 20 * 60 * 1000 },
   async () => {
-    const modelLabel = assertReviewConfiguration();
+    const { modelLabel, reasoningEffort } = assertReviewConfiguration();
     const catalog = await api("/v1/cloud/catalog");
     assert.equal(catalog.response.status, 200);
     assert.equal(catalog.body.analysisAvailable, true, "staging analysis provider is not enabled");
@@ -146,6 +151,11 @@ test(
       catalog.body.analysisModel,
       modelLabel,
       "workflow model label does not match the deployed staging model"
+    );
+    assert.equal(
+      catalog.body.analysisReasoningEffort,
+      reasoningEffort,
+      "workflow reasoning effort does not match the deployed staging profile"
     );
 
     const results = [];
@@ -165,6 +175,7 @@ test(
 
     const report = renderModelReviewReport({
       modelLabel,
+      reasoningEffort,
       commitSha: COMMIT_SHA,
       actor: ACTOR,
       results

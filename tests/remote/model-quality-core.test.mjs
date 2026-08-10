@@ -3,7 +3,8 @@ import test from "node:test";
 import {
   evaluateModelDraft,
   renderModelReviewReport,
-  validateModelLabel
+  validateModelLabel,
+  validateReasoningEffort
 } from "./model-quality-core.mjs";
 import { MODEL_REVIEW_CASES } from "./model-review-cases.mjs";
 
@@ -72,11 +73,13 @@ test("English cases fail when user-facing output silently changes language", () 
 test("review report says automated checks are not model approval", () => {
   const report = renderModelReviewReport({
     modelLabel: validateModelLabel("gpt-review-candidate"),
+    reasoningEffort: validateReasoningEffort("medium"),
     commitSha: "abc1234",
     actor: "reviewer",
     results: [{ reviewCase, draft: passingDraft(), issues: [] }]
   });
   assert.match(report, /自动 PASS 不等于模型已批准/);
+  assert.match(report, /Reasoning effort：`medium`/);
   assert.match(report, /产品负责人逐项确认/);
   assert.match(report, /APPROVE_STAGING \/ REJECT/);
 });
@@ -85,6 +88,12 @@ test("model labels reject placeholders and secret-shaped free text", () => {
   assert.equal(validateModelLabel("gpt-review-candidate"), "gpt-review-candidate");
   assert.throws(() => validateModelLabel("REPLACE_MODEL"));
   assert.throws(() => validateModelLabel("model label with spaces"));
+});
+
+test("reasoning effort must be one explicit supported value", () => {
+  assert.equal(validateReasoningEffort("MEDIUM"), "medium");
+  assert.throws(() => validateReasoningEffort(""));
+  assert.throws(() => validateReasoningEffort("automatic"));
 });
 
 test("review catalog contains ten unique bilingual cases across text, voice, PDF, and DOCX", () => {

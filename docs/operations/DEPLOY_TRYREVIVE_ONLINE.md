@@ -249,6 +249,8 @@ npm exec wrangler -- secret put OPENAI_API_KEY --config worker\wrangler.cloud.st
 
 在提示中粘贴 Key。不要把 Key 写入命令本身、`.toml`、`.env`、聊天或截图。
 
+如果 OpenAI API keys 页面显示缺少 `api.organization.projects.api_keys.self.write`，说明当前账号在这个 Project 中没有为自己创建 Key 的角色权限。优先在自己控制的 Organization 中新建 `TryRevive` Project；若这是团队 Project，则由 Organization Owner 为当前用户分配包含该权限的项目角色。不要借用第三方 Project 或让管理员把 Key 通过聊天转发。角色权限参考 [OpenAI Roles API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/roles)。
+
 编辑 staging 配置时先保持 review 模式并填入候选模型：
 
 ```toml
@@ -257,10 +259,11 @@ CLOUD_PROVIDER_ENABLED = "true"
 OPENAI_MODEL_REVIEW_ENABLED = "true"
 OPENAI_MODEL_APPROVED = "false"
 OPENAI_ANALYSIS_MODEL = "gpt-5.6-luna"
+OPENAI_REASONING_EFFORT = "medium"
 OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 ```
 
-部署后先通过当前 workers.dev staging 地址确认 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel` 与候选模型 ID 完全一致，再手动运行 10 份样本审核。只有人工签字完成后才改为：
+部署后先通过当前 workers.dev staging 地址确认 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel`、`analysisReasoningEffort` 与候选配置完全一致，再手动运行 10 份样本审核。只有人工签字完成后才改为：
 
 ```toml
 OPENAI_MODEL_REVIEW_ENABLED = "false"
@@ -273,7 +276,7 @@ OPENAI_MODEL_APPROVED = "true"
 npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 ```
 
-验收 `/v1/cloud/catalog`：`analysisAvailable=true`、`analysisMode=approved`，且 `analysisModel` 与审核记录一致。如果仍不可用，检查部署环境、服务开关、review/approved 两个互斥开关、Secret 和非占位模型名。
+验收 `/v1/cloud/catalog`：`analysisAvailable=true`、`analysisMode=approved`，且 `analysisModel`、`analysisReasoningEffort` 与审核记录一致。如果仍不可用，检查部署环境、服务开关、review/approved 两个互斥开关、Secret、非占位模型名和 reasoning effort。
 
 官方参考：[OpenAI 当前模型](https://developers.openai.com/api/docs/models)、[GPT-4o mini Transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe)、[Cloudflare Worker Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)。
 
@@ -433,9 +436,10 @@ $domainToken
 
 - `TRYREVIVE_DOMAIN_VERIFICATION_TOKEN`
 
-模型质量人工审核通过后，再添加审核报告中的准确模型 ID：
+模型质量人工审核通过后，再添加审核报告中的准确模型 ID 与 reasoning effort：
 
 - `TRYREVIVE_APPROVED_MODEL`
+- `TRYREVIVE_APPROVED_REASONING_EFFORT`
 
 这个 TXT 值公开可见；Environment Secret 的作用是让受保护门禁证明“控制 DNS 的值与产品负责人保存的期望值一致”。
 
@@ -449,7 +453,7 @@ $domainToken
 2. 从示例重新创建 `worker/wrangler.cloud.production.toml`，填 production D1 ID。
 3. 依次应用三段迁移。
 4. 先以所有开关 false 部署 `tryrevive-cloud-production`。
-5. 配置 production 专用 OpenAI Project Key 与已审核模型；明确设置 `CLOUD_DEPLOYMENT_ENVIRONMENT="production"`、`OPENAI_MODEL_REVIEW_ENABLED="false"`、`OPENAI_MODEL_APPROVED="true"`。
+5. 配置 production 专用 OpenAI Project Key、已审核模型与同一个 reasoning effort；明确设置 `CLOUD_DEPLOYMENT_ENVIRONMENT="production"`、`OPENAI_MODEL_REVIEW_ENABLED="false"`、`OPENAI_MODEL_APPROVED="true"`。
 6. Stripe 切换 Live mode，重新创建 live Price 和 production webhook；test 的 `price_`、`sk_test_`、`whsec_` 不能复用。
 7. `CLOUD_PAYMENT_LIVE_ENABLED` 最后一个改为 `true`。在此之前 live key 即使误放入，也必须保持 `paymentAvailable=false`。
 8. 绑定 Worker Custom Domain：`api.tryrevive.online`。
@@ -460,7 +464,7 @@ production preflight 只有同时满足以下条件才会绿：
 - 根域、`www`、`api`、`staging-api` 都能解析；
 - 所有权 TXT 与 GitHub Environment Secret 完全一致；
 - 根域 HTTPS 不跳到外部域名；
-- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`analysisMode=approved`、`paymentAvailable=true`，且 `analysisModel` 与受保护的 `TRYREVIVE_APPROVED_MODEL` 完全一致。
+- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`analysisMode=approved`、`paymentAvailable=true`，且 `analysisModel`、`analysisReasoningEffort` 与受保护的审核配置完全一致。
 
 绿灯只能证明控制面接通，不证明模型质量、退款客服或法律文本已经被真实用户接受。
 
