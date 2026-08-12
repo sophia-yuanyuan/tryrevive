@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch, type CSSProperties } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
-import type { ProjectMood, RevivalProject } from "@/shared/domain/model";
-import { createProjectComposition } from "@/shared/audio/vinyl-music";
+import type { ProjectMood } from "@/shared/domain/model";
+import type { VinylPlanetItem } from "@/shared/reward/vinyl-planet";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import CompletionMoodPicker from "@/renderer/components/CompletionMoodPicker.vue";
 import VinylArtifact from "@/renderer/components/VinylArtifact.vue";
 
+const VinylPlanetScene = defineAsyncComponent(
+  () => import("@/renderer/components/VinylPlanetScene.vue")
+);
+
 const store = useRevivalStore();
 const { data, ready } = storeToRefs(store);
 const selectedId = ref<string | null>(null);
-const rotationX = ref(-9);
-const rotationY = ref(0);
+const planetScene = ref<{ resetView: () => void } | null>(null);
 const savingMood = ref(false);
 const error = ref("");
 
@@ -33,12 +36,15 @@ const selectedProject = computed(
     collection.value[0] ??
     null
 );
-const visibleCompleted = computed(() => completed.value.slice(0, 12));
-const visibleAbandoned = computed(() => abandoned.value.slice(0, 8));
-const sceneStyle = computed<CSSProperties>(() => ({
-  "--scene-x": `${rotationX.value}deg`,
-  "--scene-y": `${rotationY.value}deg`
-}));
+const planetItems = computed<VinylPlanetItem[]>(() =>
+  collection.value.map((project) => ({
+    id: project.id,
+    title: project.title,
+    kind:
+      project.status === "abandoned" ? "abandoned" : project.reward ? "completed" : "awaiting_mood",
+    createdAt: project.reward?.createdAt ?? project.updatedAt
+  }))
+);
 
 watch(
   collection,
@@ -49,65 +55,6 @@ watch(
   },
   { immediate: true }
 );
-
-let drag: {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  rotationX: number;
-  rotationY: number;
-} | null = null;
-
-function beginDrag(event: PointerEvent): void {
-  const target = event.target as Element;
-  if (target.closest("button")) return;
-  drag = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    rotationX: rotationX.value,
-    rotationY: rotationY.value
-  };
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-}
-
-function moveDrag(event: PointerEvent): void {
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  rotationY.value = drag.rotationY + (event.clientX - drag.startX) * 0.35;
-  rotationX.value = Math.max(
-    -28,
-    Math.min(18, drag.rotationX - (event.clientY - drag.startY) * 0.18)
-  );
-}
-
-function endDrag(event: PointerEvent): void {
-  if (drag?.pointerId === event.pointerId) drag = null;
-}
-
-function rotate(horizontal: number, vertical = 0): void {
-  rotationY.value += horizontal;
-  rotationX.value = Math.max(-28, Math.min(18, rotationX.value + vertical));
-}
-
-function orbitStyle(project: RevivalProject, index: number, total: number): CSSProperties {
-  const seed = createProjectComposition(project).seed;
-  return {
-    "--orbit-angle": `${(360 / Math.max(1, total)) * index}deg`,
-    "--record-hue": `${seed % 360}`,
-    "--orbit-depth": `${10 + (seed % 5)}rem`
-  };
-}
-
-function memoryStyle(project: RevivalProject, index: number, total: number): CSSProperties {
-  const seed = createProjectComposition(project).seed;
-  const angle = (Math.PI * 2 * index) / Math.max(1, total);
-  return {
-    "--memory-left": `${76 + Math.cos(angle) * 13}%`,
-    "--memory-top": `${68 + Math.sin(angle) * 18}%`,
-    "--record-hue": `${seed % 360}`,
-    "--memory-rotate": `${-18 + (seed % 37)}deg`
-  };
-}
 
 async function saveMood(mood: ProjectMood): Promise<void> {
   if (!selectedProject.value) return;
@@ -157,73 +104,21 @@ async function saveMood(mood: ProjectMood): Promise<void> {
       <section class="collection-stage-card" aria-labelledby="planet-instructions">
         <div class="collection-stage-head">
           <p id="planet-instructions">拖动、触摸滑动，或用方向键转动星球。点击唱片查看详情。</p>
-          <button
-            class="text-button"
-            type="button"
-            @click="
-              rotationX = -9;
-              rotationY = 0;
-            "
-          >
+          <button class="text-button" type="button" @click="planetScene?.resetView()">
             回到正面
           </button>
         </div>
-        <div
-          class="collection-stage"
-          role="group"
-          aria-label="可旋转的黑胶星球收藏"
-          tabindex="0"
-          @pointerdown="beginDrag"
-          @pointermove="moveDrag"
-          @pointerup="endDrag"
-          @pointercancel="endDrag"
-          @keydown.left.prevent="rotate(-14)"
-          @keydown.right.prevent="rotate(14)"
-          @keydown.up.prevent="rotate(0, -6)"
-          @keydown.down.prevent="rotate(0, 6)"
-        >
-          <div class="collection-scene" :style="sceneStyle">
-            <div class="vinyl-planet-core" aria-hidden="true">
-              <span>TR</span>
-            </div>
-            <div class="planet-orbit-ring planet-orbit-ring-one" aria-hidden="true" />
-            <div class="planet-orbit-ring planet-orbit-ring-two" aria-hidden="true" />
-            <button
-              v-for="(project, index) in visibleCompleted"
-              :key="project.id"
-              class="planet-record-node"
-              :class="{ 'planet-record-selected': selectedProject?.id === project.id }"
-              :style="orbitStyle(project, index, visibleCompleted.length)"
-              type="button"
-              :aria-label="`查看已完成项目：${project.title}`"
-              @click.stop="selectedId = project.id"
-            >
-              <span>{{ project.title }}</span>
-            </button>
-
-            <button
-              v-if="abandoned.length"
-              class="black-hole-core"
-              type="button"
-              :aria-label="`查看黑洞中的 ${abandoned.length} 个已放下项目`"
-              @click.stop="selectedId = abandoned[0]?.id ?? null"
-            >
-              <span>黑洞历史</span>
-            </button>
-            <button
-              v-for="(project, index) in visibleAbandoned"
-              :key="project.id"
-              class="black-hole-memory"
-              :class="{ 'black-hole-memory-selected': selectedProject?.id === project.id }"
-              :style="memoryStyle(project, index, visibleAbandoned.length)"
-              type="button"
-              :aria-label="`查看已放下项目：${project.title}`"
-              @click.stop="selectedId = project.id"
-            >
-              <span>{{ project.title }}</span>
-            </button>
-          </div>
-        </div>
+        <Suspense>
+          <VinylPlanetScene
+            ref="planetScene"
+            :items="planetItems"
+            :selected-id="selectedProject?.id ?? null"
+            @select="selectedId = $event"
+          />
+          <template #fallback>
+            <div class="vinyl-planet-chunk-loading" role="status">正在准备本机 3D 星球…</div>
+          </template>
+        </Suspense>
       </section>
 
       <section class="collection-library" aria-label="全部项目收藏">
@@ -236,6 +131,8 @@ async function saveMood(mood: ProjectMood): Promise<void> {
               class="collection-list-item"
               :class="{ 'collection-list-item-active': selectedProject?.id === project.id }"
               type="button"
+              :aria-pressed="selectedProject?.id === project.id"
+              :aria-label="`查看已完成项目：${project.title}`"
               @click="selectedId = project.id"
             >
               <strong>{{ project.title }}</strong>
@@ -253,6 +150,8 @@ async function saveMood(mood: ProjectMood): Promise<void> {
               class="collection-list-item"
               :class="{ 'collection-list-item-active': selectedProject?.id === project.id }"
               type="button"
+              :aria-pressed="selectedProject?.id === project.id"
+              :aria-label="`查看已放下项目：${project.title}`"
               @click="selectedId = project.id"
             >
               <strong>{{ project.title }}</strong>

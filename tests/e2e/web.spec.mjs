@@ -59,6 +59,65 @@ async function playVinylRitual(page) {
   return ritual;
 }
 
+async function seedCollectionState(page) {
+  const now = 1_800_000_000_000;
+  const project = (id, title, status, mood = null) => ({
+    id,
+    schemaVersion: 6,
+    title,
+    stage: "closed",
+    status,
+    restore: { lastCompleted: "留下了真实结果", stuckAt: "", deadline: "", whyMatters: "验收" },
+    decision: status === "abandoned" ? "abandon" : "continue",
+    diagnosis: [],
+    action: null,
+    actionHistory: [],
+    evidence: [],
+    returnPlan: null,
+    analysis: null,
+    repository: null,
+    outcomeDraft: null,
+    reward: mood ? { mood, createdAt: now } : null,
+    createdAt: now - 10_000,
+    updatedAt: now
+  });
+  const state = {
+    schemaVersion: 6,
+    activeProjectId: null,
+    projects: [
+      project("planet-alpha", "完成唱片 Alpha", "completed", "proud"),
+      project("planet-beta", "完成唱片 Beta", "completed", "calm"),
+      project("planet-history", "已经放下的旧方向", "abandoned")
+    ],
+    pendingInference: null,
+    legacyMigrationCompleted: true,
+    updatedAt: now
+  };
+
+  await page.goto("/");
+  await page.evaluate(async (value) => {
+    await new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open("tryrevive", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("state")) {
+          request.result.createObjectStore("state");
+        }
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("state", "readwrite");
+        transaction.objectStore("state").put(value, "current");
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  }, state);
+}
+
 test("student can complete the P0 loop and resume after reload", async ({ page }) => {
   await completeRevivalLoop(page);
   await page.reload();
@@ -192,6 +251,12 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await page.getByRole("link", { name: "黑胶星球" }).first().click();
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
   await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
+  const planet = page.locator(".vinyl-planet-scene");
+  await expect(planet).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(page.getByRole("button", { name: "查看已完成项目：课程作品集" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
   await expect(page.getByRole("button", { name: "打开项目封套" })).toBeVisible();
   await expect(page.getByRole("region", { name: "可选的本机摄像头手势" })).toBeVisible();
   await expect(page.getByRole("button", { name: "同意说明并开启摄像头手势" })).toBeVisible();
@@ -211,6 +276,18 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("课程作品集.wav");
   await expect(page.getByText("WAV 已导出")).toBeVisible();
+
+  if ((await planet.getAttribute("data-renderer")) === "webgl") {
+    await planet.locator("canvas").dispatchEvent("webglcontextlost", { cancelable: true });
+  }
+  await expect(planet).toHaveAttribute("data-renderer", "fallback");
+  await expect(page.getByRole("button", { name: "查看已完成项目：课程作品集" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(
+    page.locator(".collection-detail > header").getByRole("heading", { name: "课程作品集" })
+  ).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
@@ -243,7 +320,63 @@ test("an abandoned project remains available in the black-hole history", async (
   await expect(page.getByRole("heading", { name: "这个项目已经结束" })).toBeVisible();
 
   await page.getByRole("link", { name: "黑胶星球" }).first().click();
+  await expect(page.locator(".vinyl-planet-scene")).toHaveAttribute(
+    "data-renderer",
+    /webgl|fallback/
+  );
   await expect(page.getByText("黑洞历史", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看已放下项目：不再参加的比赛" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "查看已放下项目：不再参加的比赛" })
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("记录仍保留在本机", { exact: true })).toBeVisible();
+});
+
+test("the 3D collection keeps one DOM selection source across projects and route re-entry", async ({
+  page
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await seedCollectionState(page);
+  await page.goto("/#/collection");
+  await page.reload();
+
+  const planet = page.locator(".vinyl-planet-scene");
+  await expect(planet).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(planet).toHaveAttribute("data-reduced-motion", "true");
+  const alpha = page.getByRole("button", { name: "查看已完成项目：完成唱片 Alpha" });
+  const beta = page.getByRole("button", { name: "查看已完成项目：完成唱片 Beta" });
+  const history = page.getByRole("button", { name: "查看已放下项目：已经放下的旧方向" });
+  await expect(alpha).toHaveAttribute("aria-pressed", "true");
+
+  await beta.click();
+  await expect(alpha).toHaveAttribute("aria-pressed", "false");
+  await expect(beta).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator(".collection-detail > header").getByRole("heading", { name: "完成唱片 Beta" })
+  ).toBeVisible();
+
+  await history.click();
+  await expect(history).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator(".collection-detail > header").getByRole("heading", { name: "已经放下的旧方向" })
+  ).toBeVisible();
+
+  const viewport = page.locator(".vinyl-planet-viewport");
+  const bounds = await viewport.boundingBox();
+  if (bounds) {
+    await page.mouse.move(bounds.x + 30, bounds.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + 90, bounds.y + 60);
+    await page.mouse.up();
+    await expect(history).toHaveAttribute("aria-pressed", "true");
+  }
+
+  await page.getByRole("link", { name: "工作台", exact: true }).click();
+  await page.getByRole("link", { name: "黑胶星球", exact: true }).click();
+  await expect(page.locator(".vinyl-planet-scene")).toHaveAttribute(
+    "data-renderer",
+    /webgl|fallback/
+  );
+  await expect(page.locator(".vinyl-planet-canvas")).toHaveCount(
+    (await page.locator(".vinyl-planet-scene").getAttribute("data-renderer")) === "webgl" ? 1 : 0
+  );
 });

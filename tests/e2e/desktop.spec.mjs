@@ -789,6 +789,13 @@ test("desktop camera gestures stay off by default and load the packaged local mo
   try {
     const window = await desktop.firstWindow();
     await window.getByRole("link", { name: "黑胶星球" }).click();
+    await expect(window.locator(".vinyl-planet-scene")).toHaveAttribute(
+      "data-renderer",
+      /webgl|fallback/
+    );
+    await expect(
+      window.getByRole("button", { name: "查看已完成项目：摄像头手势验收项目" })
+    ).toHaveAttribute("aria-pressed", "true");
     const ritual = window.locator(".vinyl-ritual");
     await expect(ritual).toHaveAttribute("data-renderer", /webgl|fallback/);
     await ritual.getByRole("button", { name: "打开项目封套" }).click();
