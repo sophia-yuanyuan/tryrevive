@@ -113,6 +113,8 @@ async function createHarness(t, { provider, initialNow = 1_800_000_000_000 } = {
   const service = createCloudService({
     repository,
     provider,
+    analysisMode: provider ? "approved" : null,
+    analysisEnabled: () => true,
     now: () => currentNow,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
     randomId: () => `id_${++idIndex}`

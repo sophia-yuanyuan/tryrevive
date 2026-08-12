@@ -10,10 +10,12 @@
 
 | 模式 | Worker 配置 | 谁能使用 | 目录返回 |
 |---|---|---|---|
-| 审核 | staging + `OPENAI_MODEL_REVIEW_ENABLED=true` + `OPENAI_MODEL_APPROVED=false` | 仅持有合成测试会话的审核工作流 | `analysisMode=review` |
+| 审核 | staging + `OPENAI_MODEL_REVIEW_ENABLED=true` + `OPENAI_MODEL_APPROVED=false` | 仅同时持有合成测试会话与审核专用 Secret 的工作流 | `analysisMode=review` |
 | 已批准 | `OPENAI_MODEL_REVIEW_ENABLED=false` + `OPENAI_MODEL_APPROVED=true` | 通过客户端与生产门禁后才能开放 | `analysisMode=approved` |
 
 Windows 客户端只接受 `approved`。即使 staging 的审核模型可以处理合成样本，普通用户界面仍显示“尚未批准，不会上传”。生产预检也强制要求 `analysisMode=approved`。
+
+服务端也会执行同一边界：`review` 下公开的 reservation/analyze 请求若没有正确的 `x-tryrevive-model-review-token`，会在读取内容、预留额度和调用 OpenAI 之前拒绝。客户端隐藏入口不再被当作安全边界。审核 token 使用固定长度哈希后的恒定时间比较；不得复用 OpenAI Key、GitHub Token 或用户会话。
 
 ## 2. 审核前配置 staging
 
@@ -35,8 +37,13 @@ OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 
 ```powershell
 npm exec wrangler -- secret put OPENAI_API_KEY --config worker\wrangler.cloud.staging.toml
+npm exec wrangler -- secret put OPENAI_MODEL_REVIEW_ACCESS_TOKEN --config worker\wrangler.cloud.staging.toml
 npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 ```
+
+`OPENAI_MODEL_REVIEW_ACCESS_TOKEN` 至少使用 32 个随机字节，并把同一值写入 GitHub `tryrevive-staging` Environment Secret `TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN`。不要把值写入 TOML、工作流、日志、artifact、聊天或截图；任一侧缺失时审核必须失败关闭。
+
+写入 GitHub Secret 前，`tryrevive-staging` Environment 必须只允许受保护分支，并配置人工审批；否则能修改工作流的人可能尝试读取审核 token 或合成测试会话。
 
 先检查：
 
@@ -53,7 +60,7 @@ GitHub → Actions → `Staging model quality review` → `Run workflow`：
 1. `model_label` 填 staging 配置中的准确模型 ID；
 2. `reasoning_effort` 选择 staging 实际部署的准确值；
 3. `confirm_staging_usage` 选择 `I_ACCEPT_10_MODEL_REVIEWS`；
-4. 运行只使用 `tryrevive-staging` Environment 与现有合成测试会话；
+4. 运行只使用 `tryrevive-staging` Environment、现有合成测试会话与审核专用 Secret；
 5. 每次消耗 10 次项目分析和至少 1 分钟语音额度；取消选项不会启动 job；
 6. 工作流现场生成 WAV、PDF、DOCX，另使用 7 份中英文合成文字，共 10 份；
 7. 下载 artifact `tryrevive-model-review-<run id>` 中的 Markdown 报告；报告必须同时写明模型与 reasoning effort。
@@ -99,6 +106,8 @@ OPENAI_REASONING_EFFORT = "与签字报告一致的值"
 ```
 
 重新部署并确认目录返回 `analysisMode=approved`，再运行 `Remote cloud acceptance` 验证语音/PDF/DOCX、余额不足、重复请求和上游退款。
+
+改为 `approved` 后应删除 staging Worker 的 `OPENAI_MODEL_REVIEW_ACCESS_TOKEN`，并删除 GitHub staging Environment 中对应 Secret；以后若要复审，重新生成新值，不复用旧 token。
 
 ## 5. production 仍需独立放行
 

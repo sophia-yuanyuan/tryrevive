@@ -25,8 +25,18 @@ export function providerModeFromEnvironment(env) {
   if (env?.CLOUD_PROVIDER_ENABLED !== "true") return null;
   const deployment = env?.CLOUD_DEPLOYMENT_ENVIRONMENT;
   if (deployment !== "staging" && deployment !== "production") return null;
-  if (env?.OPENAI_MODEL_APPROVED === "true") return "approved";
-  if (deployment === "staging" && env?.OPENAI_MODEL_REVIEW_ENABLED === "true") return "review";
+  const reviewEnabled = env?.OPENAI_MODEL_REVIEW_ENABLED;
+  const approved = env?.OPENAI_MODEL_APPROVED;
+  if (reviewEnabled === "false" && approved === "true") return "approved";
+  if (
+    deployment === "staging" &&
+    reviewEnabled === "true" &&
+    approved === "false" &&
+    typeof env?.OPENAI_MODEL_REVIEW_ACCESS_TOKEN === "string" &&
+    env.OPENAI_MODEL_REVIEW_ACCESS_TOKEN.length >= 32
+  ) {
+    return "review";
+  }
   return null;
 }
 
@@ -85,8 +95,10 @@ export default {
       repository,
       provider,
       analysisMode,
+      analysisEnabled: () => providerModeFromEnvironment(env) === analysisMode,
       analysisModel: provider ? provider.analysisModel : null,
       analysisReasoningEffort: provider ? provider.reasoningEffort : null,
+      reviewAccessToken: analysisMode === "review" ? env.OPENAI_MODEL_REVIEW_ACCESS_TOKEN : null,
       paymentProvider,
       randomToken,
       uploadNotice: provider

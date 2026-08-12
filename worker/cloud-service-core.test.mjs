@@ -5,6 +5,7 @@ import { createCloudService } from "./cloud-service-core.js";
 import { OPENAI_RETENTION_NOTICE } from "./cloud-service.js";
 
 const BASE_URL = "https://cloud.tryrevive.test";
+const TEST_REVIEW_ACCESS_TOKEN = "model_review_access_0123456789abcdef0123456789abcdef";
 const VALID_ANALYSIS = {
   originalGoal: "完成黑客松报名",
   lastCompleted: "整理了项目说明",
@@ -385,9 +386,11 @@ class MemoryCloudRepository {
 
 function createHarness({
   provider = null,
-  analysisMode = null,
+  analysisMode = undefined,
+  analysisEnabled = () => true,
   analysisModel = null,
   analysisReasoningEffort = "medium",
+  reviewAccessToken = TEST_REVIEW_ACCESS_TOKEN,
   paymentProvider = null,
   now = 1_800_000_000_000
 } = {}) {
@@ -397,9 +400,11 @@ function createHarness({
   const service = createCloudService({
     repository,
     provider,
-    analysisMode,
+    analysisMode: analysisMode ?? (provider ? "approved" : null),
+    analysisEnabled,
     analysisModel,
     analysisReasoningEffort,
+    reviewAccessToken,
     paymentProvider,
     now: () => now,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
@@ -792,6 +797,192 @@ test("catalog separates a staging review provider from an approved provider", as
   assert.equal(approvedCatalog.body.analysisMode, "approved");
   assert.equal(approvedCatalog.body.analysisModel, "approved-model");
   assert.equal(approvedCatalog.body.analysisReasoningEffort, "high");
+});
+
+test("an available provider cannot silently default to approved mode", () => {
+  assert.throws(
+    () =>
+      createCloudService({
+        repository: new MemoryCloudRepository(),
+        provider: {
+          available: true,
+          async analyze() {
+            return VALID_ANALYSIS;
+          }
+        },
+        analysisEnabled: () => true,
+        randomToken: () => "secure-random-token"
+      }),
+    /explicitly declare review or approved mode/
+  );
+  assert.throws(
+    () =>
+      createCloudService({
+        repository: new MemoryCloudRepository(),
+        provider: {
+          available: true,
+          async analyze() {
+            return VALID_ANALYSIS;
+          }
+        },
+        analysisMode: "review",
+        analysisEnabled: () => true,
+        randomToken: () => "secure-random-token"
+      }),
+    /high-entropy access token/
+  );
+  assert.throws(
+    () =>
+      createCloudService({
+        repository: new MemoryCloudRepository(),
+        provider: {
+          available: true,
+          async analyze() {
+            return VALID_ANALYSIS;
+          }
+        },
+        analysisMode: "approved",
+        randomToken: () => "secure-random-token"
+      }),
+    /analysis kill switch is required/
+  );
+});
+
+test("review mode rejects public reservation and analysis calls before charge or upload", async () => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const { repository, service } = createHarness({ provider, analysisMode: "review" });
+  const account = await redeem(service, repository, "REVIEW-ONLY-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+  const source = {
+    kind: "text",
+    name: "synthetic-notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const estimate = await quote(service, account.sessionToken, source);
+  const reservationRequest = {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "review-protected-request", quoteId: estimate.id, source }
+  };
+
+  const missing = await request(service, "/v1/cloud/reservations", reservationRequest);
+  const wrong = await request(service, "/v1/cloud/reservations", {
+    ...reservationRequest,
+    headers: { "x-tryrevive-model-review-token": "wrong-token" }
+  });
+  assert.equal(missing.response.status, 403);
+  assert.equal(wrong.response.status, 403);
+  assert.equal(missing.body.error, "model_review_access_required");
+  assert.equal(repository.operations.size, 0);
+  assert.deepEqual([...repository.accounts.values()][0].balance, {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+
+  const reserved = await request(service, "/v1/cloud/reservations", {
+    ...reservationRequest,
+    headers: { "x-tryrevive-model-review-token": TEST_REVIEW_ACCESS_TOKEN }
+  });
+  assert.equal(reserved.response.status, 200);
+  const blockedAnalysis = await request(service, "/v1/cloud/analyze", {
+    method: "POST",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-reservation": reserved.body.reservationToken },
+    body: {
+      idempotencyKey: "review-protected-request",
+      projectTitle: "合成审核项目",
+      source: { metadata: source, text: "test" }
+    }
+  });
+  assert.equal(blockedAnalysis.response.status, 403);
+  assert.equal(providerCalls, 0);
+
+  const analyzed = await request(service, "/v1/cloud/analyze", {
+    method: "POST",
+    token: account.sessionToken,
+    headers: {
+      "x-tryrevive-reservation": reserved.body.reservationToken,
+      "x-tryrevive-model-review-token": TEST_REVIEW_ACCESS_TOKEN
+    },
+    body: {
+      idempotencyKey: "review-protected-request",
+      projectTitle: "合成审核项目",
+      source: { metadata: source, text: "test" }
+    }
+  });
+  assert.equal(analyzed.response.status, 200);
+  assert.equal(providerCalls, 1);
+});
+
+test("the provider kill switch is rechecked before reservation and analysis", async () => {
+  let enabled = true;
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const { repository, service } = createHarness({
+    provider,
+    analysisEnabled: () => enabled
+  });
+  const account = await redeem(service, repository, "KILL-SWITCH-CODE", {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+  const source = {
+    kind: "text",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    durationSeconds: null
+  };
+  const estimate = await quote(service, account.sessionToken, source);
+  const reservationRequest = {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "kill-switch-request", quoteId: estimate.id, source }
+  };
+
+  enabled = false;
+  const catalog = await request(service, "/v1/cloud/catalog");
+  const blockedReservation = await request(service, "/v1/cloud/reservations", reservationRequest);
+  assert.equal(catalog.body.analysisAvailable, false);
+  assert.equal(catalog.body.analysisMode, "disabled");
+  assert.equal(blockedReservation.response.status, 503);
+  assert.equal(repository.operations.size, 0);
+
+  enabled = true;
+  const reserved = await request(service, "/v1/cloud/reservations", reservationRequest);
+  assert.equal(reserved.response.status, 200);
+  enabled = false;
+  const blockedAnalysis = await request(service, "/v1/cloud/analyze", {
+    method: "POST",
+    token: account.sessionToken,
+    headers: { "x-tryrevive-reservation": reserved.body.reservationToken },
+    body: {
+      idempotencyKey: "kill-switch-request",
+      projectTitle: "报名项目",
+      source: { metadata: source, text: "test" }
+    }
+  });
+  assert.equal(blockedAnalysis.response.status, 503);
+  assert.equal(providerCalls, 0);
+  assert.equal(repository.ledger.filter((entry) => entry.kind === "reserve").length, 1);
+  assert.equal(repository.ledger.filter((entry) => entry.kind === "settle").length, 0);
 });
 
 test("authenticated users can export cloud data without credential hashes or source content", async () => {

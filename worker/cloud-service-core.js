@@ -197,6 +197,23 @@ function providerAvailable(provider) {
   return Boolean(provider && provider.available === true && typeof provider.analyze === "function");
 }
 
+async function timingSafeTextEqual(provided, expected) {
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", textEncoder.encode(provided)),
+    crypto.subtle.digest("SHA-256", textEncoder.encode(expected))
+  ]);
+  if (typeof crypto.subtle.timingSafeEqual === "function") {
+    return crypto.subtle.timingSafeEqual(providedHash, expectedHash);
+  }
+  const left = new Uint8Array(providedHash);
+  const right = new Uint8Array(expectedHash);
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left[index] ^ right[index];
+  }
+  return difference === 0;
+}
+
 function paymentProviderAvailable(provider) {
   return Boolean(
     provider &&
@@ -213,8 +230,10 @@ export function createCloudService({
   repository,
   provider = null,
   analysisMode = null,
+  analysisEnabled = null,
   analysisModel = null,
   analysisReasoningEffort = "medium",
+  reviewAccessToken = null,
   paymentProvider = null,
   now = () => Date.now(),
   randomToken,
@@ -227,29 +246,57 @@ export function createCloudService({
 }) {
   if (!repository) throw new Error("cloud repository is required");
   if (typeof randomToken !== "function") throw new Error("secure random token generator is required");
-  const effectiveAnalysisMode = providerAvailable(provider)
-    ? analysisMode === null
-      ? "approved"
-      : analysisMode
-    : "disabled";
-  if (!new Set(["disabled", "review", "approved"]).has(effectiveAnalysisMode)) {
-    throw new Error("analysis mode is invalid");
+  if (typeof analysisEnabled !== "function") throw new Error("analysis kill switch is required");
+  const hasProvider = providerAvailable(provider);
+  if (hasProvider && !new Set(["review", "approved"]).has(analysisMode)) {
+    throw new Error("an available provider must explicitly declare review or approved mode");
   }
-  if (providerAvailable(provider) && effectiveAnalysisMode === "disabled") {
-    throw new Error("an available provider must declare review or approved mode");
+  if (!hasProvider && analysisMode !== null && analysisMode !== "disabled") {
+    throw new Error("analysis mode requires an available provider");
+  }
+  const effectiveAnalysisMode = hasProvider ? analysisMode : "disabled";
+  if (
+    effectiveAnalysisMode === "review" &&
+    (typeof reviewAccessToken !== "string" || reviewAccessToken.length < 32)
+  ) {
+    throw new Error("review mode requires a high-entropy access token");
+  }
+
+  function analysisOperational() {
+    try {
+      return hasProvider && analysisEnabled() === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function requireAnalysisAccess(request, disabledMessage) {
+    if (!analysisOperational()) {
+      throw new HttpError(503, "analysis_not_enabled", disabledMessage);
+    }
+    if (effectiveAnalysisMode !== "review") return;
+    const provided = request.headers.get("x-tryrevive-model-review-token") || "";
+    if (!(await timingSafeTextEqual(provided, reviewAccessToken))) {
+      throw new HttpError(
+        403,
+        "model_review_access_required",
+        "模型审核接口只接受受保护的合成审核任务；本次没有预留、扣除或上传内容。"
+      );
+    }
   }
 
   async function handleCatalog() {
+    const available = analysisOperational();
     return json({
       service: "tryrevive-cloud",
       available: true,
-      analysisAvailable: providerAvailable(provider),
-      analysisMode: effectiveAnalysisMode,
+      analysisAvailable: available,
+      analysisMode: available ? effectiveAnalysisMode : "disabled",
       analysisModel:
-        providerAvailable(provider) && typeof analysisModel === "string"
+        available && typeof analysisModel === "string"
           ? analysisModel.trim().slice(0, 120) || null
           : null,
-      analysisReasoningEffort: providerAvailable(provider)
+      analysisReasoningEffort: available
         ? REASONING_EFFORTS.has(analysisReasoningEffort)
           ? analysisReasoningEffort
           : null
@@ -543,13 +590,10 @@ export function createCloudService({
   }
 
   async function handleReserve(request) {
-    if (!providerAvailable(provider)) {
-      throw new HttpError(
-        503,
-        "analysis_not_enabled",
-        "真实语音和附件处理尚未启用，本次没有预留或扣除算力。"
-      );
-    }
+    await requireAnalysisAccess(
+      request,
+      "真实语音和附件处理尚未启用，本次没有预留或扣除算力。"
+    );
     const timestamp = now();
     const account = await requireAccount(request, repository, timestamp);
     const body = await readJson(request);
@@ -602,13 +646,10 @@ export function createCloudService({
   }
 
   async function handleAnalyze(request) {
-    if (!providerAvailable(provider)) {
-      throw new HttpError(
-        503,
-        "analysis_not_enabled",
-        "真实语音和附件处理尚未启用，本次内容没有发送给第三方。"
-      );
-    }
+    await requireAnalysisAccess(
+      request,
+      "真实语音和附件处理尚未启用，本次内容没有发送给第三方。"
+    );
     const timestamp = now();
     const account = await requireAccount(request, repository, timestamp);
     const body = await readJson(request);

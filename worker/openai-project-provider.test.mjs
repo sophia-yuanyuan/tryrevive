@@ -264,6 +264,7 @@ test("the production provider remains off until every server-side gate is explic
     createProviderFromEnvironment({
       CLOUD_PROVIDER_ENABLED: "true",
       OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "approved"
@@ -275,6 +276,8 @@ test("the production provider remains off until every server-side gate is explic
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "review-candidate"
     }),
@@ -285,6 +288,8 @@ test("the production provider remains off until every server-side gate is explic
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "review-candidate",
       OPENAI_REASONING_EFFORT: "low"
@@ -295,7 +300,9 @@ test("the production provider remains off until every server-side gate is explic
     providerModeFromEnvironment({
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
-      OPENAI_MODEL_REVIEW_ENABLED: "true"
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
     }),
     "review"
   );
@@ -303,8 +310,28 @@ test("the production provider remains off until every server-side gate is explic
     providerModeFromEnvironment({
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
-      OPENAI_MODEL_APPROVED: "true"
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
     }),
     "approved"
+  );
+  assert.equal(
+    providerModeFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
+    }),
+    null
+  );
+  assert.equal(
+    providerModeFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false"
+    }),
+    null
   );
 });

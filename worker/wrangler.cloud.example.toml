@@ -16,8 +16,8 @@ STRIPE_PACKAGES_JSON = "REPLACE_WITH_REVIEWED_STRIPE_PACKAGES_JSON"
 STRIPE_SUCCESS_URL = "https://tryrevive.online/#/payment/success?session_id={CHECKOUT_SESSION_ID}"
 STRIPE_CANCEL_URL = "https://tryrevive.online/#/payment/canceled"
 
-# OPENAI_API_KEY, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be configured
-# as Wrangler secrets, never committed here.
+# OPENAI_API_KEY, OPENAI_MODEL_REVIEW_ACCESS_TOKEN, STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET must be configured as Wrangler secrets, never committed here.
 
 [[d1_databases]]
 binding = "CLOUD_DB"

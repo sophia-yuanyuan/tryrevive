@@ -57,6 +57,7 @@ jobs:
           TRYREVIVE_REMOTE_BASE_URL: "https://tryrevive-cloud-staging.tryrevive.workers.dev"
           TRYREVIVE_REMOTE_FIXTURE_DIR: "${{ runner.temp }}\tryrevive-model-review-fixtures"
           TRYREVIVE_REMOTE_FUNDED_SESSION: "${{ secrets.TRYREVIVE_REMOTE_FUNDED_SESSION }}"
+          TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN: "${{ secrets.TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN }}"
           TRYREVIVE_MODEL_REVIEW_LABEL: "${{ inputs.model_label }}"
           TRYREVIVE_MODEL_REVIEW_REASONING_EFFORT: "${{ inputs.reasoning_effort }}"
           TRYREVIVE_MODEL_REVIEW_COMMIT: "${{ github.sha }}"

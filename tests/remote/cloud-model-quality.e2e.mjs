@@ -13,6 +13,7 @@ import { MODEL_REVIEW_CASES } from "./model-review-cases.mjs";
 const ENABLED = process.env.TRYREVIVE_MODEL_REVIEW === "1";
 const BASE_URL = process.env.TRYREVIVE_REMOTE_BASE_URL || "";
 const FUNDED_TOKEN = process.env.TRYREVIVE_REMOTE_FUNDED_SESSION || "";
+const REVIEW_ACCESS_TOKEN = process.env.TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN || "";
 const FIXTURE_DIRECTORY = process.env.TRYREVIVE_REMOTE_FIXTURE_DIR || "";
 const REPORT_PATH = process.env.TRYREVIVE_MODEL_REVIEW_REPORT || "";
 const MODEL_LABEL = process.env.TRYREVIVE_MODEL_REVIEW_LABEL || "";
@@ -29,6 +30,7 @@ function assertReviewConfiguration() {
   assert.ok(allowedOrigins.has(url.origin), "model review is restricted to TryRevive staging");
   assert.equal(url.pathname, "/", "remote base URL must not contain a path");
   assert.ok(FUNDED_TOKEN.length >= 32, "funded staging session is required");
+  assert.ok(REVIEW_ACCESS_TOKEN.length >= 32, "protected model review token is required");
   assert.ok(path.isAbsolute(FIXTURE_DIRECTORY), "absolute synthetic fixture directory is required");
   assert.ok(path.isAbsolute(REPORT_PATH), "absolute model review report path is required");
   assert.equal(MODEL_REVIEW_CASES.length, 10, "exactly ten model review cases are required");
@@ -113,6 +115,7 @@ async function analyzeCase(reviewCase) {
   const reserved = await api("/v1/cloud/reservations", {
     method: "POST",
     token: FUNDED_TOKEN,
+    headers: { "x-tryrevive-model-review-token": REVIEW_ACCESS_TOKEN },
     body: { source: source.metadata, quoteId: quoted.body.id, idempotencyKey }
   });
   assert.equal(reserved.response.status, 200, `${reviewCase.id} reservation failed`);
@@ -121,7 +124,10 @@ async function analyzeCase(reviewCase) {
   const analyzed = await api("/v1/cloud/analyze", {
     method: "POST",
     token: FUNDED_TOKEN,
-    headers: { "x-tryrevive-reservation": reserved.body.reservationToken },
+    headers: {
+      "x-tryrevive-reservation": reserved.body.reservationToken,
+      "x-tryrevive-model-review-token": REVIEW_ACCESS_TOKEN
+    },
     body: {
       idempotencyKey,
       quoteId: quoted.body.id,
