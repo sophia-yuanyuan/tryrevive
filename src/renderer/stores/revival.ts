@@ -135,6 +135,7 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   function replaceActive(project: RevivalProject): void {
+    assertNoCandidateCommit();
     const index = data.value.projects.findIndex((item) => item.id === project.id);
     if (index < 0) throw new Error("找不到当前项目");
     data.value.projects[index] = project;
@@ -155,6 +156,7 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function newProjects(titles: string[]): Promise<void> {
+    assertNoCandidateCommit();
     const existing = new Set(
       data.value.projects.map((project) => project.title.toLocaleLowerCase("zh-CN"))
     );
@@ -469,16 +471,24 @@ export const useRevivalStore = defineStore("revival", () => {
 
   async function completeProject(mood: ProjectMood): Promise<void> {
     if (!activeProject.value) return;
-    replaceActive(markProjectCompleted(activeProject.value, mood));
-    await persist();
+    const projectId = activeProject.value.id;
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      candidate.projects[index] = markProjectCompleted(candidate.projects[index]!, mood);
+      return candidate;
+    });
   }
 
   async function setRewardMood(projectId: string, mood: ProjectMood): Promise<void> {
-    const project = data.value.projects.find((item) => item.id === projectId);
-    if (!project) throw new Error("找不到这张项目唱片");
-    const index = data.value.projects.findIndex((item) => item.id === projectId);
-    data.value.projects[index] = setProjectReward(project, mood);
-    await persist();
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到这张项目唱片");
+      candidate.projects[index] = setProjectReward(candidate.projects[index]!, mood);
+      return candidate;
+    });
   }
 
   async function exportData(): Promise<string> {
