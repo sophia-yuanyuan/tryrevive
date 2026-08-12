@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import { parseProjectDump } from "@/shared/domain/intake";
+import { readLocalTextMaterials, type LocalMaterialBundle } from "@/shared/domain/local-materials";
 import type { ProjectAnalysis } from "@/shared/domain/model";
 import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
 
@@ -11,7 +12,12 @@ const projectNames = ref("");
 const busy = ref(false);
 const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
+const localMaterials = ref<LocalMaterialBundle | null>(null);
 const parsedProjectNames = computed(() => parseProjectDump(projectNames.value));
+const localAnalysisLabel = computed(() => {
+  const count = localMaterials.value?.materials.length ?? 0;
+  return count ? `从 ${count} 份材料生成待确认草稿` : "让 TryRevive 先猜一遍";
+});
 
 async function chooseRepository(): Promise<void> {
   busy.value = true;
@@ -25,37 +31,34 @@ async function chooseRepository(): Promise<void> {
   }
 }
 
-async function importText(event: Event): Promise<void> {
+async function importMaterials(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = [...(input.files ?? [])];
   input.value = "";
-  if (!file) return;
-  if (file.size > 1024 * 1024) {
-    error.value = "文字材料不能超过 1 MB。";
-    return;
-  }
+  if (!files.length) return;
   busy.value = true;
   error.value = "";
   try {
-    const content = await file.text();
-    context.value = content;
-    await store.inferLocalContext({
-      content,
-      sourceKind: "material",
-      sourceLabel: file.name,
-      titleHint: file.name
-    });
+    localMaterials.value = await readLocalTextMaterials(files);
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "无法读取这份文字材料";
+    localMaterials.value = null;
+    error.value = caught instanceof Error ? caught.message : "无法读取这些文字材料";
   } finally {
     busy.value = false;
   }
 }
 
+function clearLocalMaterials(): void {
+  localMaterials.value = null;
+  error.value = "";
+}
+
 async function analyzeContext(): Promise<void> {
-  const content = context.value.trim();
+  const manualContext = context.value.trim();
+  const materialBundle = localMaterials.value;
+  const content = [manualContext, materialBundle?.content ?? ""].filter(Boolean).join("\n\n");
   if (content.length < 4) {
-    error.value = "至少写一句：你想完成什么、做到哪里，或卡在哪里。";
+    error.value = "至少写一句项目现场，或选择一份本地文字材料。";
     return;
   }
   busy.value = true;
@@ -63,8 +66,9 @@ async function analyzeContext(): Promise<void> {
   try {
     await store.inferLocalContext({
       content,
-      sourceKind: "text",
-      sourceLabel: "主动输入"
+      sourceKind: materialBundle ? "material" : "text",
+      sourceLabel: materialBundle?.sourceLabel ?? "主动输入",
+      titleHint: materialBundle?.titleHint
     });
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "暂时无法理解这段内容";
@@ -163,16 +167,42 @@ async function collectProjectNames(): Promise<void> {
               :disabled="busy"
               @click="fileInput?.click()"
             >
-              上传文字材料
+              选择本地文字材料
             </button>
             <input
               ref="fileInput"
               class="sr-only"
               type="file"
+              multiple
               accept="text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.yaml,.yml"
-              @change="importText"
+              @change="importMaterials"
             />
           </div>
+        </div>
+
+        <div
+          v-if="localMaterials"
+          class="rounded-2xl border border-[var(--focus)]/20 bg-[var(--focus)]/[0.045] p-4"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="field-label">将在本机读取的材料</p>
+              <ul class="mt-2 space-y-1 text-sm leading-6 text-[var(--ink)]">
+                <li
+                  v-for="(item, index) in localMaterials.materials"
+                  :key="`${item.name}-${index}`"
+                >
+                  {{ item.name }} · {{ item.characters.toLocaleString("zh-CN") }} 字
+                </li>
+              </ul>
+            </div>
+            <button class="text-button shrink-0" type="button" @click="clearLocalMaterials">
+              清除
+            </button>
+          </div>
+          <p class="mt-3 text-xs leading-5 text-[var(--muted)]">
+            原文只在这次本机整理时读取；存档只保存你随后确认的恢复摘要。
+          </p>
         </div>
 
         <textarea
@@ -184,10 +214,11 @@ async function collectProjectNames(): Promise<void> {
           placeholder="我想完成 TryRevive 桌面版。上次已经接好 Vue 页面，现在卡在不知道怎样把仓库现状变成下一小步。"
         />
         <p class="voice-status">
-          当前只做本地文字推断；不会把这段内容发送给 TryRevive 后端或 OpenAI。
+          本机支持 TXT、Markdown、CSV、JSON、YAML，一次最多 8 份；不会发送给 TryRevive 后端或
+          OpenAI。PDF、DOCX、图片和音频当前不冒充本地已理解。
         </p>
         <button class="primary-button w-full" type="submit" :disabled="busy">
-          {{ busy ? "正在整理恢复摘要…" : "让 TryRevive 先猜一遍" }}
+          {{ busy ? "正在整理恢复摘要…" : localAnalysisLabel }}
         </button>
       </form>
 

@@ -14,7 +14,11 @@ const form = reactive({
   originalGoal: "",
   lastCompleted: "",
   stuckAt: "",
-  whyMatters: ""
+  whyMatters: "",
+  stallReason: "",
+  nextActionText: "",
+  doneDefinition: "",
+  minutes: 10
 });
 
 function resetForm(): void {
@@ -23,6 +27,10 @@ function resetForm(): void {
   form.lastCompleted = props.pending.analysis.lastCompleted;
   form.stuckAt = props.pending.analysis.stuckAt;
   form.whyMatters = props.pending.analysis.whyMatters;
+  form.stallReason = props.pending.analysis.stallReasons[0] ?? "";
+  form.nextActionText = props.pending.analysis.nextAction.text;
+  form.doneDefinition = props.pending.analysis.nextAction.doneDefinition;
+  form.minutes = props.pending.analysis.nextAction.minutes;
 }
 
 function beginEditing(): void {
@@ -133,6 +141,41 @@ async function discard(): Promise<void> {
           maxlength="240"
         />
       </div>
+      <div>
+        <label class="field-label" for="inference-reason">可能为什么停住？</label>
+        <textarea
+          id="inference-reason"
+          v-model="form.stallReason"
+          class="field-input min-h-20 resize-y"
+          maxlength="240"
+        />
+      </div>
+      <div class="rounded-3xl border border-[var(--line)] p-5">
+        <p class="summary-label">TryRevive 建议的下一小步</p>
+        <label class="field-label mt-4" for="inference-action">这一步具体做什么？</label>
+        <textarea
+          id="inference-action"
+          v-model="form.nextActionText"
+          class="field-input min-h-20 resize-y"
+          maxlength="160"
+          required
+        />
+        <label class="field-label mt-4" for="inference-done">做到什么算完成？</label>
+        <input
+          id="inference-done"
+          v-model="form.doneDefinition"
+          class="field-input"
+          maxlength="160"
+          required
+        />
+        <label class="field-label mt-4" for="inference-minutes">预计时间</label>
+        <select id="inference-minutes" v-model.number="form.minutes" class="field-input">
+          <option :value="5">5 分钟</option>
+          <option :value="10">10 分钟</option>
+          <option :value="15">15 分钟</option>
+          <option :value="20">20 分钟</option>
+        </select>
+      </div>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <div class="grid gap-3 sm:grid-cols-2">
         <button class="primary-button w-full" type="submit" :disabled="busy">
@@ -165,6 +208,24 @@ async function discard(): Promise<void> {
       <article class="summary-card">
         <p class="summary-label">可能停在这里</p>
         <p class="summary-value">{{ pending.analysis.stuckAt }}</p>
+      </article>
+
+      <article class="summary-card">
+        <p class="summary-label">可能为什么停住</p>
+        <ul class="mt-2 space-y-2 text-sm leading-6 text-[var(--ink)]">
+          <li v-for="reason in pending.analysis.stallReasons" :key="reason">· {{ reason }}</li>
+        </ul>
+      </article>
+
+      <article class="rounded-3xl border border-[var(--focus)]/20 bg-[var(--focus)]/[0.045] p-5">
+        <p class="summary-label">TryRevive 建议的下一小步</p>
+        <p class="summary-value mt-2">{{ pending.analysis.nextAction.text }}</p>
+        <p class="mt-3 text-sm leading-6 text-[var(--muted)]">
+          做到这里算完成：{{ pending.analysis.nextAction.doneDefinition }}
+        </p>
+        <p class="mt-2 text-xs font-semibold text-[var(--focus)]">
+          {{ pending.analysis.nextAction.minutes }} 分钟
+        </p>
       </article>
 
       <div

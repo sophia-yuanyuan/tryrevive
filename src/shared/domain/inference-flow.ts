@@ -16,7 +16,11 @@ const InferenceCorrectionSchema = z.object({
   originalGoal: z.string().trim().min(1).max(500),
   lastCompleted: z.string().trim().min(1).max(240),
   stuckAt: z.string().trim().min(1).max(240),
-  whyMatters: z.string().trim().max(240).default("")
+  whyMatters: z.string().trim().max(240).default(""),
+  stallReason: z.string().trim().max(240).optional(),
+  nextActionText: z.string().trim().max(160).optional(),
+  doneDefinition: z.string().trim().max(160).optional(),
+  minutes: z.number().int().min(5).max(20).optional()
 });
 
 export type InferenceCorrection = z.infer<typeof InferenceCorrectionSchema>;
@@ -59,7 +63,9 @@ export function correctPendingInference(
   now = Date.now()
 ): PendingInference {
   const correction = InferenceCorrectionSchema.parse(input);
-  const nextActionText = `先处理“${correction.stuckAt}”里能留下可见结果的一步`.slice(0, 160);
+  const nextActionText =
+    correction.nextActionText ||
+    `先处理“${correction.stuckAt}”里能留下可见结果的一步`.slice(0, 160);
   return PendingInferenceSchema.parse({
     ...pending,
     title: correction.title,
@@ -69,11 +75,13 @@ export function correctPendingInference(
       lastCompleted: correction.lastCompleted,
       stuckAt: correction.stuckAt,
       whyMatters: correction.whyMatters,
-      stallReasons: [`你确认的当前卡点：${correction.stuckAt}`.slice(0, 240)],
+      stallReasons: [
+        correction.stallReason || `你确认的当前卡点：${correction.stuckAt}`.slice(0, 240)
+      ],
       nextAction: {
         text: nextActionText,
-        doneDefinition: "留下一个可见、可保存、下次能继续的结果",
-        minutes: pending.analysis.nextAction.minutes
+        doneDefinition: correction.doneDefinition || "留下一个可见、可保存、下次能继续的结果",
+        minutes: correction.minutes ?? pending.analysis.nextAction.minutes
       }
     },
     updatedAt: now

@@ -94,7 +94,11 @@ describe("inference-first confirmation", () => {
         originalGoal: "在周五前完成报名页面",
         lastCompleted: "表单布局已经完成",
         stuckAt: "还没有补报名截止日期",
-        whyMatters: "需要提交课程作业"
+        whyMatters: "需要提交课程作业",
+        stallReason: "截止日期需要课程老师确认",
+        nextActionText: "先给老师写好截止日期确认消息",
+        doneDefinition: "消息已经写好并复制到发送框",
+        minutes: 5
       },
       1_800_000_000_002
     );
@@ -111,14 +115,19 @@ describe("inference-first confirmation", () => {
         stuckAt: "还没有补报名截止日期"
       }
     });
-    expect(project.analysis?.nextAction.text).toContain("还没有补报名截止日期");
+    expect(project.analysis?.stallReasons).toEqual(["截止日期需要课程老师确认"]);
+    expect(project.analysis?.nextAction).toEqual({
+      text: "先给老师写好截止日期确认消息",
+      doneDefinition: "消息已经写好并复制到发送框",
+      minutes: 5
+    });
     expect(project.repository?.bindingId).toBe(repository.bindingId);
     expect(project.repository?.lastSnapshot.fingerprint).toBe("a".repeat(64));
     expect(project.repository?.evidence[0]?.path).toBe("src/main.ts");
 
     const actionable = assignAction(project, project.analysis!.nextAction, 1_800_000_000_004);
     expect(actionable.stage).toBe("execute");
-    expect(actionable.action?.minutes).toBe(10);
+    expect(actionable.action?.minutes).toBe(5);
   });
 
   it("derives a cautious local draft without retaining credentials or absolute paths", () => {
@@ -133,6 +142,7 @@ describe("inference-first confirmation", () => {
 
     expect(result.analysis.lastCompleted).toContain("已经完成首页");
     expect(result.analysis.stuckAt).toContain("卡在移动端导航");
+    expect(result.analysis.nextAction.text).toContain("可保存最小版本");
     expect(result.analysis.uncertainties[0]).toContain("本地推断");
     expect(serialized).not.toContain("C:\\Users\\Alice");
     expect(serialized).not.toContain("/srv/tryrevive");

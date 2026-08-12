@@ -129,6 +129,39 @@ describe("inference-first components", () => {
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
   });
 
+  it("combines several local text materials before creating one pending draft", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+    const input = wrapper.get('input[type="file"][multiple]');
+    const files = [
+      new File(["我想完成黑客松报名。\n上次已经写完项目简介。"], "README.md", {
+        type: "text/markdown"
+      }),
+      new File(["现在卡在还没有整理个人分工。"], "进度.txt", { type: "text/plain" })
+    ];
+    Object.defineProperty(input.element, "files", { configurable: true, value: files });
+
+    await input.trigger("change");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("将在本机读取的材料");
+    expect(wrapper.text()).toContain("README.md");
+    expect(wrapper.text()).toContain("进度.txt");
+    expect(wrapper.get('button[type="submit"].primary-button').text()).toContain(
+      "从 2 份材料生成待确认草稿"
+    );
+
+    await wrapper.get('button[type="submit"].primary-button').trigger("submit");
+    await flushPromises();
+
+    expect(store.data.projects).toHaveLength(0);
+    expect(store.pendingInference).toMatchObject({ sourceKind: "material" });
+    expect(store.pendingInference?.analysis.lastCompleted).toContain("写完项目简介");
+    expect(store.pendingInference?.analysis.stuckAt).toContain("个人分工");
+    expect(store.pendingInference?.analysis.sourceLabel).toContain("README.md");
+  });
+
   it("keeps a provided cloud analysis pending until the shared confirmation step", async () => {
     const store = useRevivalStore();
 
@@ -172,11 +205,21 @@ describe("inference-first components", () => {
       .find((button) => button.text() === "修改")
       ?.trigger("click");
     await wrapper.get("#inference-completed").setValue("报名表单布局已经完成");
+    await wrapper.get("#inference-reason").setValue("课程老师还没有确认截止日期");
+    await wrapper.get("#inference-action").setValue("写好一条截止日期确认消息");
+    await wrapper.get("#inference-done").setValue("确认消息已经写好");
+    await wrapper.get("#inference-minutes").setValue("5");
     await wrapper.find("form").trigger("submit");
     await flushPromises();
 
     expect(store.data.projects).toHaveLength(0);
     expect(store.pendingInference?.analysis.lastCompleted).toBe("报名表单布局已经完成");
+    expect(store.pendingInference?.analysis.stallReasons).toEqual(["课程老师还没有确认截止日期"]);
+    expect(store.pendingInference?.analysis.nextAction).toEqual({
+      text: "写好一条截止日期确认消息",
+      doneDefinition: "确认消息已经写好",
+      minutes: 5
+    });
     await wrapper
       .findAll("button")
       .find((button) => button.text() === "正确，继续")
@@ -220,9 +263,7 @@ describe("inference-first components", () => {
       .find((button) => button.text() === "修改")
       ?.trigger("click");
 
-    expect((wrapper.get("#inference-title").element as HTMLInputElement).value).toBe(
-      pending.title
-    );
+    expect((wrapper.get("#inference-title").element as HTMLInputElement).value).toBe(pending.title);
     expect(store.pendingInference?.title).toBe(pending.title);
   });
 
@@ -305,9 +346,7 @@ describe("inference-first components", () => {
     const confirming = store.confirmInference();
     await nextTick();
 
-    await expect(store.selectProject(existing.id)).rejects.toThrow(
-      "上一次保存还在进行"
-    );
+    await expect(store.selectProject(existing.id)).rejects.toThrow("上一次保存还在进行");
     expect(store.data.pendingInference?.id).toBe(pending.id);
     expect(store.data.projects).toHaveLength(1);
 
@@ -350,9 +389,7 @@ describe("inference-first components", () => {
     );
 
     const importing = store.importData();
-    const importExpectation = expect(importing).rejects.toThrow(
-      "上一次保存还在进行"
-    );
+    const importExpectation = expect(importing).rejects.toThrow("上一次保存还在进行");
     await nextTick();
     const confirming = store.confirmInference();
     await nextTick();
