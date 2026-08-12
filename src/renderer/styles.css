@@ -1344,6 +1344,417 @@ body.focus-mode-active #app {
   overflow-wrap: anywhere;
 }
 
+.vinyl-artifact-ritual {
+  display: block;
+  overflow: hidden;
+  border-color: rgba(113, 132, 177, 0.22);
+  padding: 0;
+  color: white;
+  background: #030407;
+  box-shadow: 0 28px 80px rgba(10, 12, 18, 0.3);
+}
+
+.vinyl-ritual {
+  background:
+    radial-gradient(circle at 18% 10%, hsl(var(--cover-hue) 48% 23% / 0.26), transparent 35%),
+    #030407;
+}
+
+.vinyl-ritual-header {
+  display: flex;
+  position: relative;
+  z-index: 3;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.45rem) clamp(1rem, 4vw, 2rem) 0;
+}
+
+.vinyl-ritual-header h2 {
+  max-width: 44rem;
+  margin: 0.35rem 0 0;
+  overflow: hidden;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: clamp(1.45rem, 4vw, 2.7rem);
+  font-weight: 540;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vinyl-ritual-header .summary-label {
+  color: rgba(239, 210, 177, 0.7);
+}
+
+.vinyl-ritual-renderer-status {
+  flex: 0 0 auto;
+  margin: 0.15rem 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.45rem 0.68rem;
+  color: rgba(255, 255, 255, 0.56);
+  background: rgba(4, 6, 11, 0.5);
+  font-size: 0.62rem;
+}
+
+.vinyl-ritual-steps {
+  display: grid;
+  position: relative;
+  z-index: 3;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 1rem clamp(1rem, 4vw, 2rem) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vinyl-ritual-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.32);
+  font-size: 0.63rem;
+  white-space: nowrap;
+}
+
+.vinyl-ritual-steps span {
+  display: grid;
+  width: 1.25rem;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 0.58rem;
+}
+
+.vinyl-ritual-step-current {
+  color: #f6d3aa !important;
+}
+
+.vinyl-ritual-step-current span {
+  border-color: rgba(246, 211, 170, 0.72);
+  background: rgba(221, 151, 94, 0.2);
+  box-shadow: 0 0 1.4rem rgba(226, 156, 99, 0.22);
+}
+
+.vinyl-ritual-step-complete {
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+.vinyl-ritual-step-complete span {
+  border-color: rgba(154, 190, 170, 0.45);
+  color: #b9d9c5;
+  background: rgba(91, 139, 111, 0.16);
+}
+
+.vinyl-ritual-stage {
+  position: relative;
+  height: clamp(25rem, 58vw, 39rem);
+  min-height: 25rem;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.vinyl-ritual-stage:active {
+  cursor: grabbing;
+}
+
+.vinyl-ritual-stage:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(246, 211, 170, 0.78);
+}
+
+.vinyl-ritual-canvas,
+.vinyl-ritual-fallback {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.vinyl-ritual-stage-shade {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3, 4, 7, 0.16), transparent 38%, rgba(3, 4, 7, 0.62)),
+    linear-gradient(90deg, rgba(3, 4, 7, 0.18), transparent 38% 70%, rgba(3, 4, 7, 0.16));
+}
+
+.vinyl-ritual-instruction {
+  position: absolute;
+  z-index: 2;
+  right: clamp(1rem, 4vw, 2rem);
+  bottom: 1.2rem;
+  left: clamp(1rem, 4vw, 2rem);
+  max-width: 34rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  pointer-events: none;
+  color: white;
+  background: rgba(4, 6, 11, 0.62);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2);
+}
+
+.vinyl-ritual-instruction p,
+.vinyl-ritual-instruction strong,
+.vinyl-ritual-instruction span {
+  display: block;
+}
+
+.vinyl-ritual-instruction p {
+  margin: 0;
+  color: #e2ad7e;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vinyl-ritual-instruction strong {
+  margin-top: 0.35rem;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
+  font-weight: 560;
+  line-height: 1.25;
+}
+
+.vinyl-ritual-instruction span {
+  margin-top: 0.3rem;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.vinyl-ritual-controls {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto minmax(8rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 1rem clamp(1rem, 4vw, 2rem) 1.25rem;
+  background: rgba(2, 3, 6, 0.86);
+}
+
+.vinyl-ritual-controls .primary-button {
+  min-width: min(18rem, 100%);
+  color: #21170f;
+  background: linear-gradient(135deg, #f1d0a5, #dd9965);
+  box-shadow: 0 10px 26px rgba(207, 130, 73, 0.18);
+}
+
+.vinyl-ritual-controls > p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.6rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.vinyl-ritual-progress {
+  height: 0.24rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vinyl-ritual-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ad714a, #f2d3a9);
+  transition: width 420ms ease;
+}
+
+.vinyl-ritual-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding: clamp(1rem, 4vw, 1.6rem) clamp(1rem, 4vw, 2rem);
+  color: white;
+  background: linear-gradient(135deg, rgba(19, 22, 30, 0.96), rgba(5, 7, 11, 0.98));
+}
+
+.vinyl-ritual-meta .summary-label {
+  color: rgba(239, 210, 177, 0.66);
+}
+
+.vinyl-ritual-meta .vinyl-copy {
+  max-width: 56rem;
+  color: rgba(255, 255, 255, 0.54);
+}
+
+.vinyl-ritual-meta .text-button {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.vinyl-ritual-meta .form-error,
+.vinyl-ritual-meta .vinyl-notice {
+  grid-column: 1 / -1;
+}
+
+.vinyl-ritual-fallback {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(108, 129, 187, 0.24), transparent 22rem),
+    radial-gradient(circle at 20% 58%, hsl(var(--cover-hue) 52% 38% / 0.25), transparent 16rem),
+    #030407;
+}
+
+.vinyl-ritual-fallback-halo,
+.vinyl-ritual-fallback-sleeve,
+.vinyl-ritual-fallback-record,
+.vinyl-ritual-fallback-platter {
+  position: absolute;
+}
+
+.vinyl-ritual-fallback-halo {
+  top: 14%;
+  left: 50%;
+  width: 15rem;
+  aspect-ratio: 1;
+  border: 1px solid rgba(235, 167, 111, 0.2);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.2rem rgba(123, 146, 205, 0.05),
+    0 0 5rem rgba(226, 142, 85, 0.16),
+    inset 0 0 3rem #000;
+  transform: translateX(-50%) scaleY(0.42) rotate(-9deg);
+}
+
+.vinyl-ritual-fallback-sleeve {
+  top: 28%;
+  left: 14%;
+  width: min(30vw, 14rem);
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.25rem;
+  background: linear-gradient(145deg, hsl(var(--cover-hue) 58% 42%), #171820 72%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  transition: transform 500ms ease;
+}
+
+.vinyl-ritual-fallback-sleeve:not(.phase-sealed) {
+  transform: translateX(-8%) rotateY(-12deg);
+}
+
+.vinyl-ritual-fallback-record {
+  z-index: 2;
+  top: 31%;
+  left: 18%;
+  width: min(27vw, 12rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, transparent 0 5px, rgba(255, 255, 255, 0.05) 6px 7px),
+    radial-gradient(circle, hsl(var(--cover-hue) 58% 48%) 0 13%, #08090b 14% 100%);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+  transition: all 600ms cubic-bezier(0.18, 0.86, 0.2, 1);
+}
+
+.vinyl-ritual-fallback-record.phase-sleeve_open {
+  left: 29%;
+  transform: rotate(24deg);
+}
+
+.vinyl-ritual-fallback-record.phase-record_held {
+  top: 23%;
+  left: 45%;
+  transform: scale(1.08) rotate(52deg);
+}
+
+.vinyl-ritual-fallback-record.phase-on_platter,
+.vinyl-ritual-fallback-record.phase-needle_down,
+.vinyl-ritual-fallback-record.phase-playing,
+.vinyl-ritual-fallback-record.phase-ready_to_archive {
+  top: 39%;
+  left: 66%;
+}
+
+.vinyl-ritual-fallback-record.phase-playing {
+  animation: focus-record-spin 4s linear infinite;
+}
+
+.vinyl-ritual-fallback-record.phase-archived {
+  top: 22%;
+  left: 48%;
+  opacity: 0.45;
+  transform: scale(0.2);
+}
+
+.vinyl-ritual-fallback-platter {
+  top: 52%;
+  left: 72%;
+  width: min(34vw, 16rem);
+  aspect-ratio: 1.8;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #262b35 0 38%, #0e1118 40% 64%, #050608 66%);
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+  transform: translate(-50%, -50%);
+}
+
+.vinyl-ritual-fallback-message {
+  margin: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 0.75rem clamp(1rem, 4vw, 2rem);
+  color: rgba(255, 255, 255, 0.56);
+  background: rgba(8, 10, 15, 0.92);
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .vinyl-ritual-header {
+    display: block;
+  }
+
+  .vinyl-ritual-renderer-status {
+    display: inline-block;
+    margin-top: 0.65rem;
+  }
+
+  .vinyl-ritual-steps {
+    overflow-x: auto;
+    grid-template-columns: repeat(7, minmax(4rem, 1fr));
+    padding-bottom: 0.25rem;
+  }
+
+  .vinyl-ritual-stage {
+    height: 30rem;
+  }
+
+  .vinyl-ritual-controls,
+  .vinyl-ritual-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .vinyl-ritual-controls .primary-button {
+    width: 100%;
+    order: 2;
+  }
+
+  .vinyl-ritual-controls > p {
+    order: 3;
+    text-align: left;
+  }
+
+  .vinyl-ritual-meta .text-button {
+    justify-self: start;
+  }
+}
+
 .vinyl-artifact-abandoned {
   grid-template-columns: minmax(10rem, 14rem) 1fr;
 }

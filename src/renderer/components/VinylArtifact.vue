@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
 import {
   createProjectComposition,
@@ -7,6 +7,8 @@ import {
   renderProjectWav
 } from "@/shared/audio/vinyl-music";
 import { platform } from "@/renderer/platform/web";
+
+const VinylRitualScene = defineAsyncComponent(() => import("./VinylRitualScene.vue"));
 
 const props = defineProps<{
   project: RevivalProject;
@@ -75,11 +77,8 @@ function ensureAudio(): Uint8Array {
   return bytes;
 }
 
-async function toggleTrack(): Promise<void> {
-  if (playing.value) {
-    stopTrack();
-    return;
-  }
+async function startTrack(): Promise<void> {
+  if (playing.value) return;
   rendering.value = true;
   audioError.value = "";
   try {
@@ -123,7 +122,8 @@ onBeforeUnmount(releaseAudio);
     class="vinyl-artifact"
     :class="{
       'vinyl-artifact-compact': compact,
-      'vinyl-artifact-abandoned': project.status === 'abandoned'
+      'vinyl-artifact-abandoned': project.status === 'abandoned',
+      'vinyl-artifact-ritual': project.status === 'completed' && project.reward
     }"
     :style="coverStyle"
   >
@@ -135,6 +135,46 @@ onBeforeUnmount(releaseAudio);
         <p class="summary-label">已经放下</p>
         <h2 class="vinyl-heading">这张唱片不再需要播放。</h2>
         <p class="vinyl-copy">记录仍留在本机。放弃是一个项目决定，不是对你的评价。</p>
+      </div>
+    </template>
+
+    <template v-else-if="project.status === 'completed' && project.reward">
+      <VinylRitualScene
+        :project-title="project.title"
+        :cover-hue="coverSeed % 360"
+        :playing="playing"
+        :busy="rendering"
+        @request-play="startTrack"
+        @request-stop="stopTrack"
+      />
+      <div class="vinyl-ritual-meta">
+        <audio
+          ref="audioElement"
+          class="sr-only"
+          :src="audioUrl"
+          @play="playing = true"
+          @pause="playing = false"
+          @ended="playing = false"
+        />
+        <div>
+          <p class="summary-label">项目黑胶 · 本地生成</p>
+          <h2 class="vinyl-heading">一段 {{ trackLength }} 的项目声音</h2>
+          <p class="vinyl-copy">
+            当前曲目根据“{{ composition.moodLabel }}”、{{ recordedMinutes }}
+            分钟项目动作和本地记录生成；不会上传项目内容。真 3D
+            仪式先验证动作与空间，原创分轨音乐会在独立阶段替换，不把参考歌曲作为采样。
+          </p>
+        </div>
+        <button
+          class="text-button vinyl-export"
+          type="button"
+          :disabled="rendering"
+          @click="exportTrack"
+        >
+          导出当前同一首 WAV
+        </button>
+        <p v-if="audioError" class="form-error" role="alert">{{ audioError }}</p>
+        <p v-if="exportNotice" class="vinyl-notice" role="status">{{ exportNotice }}</p>
       </div>
     </template>
 
@@ -185,36 +225,6 @@ onBeforeUnmount(releaseAudio);
               : "每次留下真实进度，封面都会再清晰一点。项目完成时才会完整打开。"
           }}
         </p>
-        <template v-if="project.status === 'completed' && project.reward">
-          <audio
-            ref="audioElement"
-            class="sr-only"
-            :src="audioUrl"
-            @play="playing = true"
-            @pause="playing = false"
-            @ended="playing = false"
-          />
-          <div class="vinyl-actions">
-            <button
-              class="secondary-button vinyl-play"
-              type="button"
-              :disabled="rendering"
-              @click="toggleTrack"
-            >
-              {{ rendering ? "正在生成曲目…" : playing ? "暂停项目唱片" : "播放项目唱片" }}
-            </button>
-            <button
-              class="text-button vinyl-export"
-              type="button"
-              :disabled="rendering"
-              @click="exportTrack"
-            >
-              导出同一首 WAV
-            </button>
-          </div>
-          <p v-if="audioError" class="form-error" role="alert">{{ audioError }}</p>
-          <p v-if="exportNotice" class="vinyl-notice" role="status">{{ exportNotice }}</p>
-        </template>
       </div>
     </template>
   </section>

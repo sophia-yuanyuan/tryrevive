@@ -789,13 +789,21 @@ test("desktop camera gestures stay off by default and load the packaged local mo
   try {
     const window = await desktop.firstWindow();
     await window.getByRole("link", { name: "黑胶星球" }).click();
-    await window.getByRole("button", { name: "播放项目唱片" }).click();
-    await expect(window.getByRole("button", { name: "暂停项目唱片" })).toBeVisible();
+    const ritual = window.locator(".vinyl-ritual");
+    await expect(ritual).toHaveAttribute("data-renderer", /webgl|fallback/);
+    await ritual.getByRole("button", { name: "打开项目封套" }).click();
+    await ritual.getByRole("button", { name: "捏住并取出唱片" }).click();
+    await ritual.getByRole("button", { name: "把唱片放到唱盘" }).click();
+    await ritual.getByRole("button", { name: "落下唱针并播放" }).click();
+    await expect(ritual.getByRole("button", { name: "抬起唱针并停止" })).toBeVisible();
     await expect
       .poll(() => window.locator("audio").evaluate((audio) => audio.currentTime))
       .toBeGreaterThan(0.05);
     await expect(window.locator(".form-error")).toHaveCount(0);
-    await window.getByRole("button", { name: "暂停项目唱片" }).click();
+    await ritual.getByRole("button", { name: "抬起唱针并停止" }).click();
+    await expect(ritual.getByRole("button", { name: "收藏回黑胶星球" })).toBeVisible();
+    await ritual.getByRole("button", { name: "收藏回黑胶星球" }).click();
+    await expect(ritual.getByRole("button", { name: "重新体验这张唱片" })).toBeVisible();
     await expect(window.getByText("摄像头默认关闭")).toBeVisible();
     await window.getByRole("button", { name: "同意说明并开启摄像头手势" }).click();
     await expect(window.getByText(/本机识别中/)).toBeVisible({ timeout: 60_000 });

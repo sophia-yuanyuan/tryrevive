@@ -46,6 +46,17 @@ async function completeRevivalLoop(page) {
   await expect(page.getByText("导航已经可以在 390px 下打开和关闭", { exact: true })).toBeVisible();
 }
 
+async function playVinylRitual(page) {
+  const ritual = page.locator(".vinyl-ritual");
+  await expect(ritual).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await ritual.getByRole("button", { name: "打开项目封套" }).click();
+  await ritual.getByRole("button", { name: "捏住并取出唱片" }).click();
+  await ritual.getByRole("button", { name: "把唱片放到唱盘" }).click();
+  await ritual.getByRole("button", { name: "落下唱针并播放" }).click();
+  await expect(ritual.getByRole("button", { name: "抬起唱针并停止" })).toBeVisible();
+  return ritual;
+}
+
 test("student can complete the P0 loop and resume after reload", async ({ page }) => {
   await completeRevivalLoop(page);
   await page.reload();
@@ -179,27 +190,43 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await page.getByRole("link", { name: "黑胶星球" }).first().click();
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
   await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "播放项目唱片" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "打开项目封套" })).toBeVisible();
   await expect(page.getByText("摄像头默认关闭")).toBeVisible();
   await expect(page.getByRole("button", { name: "同意说明并开启摄像头手势" })).toBeVisible();
 
-  await page.getByRole("button", { name: "播放项目唱片" }).click();
-  await expect(page.getByRole("button", { name: "暂停项目唱片" })).toBeVisible();
+  const ritual = await playVinylRitual(page);
   await expect
     .poll(() => page.locator("audio").evaluate((audio) => audio.currentTime))
     .toBeGreaterThan(0.05);
   await expect(page.locator(".form-error")).toHaveCount(0);
-  await page.getByRole("button", { name: "暂停项目唱片" }).click();
+  await ritual.getByRole("button", { name: "抬起唱针并停止" }).click();
+  await expect(ritual.getByRole("button", { name: "收藏回黑胶星球" })).toBeVisible();
+  await ritual.getByRole("button", { name: "收藏回黑胶星球" }).click();
+  await expect(ritual.getByRole("button", { name: "重新体验这张唱片" })).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出同一首 WAV" }).click();
+  await page.getByRole("button", { name: "导出当前同一首 WAV" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("课程作品集.wav");
   await expect(page.getByText("WAV 已导出")).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "播放项目唱片" })).toBeVisible();
+  const refreshedRitual = page.locator(".vinyl-ritual");
+  await expect(refreshedRitual.getByRole("button", { name: "打开项目封套" })).toBeVisible();
+  if ((await refreshedRitual.getAttribute("data-renderer")) === "webgl") {
+    await refreshedRitual.locator("canvas").dispatchEvent("webglcontextlost", {
+      cancelable: true
+    });
+  }
+  await expect(refreshedRitual).toHaveAttribute("data-renderer", "fallback");
+  await refreshedRitual.locator(".vinyl-ritual-stage").focus();
+  await refreshedRitual.locator(".vinyl-ritual-stage").press("Enter");
+  await expect(refreshedRitual.getByRole("button", { name: "捏住并取出唱片" })).toBeVisible();
+  await refreshedRitual.locator(".vinyl-ritual-stage").press("Enter");
+  await expect(refreshedRitual.getByRole("button", { name: "把唱片放到唱盘" })).toBeVisible();
+  await refreshedRitual.locator(".vinyl-ritual-stage").press("Space");
+  await expect(refreshedRitual.getByRole("button", { name: "落下唱针并播放" })).toBeVisible();
 });
 
 test("an abandoned project remains available in the black-hole history", async ({ page }) => {
