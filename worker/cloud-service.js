@@ -4,6 +4,17 @@ import { createCloudService } from "./cloud-service-core.js";
 import { createOpenAIProjectProvider } from "./openai-project-provider.js";
 import { createStripeCheckoutProvider } from "./stripe-checkout-provider.js";
 
+const ANALYSIS_ADMISSION_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
+const MAX_ANALYSIS_LIMIT = 2_147_483_647;
+const ANALYSIS_LIMIT_ENVIRONMENT_KEYS = Object.freeze({
+  accountReservationsPerMinute: "CLOUD_LIMIT_ACCOUNT_PER_MINUTE",
+  sessionReservationsPerMinute: "CLOUD_LIMIT_SESSION_PER_MINUTE",
+  accountProjectAnalysesPerDay: "CLOUD_LIMIT_ACCOUNT_DAILY_ANALYSES",
+  accountSpeechMinutesPerDay: "CLOUD_LIMIT_ACCOUNT_DAILY_SPEECH_MINUTES",
+  globalProjectAnalysesPerDay: "CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES",
+  globalSpeechMinutesPerDay: "CLOUD_LIMIT_GLOBAL_DAILY_SPEECH_MINUTES"
+});
+
 export const OPENAI_UPLOAD_NOTICE =
   "只有在你确认后，所选内容才会发送给 TryRevive 云端，并由 OpenAI 完成转写或项目理解。";
 
@@ -21,8 +32,23 @@ function repositoryFrom(env) {
   return env?.CLOUD_DB ? createCloudD1Repository(env.CLOUD_DB) : null;
 }
 
+function positiveInteger(value) {
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed <= MAX_ANALYSIS_LIMIT ? parsed : null;
+}
+
+export function analysisLimitsFromEnvironment(env) {
+  const entries = Object.entries(ANALYSIS_LIMIT_ENVIRONMENT_KEYS).map(([key, environmentKey]) => [
+    key,
+    positiveInteger(env?.[environmentKey])
+  ]);
+  return entries.every(([, value]) => value !== null) ? Object.fromEntries(entries) : null;
+}
+
 export function providerModeFromEnvironment(env) {
   if (env?.CLOUD_PROVIDER_ENABLED !== "true") return null;
+  if (!analysisLimitsFromEnvironment(env)) return null;
   const deployment = env?.CLOUD_DEPLOYMENT_ENVIRONMENT;
   if (deployment !== "staging" && deployment !== "production") return null;
   const reviewEnabled = env?.OPENAI_MODEL_REVIEW_ENABLED;
@@ -90,6 +116,7 @@ export default {
     }
     const provider = createProviderFromEnvironment(env);
     const analysisMode = provider ? providerModeFromEnvironment(env) : null;
+    const analysisLimits = provider ? analysisLimitsFromEnvironment(env) : null;
     const paymentProvider = createPaymentProviderFromEnvironment(env);
     const service = createCloudService({
       repository,
@@ -98,6 +125,7 @@ export default {
       analysisEnabled: () => providerModeFromEnvironment(env) === analysisMode,
       analysisModel: provider ? provider.analysisModel : null,
       analysisReasoningEffort: provider ? provider.reasoningEffort : null,
+      analysisLimits,
       reviewAccessToken: analysisMode === "review" ? env.OPENAI_MODEL_REVIEW_ACCESS_TOKEN : null,
       paymentProvider,
       randomToken,
@@ -114,6 +142,12 @@ export default {
   async scheduled(_controller, env, context) {
     const repository = repositoryFrom(env);
     if (!repository) return;
-    context.waitUntil(repository.releaseExpired(Date.now()));
+    const timestamp = Date.now();
+    context.waitUntil(
+      (async () => {
+        await repository.releaseExpired(timestamp);
+        await repository.purgeAnalysisAdmissions(timestamp - ANALYSIS_ADMISSION_RETENTION_MS);
+      })()
+    );
   }
 };

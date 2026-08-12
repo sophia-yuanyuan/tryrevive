@@ -22,6 +22,14 @@ const VALID_ANALYSIS = {
   },
   uncertainties: ["The final team roster is not confirmed"]
 };
+const TEST_ANALYSIS_LIMITS = Object.freeze({
+  accountReservationsPerMinute: 100,
+  sessionReservationsPerMinute: 100,
+  accountProjectAnalysesPerDay: 1_000,
+  accountSpeechMinutesPerDay: 1_000,
+  globalProjectAnalysesPerDay: 10_000,
+  globalSpeechMinutesPerDay: 10_000
+});
 
 class BoundSqliteStatement {
   constructor(database, sql, bindings = []) {
@@ -83,9 +91,14 @@ async function createDatabase() {
     new URL("./migrations/0003_cloud_payments.sql", import.meta.url),
     "utf8"
   );
+  const fourth = await readFile(
+    new URL("./migrations/0004_cloud_analysis_limits.sql", import.meta.url),
+    "utf8"
+  );
   database.exec(first);
   database.exec(second);
   database.exec(third);
+  database.exec(fourth);
   return database;
 }
 
@@ -103,7 +116,10 @@ async function request(service, path, { method = "GET", token, body, headers = {
   return { response, body: await response.json() };
 }
 
-async function createHarness(t, { provider, initialNow = 1_800_000_000_000 } = {}) {
+async function createHarness(
+  t,
+  { provider, initialNow = 1_800_000_000_000, analysisLimits = TEST_ANALYSIS_LIMITS } = {}
+) {
   const database = await createDatabase();
   t.after(() => database.close());
   const repository = createCloudD1Repository(new SqliteD1(database));
@@ -115,6 +131,7 @@ async function createHarness(t, { provider, initialNow = 1_800_000_000_000 } = {
     provider,
     analysisMode: provider ? "approved" : null,
     analysisEnabled: () => true,
+    analysisLimits,
     now: () => currentNow,
     randomToken: () => `private_token_${String(++tokenIndex).padStart(48, "0")}`,
     randomId: () => `id_${++idIndex}`
@@ -148,6 +165,91 @@ async function redeem(service, database, code, balance) {
   assert.equal(result.response.status, 200);
   return result.body;
 }
+
+function textSource(text = "test") {
+  return {
+    metadata: {
+      kind: "text",
+      name: "文字",
+      mimeType: "text/plain",
+      sizeBytes: new TextEncoder().encode(text).byteLength,
+      durationSeconds: null
+    },
+    text
+  };
+}
+
+function audioSource(durationSeconds = 60) {
+  return {
+    metadata: {
+      kind: "audio",
+      name: "语音",
+      mimeType: "audio/wav",
+      sizeBytes: 3,
+      durationSeconds
+    },
+    base64: "AQID"
+  };
+}
+
+async function reserveSource(service, token, idempotencyKey, source) {
+  const quoted = await request(service, "/v1/cloud/quote", {
+    method: "POST",
+    token,
+    body: { source: source.metadata }
+  });
+  assert.equal(quoted.response.status, 200);
+  return request(service, "/v1/cloud/reservations", {
+    method: "POST",
+    token,
+    body: {
+      idempotencyKey,
+      quoteId: quoted.body.id,
+      source: source.metadata
+    }
+  });
+}
+
+async function analyzeSource(service, token, idempotencyKey, source, reservationToken) {
+  return request(service, "/v1/cloud/analyze", {
+    method: "POST",
+    token,
+    headers: { "x-tryrevive-reservation": reservationToken },
+    body: {
+      idempotencyKey,
+      projectTitle: "Cost protection test",
+      source: {
+        metadata: source.metadata,
+        ...(source.text ? { text: source.text } : { base64: source.base64 })
+      }
+    }
+  });
+}
+
+test("D1 migrations apply the analysis-limit schema with valid foreign keys and indexes", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  const tables = new Set(
+    database
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => row.name)
+  );
+  assert.equal(tables.has("cloud_analysis_admissions"), true);
+  assert.equal(tables.has("cloud_analysis_global_daily_usage"), true);
+  const indexes = new Set(
+    database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'cloud_analysis_admissions'"
+      )
+      .all()
+      .map((row) => row.name)
+  );
+  assert.equal(indexes.has("cloud_analysis_admissions_account_minute_idx"), true);
+  assert.equal(indexes.has("cloud_analysis_admissions_session_minute_idx"), true);
+  assert.equal(indexes.has("cloud_analysis_admissions_account_day_idx"), true);
+});
 
 test("D1 migrations persist one charge, one result, and an auditable ledger", async (t) => {
   let providerCalls = 0;
@@ -240,6 +342,20 @@ test("D1 migrations persist one charge, one result, and an auditable ledger", as
     .get(reservationBody.idempotencyKey);
   assert.equal(operation.status, "succeeded");
   assert.equal(JSON.parse(operation.result_json).originalGoal, VALID_ANALYSIS.originalGoal);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    1
+  );
+  assert.deepEqual(
+    {
+      ...database
+        .prepare(
+          "SELECT speech_minutes, project_analyses FROM cloud_analysis_global_daily_usage"
+        )
+        .get()
+    },
+    { speech_minutes: 0, project_analyses: 1 }
+  );
 });
 
 test("concurrent D1 reservations expose exactly one usable token", async (t) => {
@@ -362,6 +478,575 @@ test("a D1 provider failure returns the reservation exactly once", async (t) => 
   );
 });
 
+test("D1 reservation limits admit only one concurrent request without an extra charge", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const limits = {
+    ...TEST_ANALYSIS_LIMITS,
+    accountReservationsPerMinute: 2,
+    sessionReservationsPerMinute: 1
+  };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const account = await redeem(service, database, "D1-MINUTE-LIMIT", {
+    speechMinutes: 0,
+    projectAnalyses: 3
+  });
+  const source = textSource();
+  const attempts = await Promise.all([
+    reserveSource(service, account.sessionToken, "d1-minute-first", source),
+    reserveSource(service, account.sessionToken, "d1-minute-second", source)
+  ]);
+  assert.deepEqual(
+    attempts.map((attempt) => attempt.response.status).sort(),
+    [200, 429]
+  );
+  const blocked = attempts.find((attempt) => attempt.response.status === 429);
+  assert.equal(blocked.body.error, "analysis_rate_limited");
+  assert.match(blocked.response.headers.get("retry-after") || "", /^\d+$/);
+  assert.equal(providerCalls, 0);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_operations").get().count, 1);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    1
+  );
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger WHERE kind = 'reserve'").get()
+      .count,
+    1
+  );
+  assert.deepEqual(
+    { ...database.prepare("SELECT speech_minutes, project_analyses FROM cloud_accounts").get() },
+    { speech_minutes: 0, project_analyses: 2 }
+  );
+});
+
+test("D1 rejects an invalid reservation token without consuming the daily provider cap", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const { database, service } = await createHarness(t, { provider });
+  const account = await redeem(service, database, "D1-INVALID-CLAIM", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const source = textSource();
+  const reserved = await reserveSource(
+    service,
+    account.sessionToken,
+    "d1-invalid-claim",
+    source
+  );
+  const rejected = await analyzeSource(
+    service,
+    account.sessionToken,
+    "d1-invalid-claim",
+    source,
+    "wrong-reservation-token"
+  );
+  assert.equal(rejected.response.status, 409);
+  assert.equal(providerCalls, 0);
+  assert.equal(
+    database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM cloud_analysis_admissions WHERE provider_started_at IS NOT NULL"
+      )
+      .get().count,
+    0
+  );
+  assert.deepEqual(
+    {
+      ...database
+        .prepare(
+          "SELECT speech_minutes, project_analyses FROM cloud_analysis_global_daily_usage"
+        )
+        .get()
+    },
+    { speech_minutes: 0, project_analyses: 0 }
+  );
+  assert.equal(reserved.response.status, 200);
+});
+
+test("D1 account minute limits cannot be bypassed with a second device session", async (t) => {
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const limits = {
+    ...TEST_ANALYSIS_LIMITS,
+    accountReservationsPerMinute: 1,
+    sessionReservationsPerMinute: 2
+  };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const first = await redeem(service, database, "D1-ACCOUNT-LIMIT", {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+  await seedCode(database, "D1-SECOND-SESSION", { speechMinutes: 0, projectAnalyses: 1 });
+  const second = await request(service, "/v1/cloud/redeem", {
+    method: "POST",
+    token: first.sessionToken,
+    body: { code: "D1-SECOND-SESSION" }
+  });
+  assert.equal(second.response.status, 200);
+
+  assert.equal(
+    (await reserveSource(service, first.sessionToken, "d1-account-minute-first", textSource()))
+      .response.status,
+    200
+  );
+  const blocked = await reserveSource(
+    service,
+    second.body.sessionToken,
+    "d1-account-minute-second",
+    textSource()
+  );
+  assert.equal(blocked.response.status, 429);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM cloud_sessions").get().count, 2);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    1
+  );
+});
+
+test("D1 counts failed provider attempts against the daily cap while refunding both reservations", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      const error = new Error("upstream failed");
+      error.code = "upstream_failed";
+      throw error;
+    }
+  };
+  const limits = {
+    ...TEST_ANALYSIS_LIMITS,
+    accountProjectAnalysesPerDay: 1
+  };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const account = await redeem(service, database, "D1-FAILED-DAILY", {
+    speechMinutes: 0,
+    projectAnalyses: 3
+  });
+
+  const firstReservation = await reserveSource(
+    service,
+    account.sessionToken,
+    "d1-failed-daily-first",
+    textSource()
+  );
+  const first = await analyzeSource(
+    service,
+    account.sessionToken,
+    "d1-failed-daily-first",
+    textSource(),
+    firstReservation.body.reservationToken
+  );
+  assert.equal(first.response.status, 502);
+
+  const secondReservation = await reserveSource(
+    service,
+    account.sessionToken,
+    "d1-failed-daily-second",
+    textSource()
+  );
+  const second = await analyzeSource(
+    service,
+    account.sessionToken,
+    "d1-failed-daily-second",
+    textSource(),
+    secondReservation.body.reservationToken
+  );
+  assert.equal(second.response.status, 429);
+  assert.equal(second.body.error, "daily_analysis_limit");
+  assert.equal(second.body.details.refunded, true);
+  assert.match(second.response.headers.get("retry-after") || "", /^\d+$/);
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(second.body.details.balance, { speechMinutes: 0, projectAnalyses: 3 });
+  assert.deepEqual(
+    {
+      ...database
+        .prepare(
+          "SELECT speech_minutes, project_analyses FROM cloud_analysis_global_daily_usage"
+        )
+        .get()
+    },
+    { speech_minutes: 0, project_analyses: 1 }
+  );
+  assert.equal(
+    database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM cloud_analysis_admissions WHERE provider_started_at IS NOT NULL"
+      )
+      .get().count,
+    1
+  );
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_ledger WHERE kind = 'release'").get()
+      .count,
+    2
+  );
+});
+
+test("D1 preserves the anonymous global cap after deleting the account that used it", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      const error = new Error("synthetic upstream failure");
+      error.code = "synthetic_upstream_failure";
+      throw error;
+    }
+  };
+  const limits = {
+    ...TEST_ANALYSIS_LIMITS,
+    globalProjectAnalysesPerDay: 1
+  };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const firstAccount = await redeem(service, database, "D1-GLOBAL-FIRST", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const firstReservation = await reserveSource(
+    service,
+    firstAccount.sessionToken,
+    "d1-global-first",
+    textSource()
+  );
+  assert.equal(
+    (
+      await analyzeSource(
+        service,
+        firstAccount.sessionToken,
+        "d1-global-first",
+        textSource(),
+        firstReservation.body.reservationToken
+      )
+    ).response.status,
+    502
+  );
+  const storedSessionHash = database
+    .prepare("SELECT session_hash FROM cloud_analysis_admissions")
+    .get().session_hash;
+  const storedClaimNonce = database
+    .prepare("SELECT last_claim_nonce FROM cloud_analysis_global_daily_usage")
+    .get().last_claim_nonce;
+  const exported = await request(service, "/v1/cloud/data-export", {
+    token: firstAccount.sessionToken
+  });
+  assert.equal(exported.response.status, 200);
+  const serializedExport = JSON.stringify(exported.body);
+  assert.equal(serializedExport.includes(storedSessionHash), false);
+  assert.equal(serializedExport.includes(storedClaimNonce), false);
+  assert.equal(serializedExport.includes("session_hash"), false);
+  assert.equal(serializedExport.includes("last_claim_nonce"), false);
+  assert.equal(
+    (
+      await request(service, "/v1/cloud/account", {
+        method: "DELETE",
+        token: firstAccount.sessionToken,
+        headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+      })
+    ).response.status,
+    200
+  );
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    0
+  );
+  assert.equal(
+    database
+      .prepare("SELECT project_analyses FROM cloud_analysis_global_daily_usage")
+      .get().project_analyses,
+    1
+  );
+  const secondAccount = await redeem(service, database, "D1-GLOBAL-SECOND", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const secondReservation = await reserveSource(
+    service,
+    secondAccount.sessionToken,
+    "d1-global-second",
+    textSource()
+  );
+  const blocked = await analyzeSource(
+    service,
+    secondAccount.sessionToken,
+    "d1-global-second",
+    textSource(),
+    secondReservation.body.reservationToken
+  );
+  assert.equal(blocked.response.status, 429);
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(blocked.body.details.balance, { speechMinutes: 0, projectAnalyses: 1 });
+});
+
+test("D1 atomically admits only one provider call at the global daily boundary", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const limits = { ...TEST_ANALYSIS_LIMITS, globalProjectAnalysesPerDay: 1 };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const firstAccount = await redeem(service, database, "D1-GLOBAL-RACE-FIRST", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const secondAccount = await redeem(service, database, "D1-GLOBAL-RACE-SECOND", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  const source = textSource();
+  const [firstReservation, secondReservation] = await Promise.all([
+    reserveSource(service, firstAccount.sessionToken, "d1-global-race-first", source),
+    reserveSource(service, secondAccount.sessionToken, "d1-global-race-second", source)
+  ]);
+  const results = await Promise.all([
+    analyzeSource(
+      service,
+      firstAccount.sessionToken,
+      "d1-global-race-first",
+      source,
+      firstReservation.body.reservationToken
+    ),
+    analyzeSource(
+      service,
+      secondAccount.sessionToken,
+      "d1-global-race-second",
+      source,
+      secondReservation.body.reservationToken
+    )
+  ]);
+  assert.deepEqual(
+    results.map((result) => result.response.status).sort(),
+    [200, 429]
+  );
+  assert.equal(providerCalls, 1);
+  assert.equal(
+    database
+      .prepare("SELECT project_analyses FROM cloud_analysis_global_daily_usage")
+      .get().project_analyses,
+    1
+  );
+  assert.equal(
+    database
+      .prepare(
+        "SELECT COUNT(*) AS count FROM cloud_analysis_admissions WHERE provider_started_at IS NOT NULL"
+      )
+      .get().count,
+    1
+  );
+});
+
+test("D1 enforces account and global speech-minute caps without retaining deleted identity", async (t) => {
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const limits = {
+    ...TEST_ANALYSIS_LIMITS,
+    accountSpeechMinutesPerDay: 1,
+    globalSpeechMinutesPerDay: 1
+  };
+  const { database, service } = await createHarness(t, { provider, analysisLimits: limits });
+  const firstAccount = await redeem(service, database, "D1-SPEECH-FIRST", {
+    speechMinutes: 2,
+    projectAnalyses: 2
+  });
+  const firstAudio = audioSource();
+  const firstReservation = await reserveSource(
+    service,
+    firstAccount.sessionToken,
+    "d1-speech-first",
+    firstAudio
+  );
+  assert.equal(
+    (
+      await analyzeSource(
+        service,
+        firstAccount.sessionToken,
+        "d1-speech-first",
+        firstAudio,
+        firstReservation.body.reservationToken
+      )
+    ).response.status,
+    200
+  );
+  const sameAccountReservation = await reserveSource(
+    service,
+    firstAccount.sessionToken,
+    "d1-speech-account-limit",
+    firstAudio
+  );
+  assert.equal(
+    (
+      await analyzeSource(
+        service,
+        firstAccount.sessionToken,
+        "d1-speech-account-limit",
+        firstAudio,
+        sameAccountReservation.body.reservationToken
+      )
+    ).response.status,
+    429
+  );
+  assert.equal(
+    (
+      await request(service, "/v1/cloud/account", {
+        method: "DELETE",
+        token: firstAccount.sessionToken,
+        headers: { "x-tryrevive-delete-confirmation": "DELETE CLOUD DATA" }
+      })
+    ).response.status,
+    200
+  );
+
+  const secondAccount = await redeem(service, database, "D1-SPEECH-SECOND", {
+    speechMinutes: 1,
+    projectAnalyses: 1
+  });
+  const globalReservation = await reserveSource(
+    service,
+    secondAccount.sessionToken,
+    "d1-speech-global-limit",
+    firstAudio
+  );
+  const globallyBlocked = await analyzeSource(
+    service,
+    secondAccount.sessionToken,
+    "d1-speech-global-limit",
+    firstAudio,
+    globalReservation.body.reservationToken
+  );
+  assert.equal(globallyBlocked.response.status, 429);
+  assert.equal(providerCalls, 1);
+  assert.equal(
+    database
+      .prepare("SELECT speech_minutes FROM cloud_analysis_global_daily_usage")
+      .get().speech_minutes,
+    1
+  );
+});
+
+test("D1 daily limits reset only when the UTC day bucket changes", async (t) => {
+  const start = 1_800_000_000_000;
+  let providerCalls = 0;
+  const provider = {
+    available: true,
+    async analyze() {
+      providerCalls += 1;
+      return VALID_ANALYSIS;
+    }
+  };
+  const limits = { ...TEST_ANALYSIS_LIMITS, globalProjectAnalysesPerDay: 1 };
+  const { database, service, setNow } = await createHarness(t, {
+    provider,
+    analysisLimits: limits,
+    initialNow: start
+  });
+  const account = await redeem(service, database, "D1-DAY-ROLLOVER", {
+    speechMinutes: 0,
+    projectAnalyses: 2
+  });
+  const firstReservation = await reserveSource(
+    service,
+    account.sessionToken,
+    "d1-day-first",
+    textSource()
+  );
+  assert.equal(
+    (
+      await analyzeSource(
+        service,
+        account.sessionToken,
+        "d1-day-first",
+        textSource(),
+        firstReservation.body.reservationToken
+      )
+    ).response.status,
+    200
+  );
+  setNow(start + 24 * 60 * 60 * 1000);
+  const secondReservation = await reserveSource(
+    service,
+    account.sessionToken,
+    "d1-day-second",
+    textSource()
+  );
+  assert.equal(
+    (
+      await analyzeSource(
+        service,
+        account.sessionToken,
+        "d1-day-second",
+        textSource(),
+        secondReservation.body.reservationToken
+      )
+    ).response.status,
+    200
+  );
+  assert.equal(providerCalls, 2);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_global_daily_usage").get()
+      .count,
+    2
+  );
+});
+
+test("D1 retention cleanup preserves pending admissions until reservation release", async (t) => {
+  const start = 1_800_000_000_000;
+  const provider = { available: true, async analyze() { return VALID_ANALYSIS; } };
+  const { database, repository, service } = await createHarness(t, {
+    provider,
+    initialNow: start
+  });
+  const account = await redeem(service, database, "D1-RETENTION", {
+    speechMinutes: 0,
+    projectAnalyses: 1
+  });
+  assert.equal(
+    (
+      await reserveSource(
+        service,
+        account.sessionToken,
+        "d1-retention-pending",
+        textSource()
+      )
+    ).response.status,
+    200
+  );
+  const afterRetention = start + 32 * 24 * 60 * 60 * 1000;
+  await repository.purgeAnalysisAdmissions(afterRetention - 31 * 24 * 60 * 60 * 1000);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    1
+  );
+  await repository.releaseExpired(afterRetention);
+  await repository.purgeAnalysisAdmissions(afterRetention - 31 * 24 * 60 * 60 * 1000);
+  assert.equal(
+    database.prepare("SELECT COUNT(*) AS count FROM cloud_analysis_admissions").get().count,
+    0
+  );
+});
+
 test("D1 session revocation removes only the presented device session", async (t) => {
   const { database, service } = await createHarness(t);
   const account = await redeem(service, database, "D1-LOGOUT-CODE", {
@@ -420,6 +1105,8 @@ test("D1 settlement cannot report success after an expiry refund wins", async (t
     idempotencyKey: "d1-settlement-expiry-race",
     reservationTokenHash: await sha256Hex(reserved.body.reservationToken),
     sourceFingerprint: await sha256Hex(stableMetadata(source)),
+    claimNonce: "claim-settlement-race",
+    limits: TEST_ANALYSIS_LIMITS,
     now: start
   });
   assert.equal(claimed.status, "claimed");

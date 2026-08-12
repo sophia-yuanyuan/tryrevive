@@ -66,8 +66,8 @@
 
 1. 在当前实际管理 DNS 的阿里云控制台添加根域、`www`、`api`、`staging-api` 记录；或先完成经过确认的 DNS 托管迁移。
 2. 生成至少 24 位随机域名验证值；把它同时写入 `_tryrevive-owner.tryrevive.online` TXT 与 GitHub `tryrevive-production` Environment Secret `TRYREVIVE_DOMAIN_VERIFICATION_TOKEN`。
-3. staging 验收全部通过后，重新创建独立的 production Worker 与 D1，并按顺序应用 `0001`、`0002`、`0003`；不得复制 staging 会话、订单或测试材料，也不要部署旧 `worker/wrangler.toml` 代理。
-4. 在 staging Worker Secret 中设置 `OPENAI_API_KEY` 与至少 32 随机字节的 `OPENAI_MODEL_REVIEW_ACCESS_TOKEN`，并把同一审核 token 写入 GitHub `tryrevive-staging` Environment Secret；先以 `analysisMode=review` 运行 10 份合成样本并保存人工签字记录，再关闭 review、删除审核 token、设置 `OPENAI_MODEL_APPROVED=true`。具体见 [`MODEL_QUALITY_REVIEW.md`](./MODEL_QUALITY_REVIEW.md)。
+3. staging 验收全部通过后，重新创建独立的 production Worker 与 D1，并按顺序应用 `0001`、`0002`、`0003`、`0004`；不得复制 staging 会话、订单、限额准入或测试材料，也不要部署旧 `worker/wrangler.toml` 代理。
+4. 在 staging Worker Secret 中设置 `OPENAI_API_KEY` 与至少 32 随机字节的 `OPENAI_MODEL_REVIEW_ACCESS_TOKEN`，并把同一审核 token 写入 GitHub `tryrevive-staging` Environment Secret；同时按审核预算填写六个 `CLOUD_LIMIT_*` 正整数，确认 catalog 返回 `costProtection=true`。先以 `analysisMode=review` 运行 10 份合成样本并保存人工签字记录，再关闭 review、删除审核 token、设置 `OPENAI_MODEL_APPROVED=true`。具体见 [`MODEL_QUALITY_REVIEW.md`](./MODEL_QUALITY_REVIEW.md)。
 5. 在 Stripe 商户后台确认运营主体、币种、税务、退款与商品价格；创建 Price、live Secret 与 webhook endpoint。只订阅 Checkout 完成、异步成功、异步失败和过期事件。
 6. 接通经过审核的 staging OpenAI 配置后，使用已经准备好的有余额/余额不足测试会话手动运行 `Remote cloud acceptance`；测试会消耗真实 staging 算力，不能使用真实用户内容。
 7. 再运行 `Production control-plane preflight`。只有远端验收与生产预检均为绿色，才能把“远端 E2E 已通过”和“生产域名已验证”写入交付结果。

@@ -47,6 +47,7 @@ const CatalogResponseSchema = z.object({
   analysisAvailable: z.boolean(),
   analysisMode: z.enum(["disabled", "review", "approved"]).default("disabled"),
   analysisModel: z.string().trim().min(1).max(120).nullable().default(null),
+  costProtection: z.boolean().default(false),
   paymentAvailable: z.boolean().default(false)
 });
 
@@ -176,7 +177,11 @@ export async function getCloudStatus(): Promise<CloudStatus> {
   try {
     const catalog = await requestJson("/v1/cloud/catalog", CatalogResponseSchema);
     paymentAvailable = catalog.paymentAvailable;
-    if (!catalog.analysisAvailable || catalog.analysisMode !== "approved") {
+    if (
+      !catalog.analysisAvailable ||
+      catalog.analysisMode !== "approved" ||
+      !catalog.costProtection
+    ) {
       return {
         available: false,
         authenticated: Boolean(token),
@@ -186,7 +191,9 @@ export async function getCloudStatus(): Promise<CloudStatus> {
         message:
           catalog.analysisMode === "review"
             ? "云端模型正在使用合成材料审核，尚未批准给普通用户；不会上传你的内容。"
-            : "云端账本已就绪，但真实语音和附件处理尚未启用；不会上传你的内容。"
+            : catalog.analysisMode === "approved" && !catalog.costProtection
+              ? "云端成本保护尚未启用；不会上传你的内容。"
+              : "云端账本已就绪，但真实语音和附件处理尚未启用；不会上传你的内容。"
       };
     }
     if (!token) {

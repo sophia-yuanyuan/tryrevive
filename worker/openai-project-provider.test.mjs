@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createProviderFromEnvironment, providerModeFromEnvironment } from "./cloud-service.js";
+import {
+  analysisLimitsFromEnvironment,
+  createProviderFromEnvironment,
+  providerModeFromEnvironment
+} from "./cloud-service.js";
 import { createOpenAIProjectProvider } from "./openai-project-provider.js";
+
+const ANALYSIS_LIMIT_ENVIRONMENT = Object.freeze({
+  CLOUD_LIMIT_ACCOUNT_PER_MINUTE: "20",
+  CLOUD_LIMIT_SESSION_PER_MINUTE: "10",
+  CLOUD_LIMIT_ACCOUNT_DAILY_ANALYSES: "100",
+  CLOUD_LIMIT_ACCOUNT_DAILY_SPEECH_MINUTES: "120",
+  CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES: "1000",
+  CLOUD_LIMIT_GLOBAL_DAILY_SPEECH_MINUTES: "1200"
+});
+
+function withAnalysisLimits(environment) {
+  return { ...ANALYSIS_LIMIT_ENVIRONMENT, ...environment };
+}
 
 const ANALYSIS = {
   originalGoal: "完成黑客松报名",
@@ -261,18 +278,18 @@ test("the production provider remains off until every server-side gate is explic
     null
   );
   assert.equal(
-    createProviderFromEnvironment({
+    createProviderFromEnvironment(withAnalysisLimits({
       CLOUD_PROVIDER_ENABLED: "true",
       OPENAI_MODEL_APPROVED: "true",
       OPENAI_MODEL_REVIEW_ENABLED: "false",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "approved"
-    })?.reasoningEffort,
+    }))?.reasoningEffort,
     "medium"
   );
   assert.equal(
-    createProviderFromEnvironment({
+    createProviderFromEnvironment(withAnalysisLimits({
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
@@ -280,11 +297,11 @@ test("the production provider remains off until every server-side gate is explic
       OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef",
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "review-candidate"
-    }),
+    })),
     null
   );
   assert.equal(
-    createProviderFromEnvironment({
+    createProviderFromEnvironment(withAnalysisLimits({
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
@@ -293,18 +310,46 @@ test("the production provider remains off until every server-side gate is explic
       OPENAI_API_KEY: "server-secret",
       OPENAI_ANALYSIS_MODEL: "review-candidate",
       OPENAI_REASONING_EFFORT: "low"
-    })?.reasoningEffort,
+    }))?.reasoningEffort,
     "low"
   );
   assert.equal(
-    providerModeFromEnvironment({
+    providerModeFromEnvironment(withAnalysisLimits({
       CLOUD_PROVIDER_ENABLED: "true",
       CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
       OPENAI_MODEL_REVIEW_ENABLED: "true",
       OPENAI_MODEL_APPROVED: "false",
       OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
-    }),
+    })),
     "review"
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
+    })),
+    "approved"
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
+    })),
+    null
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false"
+    })),
+    null
   );
   assert.equal(
     providerModeFromEnvironment({
@@ -313,24 +358,47 @@ test("the production provider remains off until every server-side gate is explic
       OPENAI_MODEL_APPROVED: "true",
       OPENAI_MODEL_REVIEW_ENABLED: "false"
     }),
-    "approved"
-  );
-  assert.equal(
-    providerModeFromEnvironment({
-      CLOUD_PROVIDER_ENABLED: "true",
-      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
-      OPENAI_MODEL_REVIEW_ENABLED: "true",
-      OPENAI_MODEL_APPROVED: "true",
-      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
-    }),
     null
   );
   assert.equal(
+    analysisLimitsFromEnvironment({
+      ...ANALYSIS_LIMIT_ENVIRONMENT,
+      CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES: "0"
+    }),
+    null
+  );
+  assert.deepEqual(analysisLimitsFromEnvironment(ANALYSIS_LIMIT_ENVIRONMENT), {
+    accountReservationsPerMinute: 20,
+    sessionReservationsPerMinute: 10,
+    accountProjectAnalysesPerDay: 100,
+    accountSpeechMinutesPerDay: 120,
+    globalProjectAnalysesPerDay: 1000,
+    globalSpeechMinutesPerDay: 1200
+  });
+});
+
+test("every malformed or missing analysis limit fails closed", () => {
+  const invalidValues = ["", "0", "-1", "1.5", " 1", "2147483648"];
+  for (const key of Object.keys(ANALYSIS_LIMIT_ENVIRONMENT)) {
+    const missing = { ...ANALYSIS_LIMIT_ENVIRONMENT };
+    delete missing[key];
+    assert.equal(analysisLimitsFromEnvironment(missing), null, `${key} missing`);
+    for (const value of invalidValues) {
+      assert.equal(
+        analysisLimitsFromEnvironment({ ...ANALYSIS_LIMIT_ENVIRONMENT, [key]: value }),
+        null,
+        `${key}=${JSON.stringify(value)}`
+      );
+    }
+  }
+  assert.equal(
     providerModeFromEnvironment({
+      ...ANALYSIS_LIMIT_ENVIRONMENT,
+      CLOUD_LIMIT_ACCOUNT_PER_MINUTE: "0",
       CLOUD_PROVIDER_ENABLED: "true",
-      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
-      OPENAI_MODEL_REVIEW_ENABLED: "true",
-      OPENAI_MODEL_APPROVED: "false"
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
     }),
     null
   );

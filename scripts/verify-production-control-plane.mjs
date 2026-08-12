@@ -78,6 +78,7 @@ async function verifyHttps() {
   assert.equal(body.available, true);
   assert.equal(body.analysisAvailable, true, "approved OpenAI analysis is not enabled");
   assert.equal(body.analysisMode, "approved", "production analysis is still in review mode");
+  assert.equal(body.costProtection, true, "server-side analysis cost protection is not enabled");
   assert.match(body.analysisModel || "", /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
   assert.match(EXPECTED_MODEL, /^[a-z0-9][a-z0-9._:-]{1,119}$/iu);
   assert.equal(body.analysisModel, EXPECTED_MODEL, "production model differs from signed review");

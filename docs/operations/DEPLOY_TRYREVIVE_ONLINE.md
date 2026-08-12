@@ -184,14 +184,14 @@ Copy-Item worker\wrangler.cloud.example.toml worker\wrangler.cloud.staging.toml
 
 这个本地配置已被部署手册定义为账户专属文件，不应提交。提交前每次用 `git status --short` 检查。
 
-### 6.2 应用三段 D1 迁移
+### 6.2 应用四段 D1 迁移
 
 ```powershell
 npm exec wrangler -- d1 migrations list tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 npm exec wrangler -- d1 migrations apply tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 ```
 
-通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql` 都显示已应用。Cloudflare 会在应用迁移前创建备份；任何一段失败都不要手工跳号。
+通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql`、`0004_cloud_analysis_limits.sql` 都显示已应用。第四段只增加限额准入和不含账号/会话标识的 UTC 日总量；Cloudflare 会在应用迁移前创建备份，任何一段失败都不要手工跳号。
 
 ### 6.3 以“全部关闭”状态首次部署
 
@@ -238,6 +238,19 @@ OPENAI_MODEL_APPROVED = "false"
 ```
 
 `analysisMode=review` 只允许合成审核工作流调用；Windows 客户端不会把它显示成可用云端服务，production 预检也不接受。
+
+在把 `CLOUD_PROVIDER_ENABLED` 改为 `true` 前，必须另外设置六个十进制正整数：
+
+```toml
+CLOUD_LIMIT_ACCOUNT_PER_MINUTE = "账号固定分钟桶上限"
+CLOUD_LIMIT_SESSION_PER_MINUTE = "当前设备会话固定分钟桶上限"
+CLOUD_LIMIT_ACCOUNT_DAILY_ANALYSES = "账号 UTC 日分析次数上限"
+CLOUD_LIMIT_ACCOUNT_DAILY_SPEECH_MINUTES = "账号 UTC 日语音分钟上限"
+CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES = "全服务 UTC 日分析次数上限"
+CLOUD_LIMIT_GLOBAL_DAILY_SPEECH_MINUTES = "全服务 UTC 日语音分钟上限"
+```
+
+这些中文值不能直接部署，必须根据候选模型单价、OpenAI Project 日预算和可承受的最坏日成本换成正整数。任一项无效都会让真实 provider 失败关闭；catalog 只有在门禁全部成立时才返回 `costProtection=true`。上游失败会退款但仍计入当天真实调用，账号删除也不会让匿名全局日总量倒退。
 
 ### 7.2 添加 Secret
 
@@ -449,11 +462,11 @@ $domainToken
 
 只有 staging 远端 E2E、测试支付、隐私人工验收和法律事实全部通过后：
 
-1. 创建 `tryrevive-cloud-production` D1，不复制 staging 会话、兑换码、订单或测试材料。
+1. 创建 `tryrevive-cloud-production` D1，不复制 staging 会话、兑换码、订单、限额准入或测试材料。
 2. 从示例重新创建 `worker/wrangler.cloud.production.toml`，填 production D1 ID。
-3. 依次应用三段迁移。
+3. 依次应用四段迁移。
 4. 先以所有开关 false 部署 `tryrevive-cloud-production`。
-5. 配置 production 专用 OpenAI Project Key、已审核模型与同一个 reasoning effort；明确设置 `CLOUD_DEPLOYMENT_ENVIRONMENT="production"`、`OPENAI_MODEL_REVIEW_ENABLED="false"`、`OPENAI_MODEL_APPROVED="true"`。
+5. 配置 production 专用 OpenAI Project Key、已审核模型、同一个 reasoning effort，以及按生产硬预算确定的六个 `CLOUD_LIMIT_*` 正整数；明确设置 `CLOUD_DEPLOYMENT_ENVIRONMENT="production"`、`OPENAI_MODEL_REVIEW_ENABLED="false"`、`OPENAI_MODEL_APPROVED="true"`。
 6. Stripe 切换 Live mode，重新创建 live Price 和 production webhook；test 的 `price_`、`sk_test_`、`whsec_` 不能复用。
 7. `CLOUD_PAYMENT_LIVE_ENABLED` 最后一个改为 `true`。在此之前 live key 即使误放入，也必须保持 `paymentAvailable=false`。
 8. 绑定 Worker Custom Domain：`api.tryrevive.online`。
@@ -464,7 +477,7 @@ production preflight 只有同时满足以下条件才会绿：
 - 根域、`www`、`api`、`staging-api` 都能解析；
 - 所有权 TXT 与 GitHub Environment Secret 完全一致；
 - 根域 HTTPS 不跳到外部域名；
-- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`analysisMode=approved`、`paymentAvailable=true`，且 `analysisModel`、`analysisReasoningEffort` 与受保护的审核配置完全一致。
+- production catalog 明确报告 `available=true`、`analysisAvailable=true`、`analysisMode=approved`、`costProtection=true`、`paymentAvailable=true`，且 `analysisModel`、`analysisReasoningEffort` 与受保护的审核配置完全一致。
 
 绿灯只能证明控制面接通，不证明模型质量、退款客服或法律文本已经被真实用户接受。
 

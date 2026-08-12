@@ -114,6 +114,7 @@ test(
     const catalog = await api("/v1/cloud/catalog");
     assert.equal(catalog.response.status, 200);
     assert.equal(catalog.body.analysisAvailable, true);
+    assert.equal(catalog.body.costProtection, true);
 
     const cases = [
       {

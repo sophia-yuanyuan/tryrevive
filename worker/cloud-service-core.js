@@ -13,16 +13,27 @@ const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 const DEFAULT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_QUOTE_MS = 10 * 60 * 1000;
 const DEFAULT_RESERVATION_MS = 10 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+const ANALYSIS_LIMIT_KEYS = [
+  "accountReservationsPerMinute",
+  "sessionReservationsPerMinute",
+  "accountProjectAnalysesPerDay",
+  "accountSpeechMinutesPerDay",
+  "globalProjectAnalysesPerDay",
+  "globalSpeechMinutesPerDay"
+];
 const textEncoder = new TextEncoder();
 
 class HttpError extends Error {
-  constructor(status, code, message, details = undefined) {
+  constructor(status, code, message, details = undefined, headers = {}) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.headers = headers;
   }
 }
 
@@ -44,7 +55,8 @@ function errorResponse(error) {
         message: error.message,
         ...(error.details ? { details: error.details } : {})
       },
-      error.status
+      error.status,
+      error.headers
     );
   }
   return json(
@@ -108,11 +120,12 @@ async function requireAccount(request, repository, now) {
   if (!token) {
     throw new HttpError(401, "authentication_required", "请先兑换 TryRevive 算力");
   }
-  const account = await repository.findAccountBySession(await sha256Hex(token), now);
+  const sessionHash = await sha256Hex(token);
+  const account = await repository.findAccountBySession(sessionHash, now);
   if (!account) {
     throw new HttpError(401, "session_expired", "算力凭据已失效，请重新兑换或登录");
   }
-  return account;
+  return { ...account, sessionHash };
 }
 
 async function optionalAccount(request, repository, now) {
@@ -197,6 +210,20 @@ function providerAvailable(provider) {
   return Boolean(provider && provider.available === true && typeof provider.analyze === "function");
 }
 
+function validAnalysisLimits(limits) {
+  return Boolean(
+    limits &&
+      ANALYSIS_LIMIT_KEYS.every(
+        (key) => Number.isSafeInteger(limits[key]) && limits[key] > 0
+      )
+  );
+}
+
+function retryAfterSeconds(timestamp, bucketSize) {
+  const nextBucket = (Math.floor(timestamp / bucketSize) + 1) * bucketSize;
+  return Math.max(1, Math.ceil((nextBucket - timestamp) / 1000));
+}
+
 async function timingSafeTextEqual(provided, expected) {
   const [providedHash, expectedHash] = await Promise.all([
     crypto.subtle.digest("SHA-256", textEncoder.encode(provided)),
@@ -233,6 +260,7 @@ export function createCloudService({
   analysisEnabled = null,
   analysisModel = null,
   analysisReasoningEffort = "medium",
+  analysisLimits = null,
   reviewAccessToken = null,
   paymentProvider = null,
   now = () => Date.now(),
@@ -254,6 +282,12 @@ export function createCloudService({
   if (!hasProvider && analysisMode !== null && analysisMode !== "disabled") {
     throw new Error("analysis mode requires an available provider");
   }
+  if (hasProvider && !validAnalysisLimits(analysisLimits)) {
+    throw new Error("an available provider requires explicit positive analysis limits");
+  }
+  const effectiveAnalysisLimits = validAnalysisLimits(analysisLimits)
+    ? Object.freeze({ ...analysisLimits })
+    : null;
   const effectiveAnalysisMode = hasProvider ? analysisMode : "disabled";
   if (
     effectiveAnalysisMode === "review" &&
@@ -264,7 +298,7 @@ export function createCloudService({
 
   function analysisOperational() {
     try {
-      return hasProvider && analysisEnabled() === true;
+      return hasProvider && effectiveAnalysisLimits !== null && analysisEnabled() === true;
     } catch {
       return false;
     }
@@ -301,6 +335,7 @@ export function createCloudService({
           ? analysisReasoningEffort
           : null
         : null,
+      costProtection: available,
       paymentAvailable: paymentProviderAvailable(paymentProvider),
       units: ["speechMinutes", "projectAnalyses"],
       limits: {
@@ -619,8 +654,20 @@ export function createCloudService({
       reservationExpiresAt: timestamp + reservationDurationMs,
       reservationNonce: "reserve_" + randomId(),
       reserveLedgerId: "ledger_" + randomId(),
+      sessionHash: account.sessionHash,
+      limits: effectiveAnalysisLimits,
       now: timestamp
     });
+    if (result.status === "rate_limited") {
+      const retryAfter = retryAfterSeconds(timestamp, MINUTE_MS);
+      throw new HttpError(
+        429,
+        "analysis_rate_limited",
+        "请求过于频繁，本次没有创建处理任务或扣除算力。请稍后再试。",
+        { retryAfterSeconds: retryAfter },
+        { "retry-after": String(retryAfter) }
+      );
+    }
     if (result.status === "insufficient") {
       throw new HttpError(402, "insufficient_balance", "当前算力额度不足，本次内容没有上传处理");
     }
@@ -672,9 +719,32 @@ export function createCloudService({
       idempotencyKey,
       reservationTokenHash: await sha256Hex(reservationToken),
       sourceFingerprint: await sha256Hex(stableMetadata(source.metadata)),
+      claimNonce: "claim_" + randomId(),
+      limits: effectiveAnalysisLimits,
       now: timestamp
     });
     if (claim.status === "succeeded") return json(claim.result);
+    if (claim.status === "daily_limit") {
+      const refunded = await repository.failAndRefund({
+        accountId: account.id,
+        idempotencyKey,
+        errorCode: "daily_usage_limit",
+        releaseLedgerId: "ledger_" + randomId(),
+        now: timestamp
+      });
+      const retryAfter = retryAfterSeconds(timestamp, DAY_MS);
+      throw new HttpError(
+        429,
+        "daily_analysis_limit",
+        "TryRevive 今日云端处理额度已达上限，本次没有调用 OpenAI，预留算力已经归还。",
+        {
+          refunded: refunded.refunded !== false,
+          balance: refunded.balance,
+          retryAfterSeconds: retryAfter
+        },
+        { "retry-after": String(retryAfter) }
+      );
+    }
     if (claim.status !== "claimed") {
       throw new HttpError(409, "reservation_unavailable", "上传确认已过期、已使用或与当前内容不一致");
     }

@@ -148,6 +148,7 @@ test(
     const catalog = await api("/v1/cloud/catalog");
     assert.equal(catalog.response.status, 200);
     assert.equal(catalog.body.analysisAvailable, true, "staging analysis provider is not enabled");
+    assert.equal(catalog.body.costProtection, true, "server-side cost protection is not enabled");
     assert.equal(
       catalog.body.analysisMode,
       "review",

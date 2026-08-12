@@ -1,5 +1,7 @@
 const STALE_PROCESSING_MS = 15 * 60 * 1000;
 const STALE_PAYMENT_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function balanceFrom(row) {
   return {
@@ -185,6 +187,31 @@ export function createCloudD1Repository(db) {
   return {
     async releaseExpired(now, accountId = null) {
       await releaseExpired(now, accountId);
+    },
+
+    async purgeAnalysisAdmissions(before) {
+      const [admissions, dailyUsage] = await db.batch([
+        db
+          .prepare(
+            `DELETE FROM cloud_analysis_admissions
+             WHERE admitted_at < ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM cloud_operations
+                 WHERE idempotency_key = cloud_analysis_admissions.operation_id
+                   AND status = 'pending'
+               )`
+          )
+          .bind(before),
+        db
+          .prepare(
+            `DELETE FROM cloud_analysis_global_daily_usage
+             WHERE day_bucket < ?`
+          )
+          .bind(Math.floor(before / DAY_MS))
+      ]);
+      return (
+        Number(admissions.meta?.changes || 0) + Number(dailyUsage.meta?.changes || 0)
+      );
     },
 
     async findAccountBySession(tokenHash, now) {
@@ -665,6 +692,12 @@ export function createCloudD1Repository(db) {
           .bind(accountId, accountId, accountId),
         db
           .prepare(
+            `DELETE FROM cloud_analysis_admissions
+             WHERE account_id = ? AND ${deletionGuard}`
+          )
+          .bind(accountId, accountId, accountId),
+        db
+          .prepare(
             `DELETE FROM cloud_operations
              WHERE account_id = ? AND ${deletionGuard}`
           )
@@ -814,6 +847,8 @@ export function createCloudD1Repository(db) {
 
     async reserve(input) {
       await releaseExpired(input.now, input.accountId);
+      const minuteBucket = Math.floor(input.now / MINUTE_MS);
+      const dayBucket = Math.floor(input.now / DAY_MS);
       let operation = await operationByKey(db, input.idempotencyKey);
       if (operation) {
         if (
@@ -848,6 +883,14 @@ export function createCloudD1Repository(db) {
                AND q.source_fingerprint = ?
                AND a.speech_minutes >= q.speech_minutes
                AND a.project_analyses >= q.project_analyses
+               AND (
+                 SELECT COUNT(*) FROM cloud_analysis_admissions
+                 WHERE account_id = q.account_id AND minute_bucket = ?
+               ) < ?
+               AND (
+                 SELECT COUNT(*) FROM cloud_analysis_admissions
+                 WHERE session_hash = ? AND minute_bucket = ?
+               ) < ?
                AND NOT EXISTS (
                  SELECT 1 FROM cloud_operations WHERE idempotency_key = ?
                )`
@@ -864,7 +907,32 @@ export function createCloudD1Repository(db) {
             input.accountId,
             input.now,
             input.sourceFingerprint,
+            minuteBucket,
+            input.limits.accountReservationsPerMinute,
+            input.sessionHash,
+            minuteBucket,
+            input.limits.sessionReservationsPerMinute,
             input.idempotencyKey
+          ),
+        db
+          .prepare(
+            `INSERT INTO cloud_analysis_admissions (
+               operation_id, account_id, session_hash, admitted_at,
+               minute_bucket, day_bucket, speech_minutes, project_analyses,
+               provider_started_at
+             )
+             SELECT idempotency_key, account_id, ?, ?, ?, ?,
+                    speech_minutes, project_analyses, NULL
+             FROM cloud_operations
+             WHERE idempotency_key = ? AND reservation_nonce = ?`
+          )
+          .bind(
+            input.sessionHash,
+            input.now,
+            minuteBucket,
+            dayBucket,
+            input.idempotencyKey,
+            input.reservationNonce
           ),
         db
           .prepare(
@@ -883,7 +951,10 @@ export function createCloudD1Repository(db) {
                  SELECT 1 FROM cloud_operations
                  WHERE idempotency_key = ? AND reservation_nonce = ?
                )
-               AND NOT EXISTS (SELECT 1 FROM cloud_ledger WHERE id = ?)`
+               AND NOT EXISTS (SELECT 1 FROM cloud_ledger WHERE id = ?)
+               AND EXISTS (
+                 SELECT 1 FROM cloud_analysis_admissions WHERE operation_id = ?
+               )`
           )
           .bind(
             input.idempotencyKey,
@@ -894,7 +965,8 @@ export function createCloudD1Repository(db) {
             input.accountId,
             input.idempotencyKey,
             input.reservationNonce,
-            input.reserveLedgerId
+            input.reserveLedgerId,
+            input.idempotencyKey
           ),
         db
           .prepare(
@@ -905,13 +977,17 @@ export function createCloudD1Repository(db) {
              SELECT ?, account_id, idempotency_key, 'reserve',
                     -speech_minutes, -project_analyses, ?
              FROM cloud_operations
-             WHERE idempotency_key = ? AND reservation_nonce = ?`
+             WHERE idempotency_key = ? AND reservation_nonce = ?
+               AND EXISTS (
+                 SELECT 1 FROM cloud_analysis_admissions WHERE operation_id = ?
+               )`
           )
           .bind(
             input.reserveLedgerId,
             input.now,
             input.idempotencyKey,
-            input.reservationNonce
+            input.reservationNonce,
+            input.idempotencyKey
           )
       ]);
 
@@ -936,6 +1012,24 @@ export function createCloudD1Repository(db) {
         ) {
           return { status: "invalid_quote" };
         }
+        const admissionCounts = await db
+          .prepare(
+            `SELECT
+               (SELECT COUNT(*) FROM cloud_analysis_admissions
+                WHERE account_id = ? AND minute_bucket = ?) AS account_count,
+               (SELECT COUNT(*) FROM cloud_analysis_admissions
+                WHERE session_hash = ? AND minute_bucket = ?) AS session_count`
+          )
+          .bind(input.accountId, minuteBucket, input.sessionHash, minuteBucket)
+          .first();
+        if (
+          Number(admissionCounts?.account_count || 0) >=
+            input.limits.accountReservationsPerMinute ||
+          Number(admissionCounts?.session_count || 0) >=
+            input.limits.sessionReservationsPerMinute
+        ) {
+          return { status: "rate_limited" };
+        }
         return { status: "insufficient" };
       }
       if (
@@ -957,31 +1051,146 @@ export function createCloudD1Repository(db) {
         status: "reserved",
         balance: balanceFrom(account),
         charged: costFrom(operation),
-        expiresAt: input.reservationExpiresAt
+        expiresAt: Number(operation.reservation_expires_at)
       };
     },
 
     async claim(input) {
-      const updated = await db
-        .prepare(
-          `UPDATE cloud_operations
-           SET claimed_at = ?, updated_at = ?
-           WHERE idempotency_key = ? AND account_id = ? AND status = 'pending'
-             AND claimed_at IS NULL AND reservation_expires_at > ?
-             AND reservation_token_hash = ? AND source_fingerprint = ?`
-        )
-        .bind(
-          input.now,
-          input.now,
-          input.idempotencyKey,
-          input.accountId,
-          input.now,
-          input.reservationTokenHash,
-          input.sourceFingerprint
-        )
-        .run();
+      const dayBucket = Math.floor(input.now / DAY_MS);
+      const [, globalUsage, admitted, updated] = await db.batch([
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cloud_analysis_global_daily_usage (
+               day_bucket, speech_minutes, project_analyses, last_claim_nonce, updated_at
+             ) VALUES (?, 0, 0, NULL, ?)`
+          )
+          .bind(dayBucket, input.now),
+        db
+          .prepare(
+            `UPDATE cloud_analysis_global_daily_usage
+             SET speech_minutes = speech_minutes + (
+                   SELECT speech_minutes FROM cloud_analysis_admissions
+                   WHERE operation_id = ?
+                 ),
+                 project_analyses = project_analyses + (
+                   SELECT project_analyses FROM cloud_analysis_admissions
+                   WHERE operation_id = ?
+                 ),
+                 last_claim_nonce = ?,
+                 updated_at = ?
+             WHERE day_bucket = ?
+               AND (last_claim_nonce IS NULL OR last_claim_nonce <> ?)
+               AND project_analyses + (
+                 SELECT project_analyses FROM cloud_analysis_admissions
+                 WHERE operation_id = ?
+               ) <= ?
+               AND speech_minutes + (
+                 SELECT speech_minutes FROM cloud_analysis_admissions
+                 WHERE operation_id = ?
+               ) <= ?
+               AND EXISTS (
+                 SELECT 1
+                 FROM cloud_analysis_admissions a
+                 JOIN cloud_operations o ON o.idempotency_key = a.operation_id
+                 WHERE a.operation_id = ? AND a.provider_started_at IS NULL
+                   AND o.account_id = ? AND o.status = 'pending'
+                   AND o.claimed_at IS NULL AND o.reservation_expires_at > ?
+                   AND o.reservation_token_hash = ? AND o.source_fingerprint = ?
+                   AND COALESCE((
+                     SELECT SUM(previous.project_analyses)
+                     FROM cloud_analysis_admissions previous
+                     WHERE previous.account_id = a.account_id
+                       AND previous.day_bucket = ?
+                       AND previous.provider_started_at IS NOT NULL
+                   ), 0) + a.project_analyses <= ?
+                   AND COALESCE((
+                     SELECT SUM(previous.speech_minutes)
+                     FROM cloud_analysis_admissions previous
+                     WHERE previous.account_id = a.account_id
+                       AND previous.day_bucket = ?
+                       AND previous.provider_started_at IS NOT NULL
+                   ), 0) + a.speech_minutes <= ?
+                )`
+          )
+          .bind(
+            input.idempotencyKey,
+            input.idempotencyKey,
+            input.claimNonce,
+            input.now,
+            dayBucket,
+            input.claimNonce,
+            input.idempotencyKey,
+            input.limits.globalProjectAnalysesPerDay,
+            input.idempotencyKey,
+            input.limits.globalSpeechMinutesPerDay,
+            input.idempotencyKey,
+            input.accountId,
+            input.now,
+            input.reservationTokenHash,
+            input.sourceFingerprint,
+            dayBucket,
+            input.limits.accountProjectAnalysesPerDay,
+            dayBucket,
+            input.limits.accountSpeechMinutesPerDay
+          ),
+        db
+          .prepare(
+            `UPDATE cloud_analysis_admissions
+             SET provider_started_at = ?, day_bucket = ?
+             WHERE operation_id = ? AND provider_started_at IS NULL
+               AND EXISTS (
+                 SELECT 1 FROM cloud_analysis_global_daily_usage
+                 WHERE day_bucket = ? AND last_claim_nonce = ?
+               )`
+          )
+          .bind(
+            input.now,
+            dayBucket,
+            input.idempotencyKey,
+            dayBucket,
+            input.claimNonce
+          ),
+        db
+          .prepare(
+            `UPDATE cloud_operations
+             SET claimed_at = ?, updated_at = ?
+             WHERE idempotency_key = ? AND account_id = ? AND status = 'pending'
+               AND claimed_at IS NULL AND reservation_expires_at > ?
+               AND reservation_token_hash = ? AND source_fingerprint = ?
+               AND EXISTS (
+                 SELECT 1 FROM cloud_analysis_admissions
+                 WHERE operation_id = ? AND provider_started_at = ?
+               )
+               AND EXISTS (
+                 SELECT 1 FROM cloud_analysis_global_daily_usage
+                 WHERE day_bucket = ? AND last_claim_nonce = ?
+               )`
+          )
+          .bind(
+            input.now,
+            input.now,
+            input.idempotencyKey,
+            input.accountId,
+            input.now,
+            input.reservationTokenHash,
+            input.sourceFingerprint,
+            input.idempotencyKey,
+            input.now,
+            dayBucket,
+            input.claimNonce
+          )
+      ]);
       const operation = await operationByKey(db, input.idempotencyKey);
-      if (Number(updated.meta?.changes || 0) === 1) {
+      const admittedChanges = Number(admitted.meta?.changes || 0);
+      const globalUsageChanges = Number(globalUsage.meta?.changes || 0);
+      const operationChanges = Number(updated.meta?.changes || 0);
+      if (
+        admittedChanges !== globalUsageChanges ||
+        globalUsageChanges !== operationChanges
+      ) {
+        throw new Error("analysis admission lost the claim race");
+      }
+      if (operationChanges === 1) {
         return { status: "claimed", charged: costFrom(operation) };
       }
       if (
@@ -991,6 +1200,25 @@ export function createCloudD1Repository(db) {
       ) {
         return { status: "succeeded", result: await storedResult(db, operation) };
       }
+      const dailyLimited = await db
+        .prepare(
+          `SELECT 1 AS eligible
+           FROM cloud_operations o
+           JOIN cloud_analysis_admissions a ON a.operation_id = o.idempotency_key
+           WHERE o.idempotency_key = ? AND o.account_id = ? AND o.status = 'pending'
+             AND o.claimed_at IS NULL AND o.reservation_expires_at > ?
+             AND o.reservation_token_hash = ? AND o.source_fingerprint = ?
+             AND a.provider_started_at IS NULL`
+        )
+        .bind(
+          input.idempotencyKey,
+          input.accountId,
+          input.now,
+          input.reservationTokenHash,
+          input.sourceFingerprint
+        )
+        .first();
+      if (dailyLimited) return { status: "daily_limit" };
       return { status: "unavailable" };
     },
 

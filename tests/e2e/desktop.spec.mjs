@@ -84,6 +84,7 @@ async function startCloudSessionHarness() {
   let redeemCount = 0;
   let rejectAccounts = false;
   let analysisMode = "approved";
+  let costProtection = true;
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -113,6 +114,7 @@ async function startCloudSessionHarness() {
         analysisAvailable: analysisMode !== "disabled",
         analysisMode,
         analysisModel: analysisMode === "disabled" ? null : "approved-test-model",
+        costProtection: analysisMode !== "disabled" && costProtection,
         paymentAvailable: true
       });
     }
@@ -352,6 +354,9 @@ async function startCloudSessionHarness() {
     },
     setAnalysisMode(value) {
       analysisMode = value;
+    },
+    setCostProtection(value) {
+      costProtection = value;
     },
     close: () => new Promise((resolve) => server.close(resolve))
   };
@@ -828,6 +833,41 @@ test("desktop blocks all uploads while the cloud model is still under review", a
     await expect(window.getByText("当前不会上传任何内容")).toBeVisible();
     await expect(window.getByText(/合成材料审核，尚未批准给普通用户/)).toBeVisible();
     await expect(window.getByText(/不会上传你的内容/)).toBeVisible();
+    await expect(window.getByLabel("算力兑换码")).toHaveCount(0);
+    expect(
+      harness.calls.map(({ method, path: requestPath }) => `${method} ${requestPath}`)
+    ).toEqual(["GET /v1/cloud/catalog"]);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop blocks approved-model uploads when server cost protection is absent", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  const harness = await startCloudSessionHarness();
+  harness.setCostProtection(false);
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-cost-gate-e2e-"));
+  await writeFile(
+    path.join(userData, "tryrevive-state.json"),
+    JSON.stringify(createCurrentState("成本保护闸门验收项目", "cloud-cost-gate-project")),
+    "utf8"
+  );
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
+    await expect(window.getByText("当前不会上传任何内容")).toBeVisible();
+    await expect(window.getByText(/云端成本保护尚未启用/)).toBeVisible();
     await expect(window.getByLabel("算力兑换码")).toHaveCount(0);
     expect(
       harness.calls.map(({ method, path: requestPath }) => `${method} ${requestPath}`)

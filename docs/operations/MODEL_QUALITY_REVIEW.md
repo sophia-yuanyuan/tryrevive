@@ -43,6 +43,21 @@ npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 
 `OPENAI_MODEL_REVIEW_ACCESS_TOKEN` 至少使用 32 个随机字节，并把同一值写入 GitHub `tryrevive-staging` Environment Secret `TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN`。不要把值写入 TOML、工作流、日志、artifact、聊天或截图；任一侧缺失时审核必须失败关闭。
 
+同一份 staging 配置还必须显式填写六个正整数成本上限；任一项缺失、为 0、负数、小数、带空格或超出 32 位整数范围，Worker 都会保持 `analysisAvailable=false`：
+
+```toml
+CLOUD_LIMIT_ACCOUNT_PER_MINUTE = "按一次审核并发量确定"
+CLOUD_LIMIT_SESSION_PER_MINUTE = "按一次审核并发量确定"
+CLOUD_LIMIT_ACCOUNT_DAILY_ANALYSES = "按 OpenAI Project 日预算确定"
+CLOUD_LIMIT_ACCOUNT_DAILY_SPEECH_MINUTES = "按 OpenAI Project 日预算确定"
+CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES = "按 OpenAI Project 日预算确定"
+CLOUD_LIMIT_GLOBAL_DAILY_SPEECH_MINUTES = "按 OpenAI Project 日预算确定"
+```
+
+引号中的中文只是说明，部署前必须换成十进制正整数。当前审核工作流一次需要 10 次分析且至少 1 分钟语音，因此审核账户与全局每日上限不能低于这次已确认的消耗；生产值不能照抄示例，必须按实际模型价格、单日可承受金额和 OpenAI Project 预算反推。两个 `PER_MINUTE` 是固定分钟桶，不是滑动 60 秒窗口。
+
+服务端会在预留前检查账号/会话分钟上限，在真正调用 OpenAI 前检查账号/全局 UTC 日上限。上游失败会归还用户余额，但仍计入当天供应商调用量；删除账号会删除账号和会话关联的准入记录，但不会倒扣不含身份标识的当天全局总量。目录只暴露 `costProtection=true/false`，不公开阈值或剩余额度。
+
 写入 GitHub Secret 前，`tryrevive-staging` Environment 必须只允许受保护分支，并配置人工审批；否则能修改工作流的人可能尝试读取审核 token 或合成测试会话。
 
 先检查：
@@ -51,7 +66,7 @@ npm exec wrangler -- deploy --config worker\wrangler.cloud.staging.toml
 curl.exe https://tryrevive-cloud-staging.tryrevive.workers.dev/v1/cloud/catalog
 ```
 
-只有同时看到 `analysisAvailable=true`、`analysisMode=review`，且 `analysisModel`、`analysisReasoningEffort` 与候选配置完全一致才进入审核。工作流会自动核对模型与 reasoning effort。若返回 `approved`，立即停止：候选配置已被错误地提前标记批准。
+只有同时看到 `analysisAvailable=true`、`analysisMode=review`、`costProtection=true`，且 `analysisModel`、`analysisReasoningEffort` 与候选配置完全一致才进入审核。工作流会自动核对模型与 reasoning effort。若返回 `approved`，立即停止：候选配置已被错误地提前标记批准。
 
 ## 3. 运行 10 份合成样本
 
@@ -119,6 +134,8 @@ OPENAI_MODEL_REVIEW_ENABLED = "false"
 OPENAI_MODEL_APPROVED = "true"
 OPENAI_REASONING_EFFORT = "与签字报告一致的值"
 ```
+
+并按生产 OpenAI Project 的硬预算重新填写六个 `CLOUD_LIMIT_*` 正整数；不得复用临时审核值。Production preflight 会拒绝没有 `costProtection=true` 的目录。
 
 生产预检拒绝 `analysisMode=review`，也会比较 catalog 的 `analysisModel`、`analysisReasoningEffort` 与受保护的审核配置。模型审核报告、远端 E2E、隐私法律事实、域名验证和支付验收缺一项，都不启用 production。
 

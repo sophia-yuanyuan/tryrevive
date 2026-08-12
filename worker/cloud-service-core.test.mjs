@@ -6,6 +6,14 @@ import { OPENAI_RETENTION_NOTICE } from "./cloud-service.js";
 
 const BASE_URL = "https://cloud.tryrevive.test";
 const TEST_REVIEW_ACCESS_TOKEN = "model_review_access_0123456789abcdef0123456789abcdef";
+const TEST_ANALYSIS_LIMITS = Object.freeze({
+  accountReservationsPerMinute: 100,
+  sessionReservationsPerMinute: 100,
+  accountProjectAnalysesPerDay: 1_000,
+  accountSpeechMinutesPerDay: 1_000,
+  globalProjectAnalysesPerDay: 10_000,
+  globalSpeechMinutesPerDay: 10_000
+});
 const VALID_ANALYSIS = {
   originalGoal: "完成黑客松报名",
   lastCompleted: "整理了项目说明",
@@ -390,6 +398,7 @@ function createHarness({
   analysisEnabled = () => true,
   analysisModel = null,
   analysisReasoningEffort = "medium",
+  analysisLimits = TEST_ANALYSIS_LIMITS,
   reviewAccessToken = TEST_REVIEW_ACCESS_TOKEN,
   paymentProvider = null,
   now = 1_800_000_000_000
@@ -404,6 +413,7 @@ function createHarness({
     analysisEnabled,
     analysisModel,
     analysisReasoningEffort,
+    analysisLimits,
     reviewAccessToken,
     paymentProvider,
     now: () => now,
@@ -751,6 +761,7 @@ test("production-disabled providers reject reservations without charging anythin
   assert.equal(catalog.body.analysisMode, "disabled");
   assert.equal(catalog.body.analysisModel, null);
   assert.equal(catalog.body.analysisReasoningEffort, null);
+  assert.equal(catalog.body.costProtection, false);
 
   const source = {
     kind: "text",
@@ -791,12 +802,14 @@ test("catalog separates a staging review provider from an approved provider", as
   assert.equal(reviewCatalog.body.analysisMode, "review");
   assert.equal(reviewCatalog.body.analysisModel, "review-candidate");
   assert.equal(reviewCatalog.body.analysisReasoningEffort, "low");
+  assert.equal(reviewCatalog.body.costProtection, true);
 
   const approvedCatalog = await request(approved.service, "/v1/cloud/catalog");
   assert.equal(approvedCatalog.body.analysisAvailable, true);
   assert.equal(approvedCatalog.body.analysisMode, "approved");
   assert.equal(approvedCatalog.body.analysisModel, "approved-model");
   assert.equal(approvedCatalog.body.analysisReasoningEffort, "high");
+  assert.equal(approvedCatalog.body.costProtection, true);
 });
 
 test("an available provider cannot silently default to approved mode", () => {
@@ -827,6 +840,7 @@ test("an available provider cannot silently default to approved mode", () => {
         },
         analysisMode: "review",
         analysisEnabled: () => true,
+        analysisLimits: TEST_ANALYSIS_LIMITS,
         randomToken: () => "secure-random-token"
       }),
     /high-entropy access token/
@@ -845,6 +859,22 @@ test("an available provider cannot silently default to approved mode", () => {
         randomToken: () => "secure-random-token"
       }),
     /analysis kill switch is required/
+  );
+  assert.throws(
+    () =>
+      createCloudService({
+        repository: new MemoryCloudRepository(),
+        provider: {
+          available: true,
+          async analyze() {
+            return VALID_ANALYSIS;
+          }
+        },
+        analysisMode: "approved",
+        analysisEnabled: () => true,
+        randomToken: () => "secure-random-token"
+      }),
+    /requires explicit positive analysis limits/
   );
 });
 
