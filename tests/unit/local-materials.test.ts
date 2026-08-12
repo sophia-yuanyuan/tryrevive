@@ -18,6 +18,14 @@ function material(name: string, content: string, type = "text/plain"): LocalMate
 }
 
 describe("local text materials", () => {
+  it("accepts only the documented UTF-8 text extensions", () => {
+    for (const extension of ["txt", "md", "markdown", "csv", "json", "yaml", "yml"]) {
+      expect(isSupportedLocalTextMaterial(`材料.${extension}`, "text/plain")).toBe(true);
+    }
+    expect(isSupportedLocalTextMaterial("没有扩展名", "text/plain")).toBe(false);
+    expect(isSupportedLocalTextMaterial("伪装.txt", "image/png")).toBe(false);
+  });
+
   it("reads several supported files into one clearly separated local bundle", async () => {
     const bundle = await readLocalTextMaterials([
       material("README.md", "我想完成黑客松报名。\n上次已经写完项目简介。", "text/markdown"),
@@ -36,10 +44,20 @@ describe("local text materials", () => {
 
   it("uses a single safe filename only as an optional title hint", async () => {
     const bundle = await readLocalTextMaterials([
-      material("黑客松报名材料.md", "我想完成黑客松报名。")
+      material("C:\\private\\黑客松报名材料.md", "我想完成黑客松报名。")
     ]);
 
     expect(bundle.titleHint).toBe("黑客松报名材料");
+    expect(bundle.sourceLabel).not.toContain("private");
+  });
+
+  it("rejects renamed binary and clearly broken UTF-8 text", async () => {
+    await expect(readLocalTextMaterials([material("伪装.txt", "项目\u0000现场")])).rejects.toThrow(
+      "不像可读的 UTF-8 文字"
+    );
+    await expect(readLocalTextMaterials([material("乱码.md", "项目���现场")])).rejects.toThrow(
+      "不像可读的 UTF-8 文字"
+    );
   });
 
   it("rejects unsupported, empty, oversized, and excessive selections", async () => {

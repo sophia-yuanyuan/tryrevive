@@ -116,6 +116,23 @@ describe("inference-first components", () => {
     expect(mocks.saveState).toHaveBeenCalledTimes(1);
   });
 
+  it("shows bounded repository omissions in the pending confirmation", async () => {
+    const result = scanResult();
+    result.boundary.truncated = true;
+    result.boundary.skippedSecretCount = 2;
+    result.boundary.skippedLargeCount = 1;
+    mocks.chooseRepository.mockResolvedValue(result);
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(store.pendingInference?.analysis.uncertainties[0]).toContain("扫描已达到");
+    expect(store.pendingInference?.analysis.uncertainties[1]).toContain("疑似敏感项 2");
+    expect(store.pendingInference?.analysis.uncertainties[1]).toContain("过大文件 1");
+  });
+
   it("shows folder, voice, attachment, and local text as first-page intake choices", async () => {
     const wrapper = mount(ProjectIntake);
     await flushPromises();
@@ -124,6 +141,7 @@ describe("inference-first components", () => {
     expect(wrapper.text()).toContain("语音或常见附件");
     expect(wrapper.text()).toContain("说一段话，或上传现有材料");
     expect(wrapper.text()).toContain("本地文字材料或你记得的内容");
+    expect(wrapper.text()).toContain("一次请选择属于同一个项目的材料");
     expect(wrapper.text()).toContain("当前不会上传任何内容");
     expect(wrapper.text()).not.toContain("语音理解暂缓");
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
@@ -148,6 +166,7 @@ describe("inference-first components", () => {
     expect(wrapper.text()).toContain("将在本机读取的材料");
     expect(wrapper.text()).toContain("README.md");
     expect(wrapper.text()).toContain("进度.txt");
+    expect(wrapper.text()).toContain("原文不会写入存档");
     expect(wrapper.get('button[type="submit"].primary-button').text()).toContain(
       "从 2 份材料生成待确认草稿"
     );
@@ -160,6 +179,7 @@ describe("inference-first components", () => {
     expect(store.pendingInference?.analysis.lastCompleted).toContain("写完项目简介");
     expect(store.pendingInference?.analysis.stuckAt).toContain("个人分工");
     expect(store.pendingInference?.analysis.sourceLabel).toContain("README.md");
+    expect(store.pendingInference?.title).toBe("我想完成黑客松报名");
   });
 
   it("keeps a provided cloud analysis pending until the shared confirmation step", async () => {

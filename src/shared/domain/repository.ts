@@ -50,4 +50,5 @@ export const RepositoryEvidenceSchema = z.object({
 
 export type RepositoryEvidence = z.infer<typeof RepositoryEvidenceSchema>;
 export type RepositoryFileFingerprint = z.infer<typeof RepositoryFileFingerprintSchema>;
+export type RepositoryScanBoundary = z.infer<typeof RepositoryScanBoundarySchema>;
 export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;

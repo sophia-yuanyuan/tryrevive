@@ -151,4 +151,18 @@ describe("inference-first confirmation", () => {
     expect(serialized).not.toContain("my super secret value");
     expect(serialized).not.toContain("quoted-bearer-value-that-must-not-return");
   });
+
+  it("ignores local material separators when deriving a multi-file title and goal", () => {
+    const result = inferLocalProject({
+      sourceKind: "material",
+      sourceLabel: "README.md、进度.txt · 2 份",
+      content:
+        "【本地材料：README.md】\n我想完成黑客松报名。\n【本地材料：进度.txt】\n上次已经写完项目简介。",
+      now: 1_800_000_000_000
+    });
+
+    expect(result.title).toBe("我想完成黑客松报名");
+    expect(result.analysis.originalGoal).toContain("我想完成黑客松报名");
+    expect(result.analysis.originalGoal).not.toContain("本地材料");
+  });
 });

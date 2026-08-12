@@ -34,7 +34,8 @@ export interface LocalMaterialBundle {
 }
 
 function safeFileName(value: string): string {
-  const withoutControls = [...value]
+  const finalSegment = value.split(/[\\/]+/u).at(-1) ?? value;
+  const withoutControls = [...finalSegment]
     .map((character) => {
       const codePoint = character.codePointAt(0) ?? 0;
       return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
@@ -60,8 +61,32 @@ function baseName(name: string): string {
 
 export function isSupportedLocalTextMaterial(name: string, mimeType = ""): boolean {
   const extension = extensionOf(name);
-  if (LOCAL_TEXT_EXTENSIONS.has(extension)) return true;
-  return mimeType.toLocaleLowerCase("en-US").startsWith("text/");
+  if (!LOCAL_TEXT_EXTENSIONS.has(extension)) return false;
+  const normalizedMime = mimeType.toLocaleLowerCase("en-US");
+  return (
+    !/^(?:audio|image|video)\//u.test(normalizedMime) &&
+    ![
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ].includes(normalizedMime)
+  );
+}
+
+function hasUnreadableCharacters(value: string): boolean {
+  let replacementCharacters = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      codePoint === 0 ||
+      (codePoint < 0x20 && ![0x09, 0x0a, 0x0d].includes(codePoint)) ||
+      codePoint === 0x7f
+    ) {
+      return true;
+    }
+    if (codePoint === 0xfffd) replacementCharacters += 1;
+  }
+  return replacementCharacters >= 3 && replacementCharacters / Math.max(1, value.length) >= 0.01;
 }
 
 export async function readLocalTextMaterials(
@@ -96,12 +121,11 @@ export async function readLocalTextMaterials(
   const materials: LocalMaterialSummary[] = [];
   let totalCharacters = 0;
   for (const { file, name } of normalized) {
-    const text = (await file.text())
-      .replace(/^\uFEFF/u, "")
-      .split("\u0000")
-      .join("")
-      .trim();
+    const text = (await file.text()).replace(/^\uFEFF/u, "").trim();
     if (!text) throw new Error(`“${name}”没有可读取的文字。`);
+    if (hasUnreadableCharacters(text)) {
+      throw new Error(`“${name}”不像可读的 UTF-8 文字；请确认文件格式，或另存为 UTF-8 后重试。`);
+    }
     totalCharacters += text.length;
     if (totalCharacters > MAX_LOCAL_MATERIAL_CHARACTERS) {
       throw new Error("提取到的文字合计超过 20 万字；请只选择与当前项目直接相关的材料。");

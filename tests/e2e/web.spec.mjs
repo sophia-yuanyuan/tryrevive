@@ -116,6 +116,47 @@ test("multiple unfinished projects can be collected in one local intake", async 
   await expect(dialog.getByText("完成 TryRevive 桌面版", { exact: true })).toBeVisible();
 });
 
+test("local text materials become one editable draft without persisting the source", async ({
+  page
+}) => {
+  await page.goto("/");
+  await page.locator('input[type="file"][multiple]').setInputFiles([
+    {
+      name: "README.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(
+        "我想完成黑客松报名。\n上次已经写完项目简介。\n这是一句只用于读取的旁支说明。",
+        "utf8"
+      )
+    },
+    {
+      name: "进度.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("现在卡在还没有整理个人分工。", "utf8")
+    }
+  ]);
+
+  await expect(page.getByText("将在本机读取的材料")).toBeVisible();
+  await page.getByRole("button", { name: "从 2 份材料生成待确认草稿" }).click();
+  await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+  await expect(page.getByText("我想完成黑客松报名", { exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => JSON.stringify(globalThis.localStorage)))
+    .not.toContain("这是一句只用于读取的旁支说明");
+
+  await page.getByRole("button", { name: "修改" }).click();
+  await page.getByLabel("这一步具体做什么？").fill("先写出三行个人分工");
+  await page.getByLabel("做到什么算完成？").fill("三行分工已经保存");
+  await page.getByLabel("预计时间").selectOption("5");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await page.getByRole("button", { name: "正确，继续" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
+  ).toBeVisible();
+  await expect(page.getByLabel("这一步具体做什么？")).toHaveValue("先写出三行个人分工");
+});
+
 test("initial intake exposes cloud choices safely and never asks for an API key", async ({
   page
 }) => {

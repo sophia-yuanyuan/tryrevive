@@ -201,7 +201,7 @@ async function collectProjectNames(): Promise<void> {
             </button>
           </div>
           <p class="mt-3 text-xs leading-5 text-[var(--muted)]">
-            原文只在这次本机整理时读取；存档只保存你随后确认的恢复摘要。
+            原文不会写入存档；会保存生成的待确认摘要，只有你确认后才创建正式项目。
           </p>
         </div>
 
@@ -215,7 +215,7 @@ async function collectProjectNames(): Promise<void> {
         />
         <p class="voice-status">
           本机支持 TXT、Markdown、CSV、JSON、YAML，一次最多 8 份；不会发送给 TryRevive 后端或
-          OpenAI。PDF、DOCX、图片和音频当前不冒充本地已理解。
+          OpenAI。一次请选择属于同一个项目的材料；多个项目请逐个恢复。PDF、DOCX、图片和音频当前不冒充本地已理解。
         </p>
         <button class="primary-button w-full" type="submit" :disabled="busy">
           {{ busy ? "正在整理恢复摘要…" : localAnalysisLabel }}

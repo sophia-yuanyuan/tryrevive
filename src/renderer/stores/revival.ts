@@ -21,10 +21,8 @@ import {
   type InferenceCorrection
 } from "@/shared/domain/inference-flow";
 import { inferLocalProject, type LocalInferenceRequest } from "@/shared/domain/local-inference";
-import {
-  createRepositoryOutcomeDraft,
-  observationFromOutcome
-} from "@/shared/domain/outcome-flow";
+import { addRepositoryScanBoundary } from "@/shared/domain/repository-inference";
+import { createRepositoryOutcomeDraft, observationFromOutcome } from "@/shared/domain/outcome-flow";
 import {
   addEvidence,
   applyProjectAnalysis,
@@ -187,7 +185,7 @@ export const useRevivalStore = defineStore("revival", () => {
     candidate.pendingInference = createPendingInference({
       sourceKind: "repository",
       title: result.displayName,
-      analysis: result.analysis,
+      analysis: addRepositoryScanBoundary(result.analysis, result.boundary),
       repository: {
         bindingId: result.bindingId,
         displayName: result.displayName,
@@ -366,9 +364,7 @@ export const useRevivalStore = defineStore("revival", () => {
           repository: {
             ...project.repository,
             lastSnapshot: baseline ?? project.repository.lastSnapshot,
-            actionBaseline: baseline
-              ? { actionId: project.action.id, snapshot: baseline }
-              : null
+            actionBaseline: baseline ? { actionId: project.action.id, snapshot: baseline } : null
           }
         };
       }

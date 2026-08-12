@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { ProjectAnalysisSchema } from "./model";
+import { ProjectAnalysisSchema, type ProjectAnalysis } from "./model";
 import {
   RepositoryEvidenceSchema,
   RepositoryScanBoundarySchema,
-  RepositorySnapshotSchema
+  RepositorySnapshotSchema,
+  type RepositoryScanBoundary
 } from "./repository";
 
 export {
@@ -35,3 +36,30 @@ export type {
 } from "./repository";
 export type RepositoryScanSuccess = z.infer<typeof RepositoryScanSuccessSchema>;
 export type RepositoryScanResult = z.infer<typeof RepositoryScanResultSchema>;
+
+export function addRepositoryScanBoundary(
+  analysis: ProjectAnalysis,
+  boundary: RepositoryScanBoundary
+): ProjectAnalysis {
+  const boundaryNotes: string[] = [];
+  if (boundary.truncated) {
+    boundaryNotes.push(
+      "扫描已达到时间、文件数量或读取总量上限，因此摘要只覆盖本次安全读取到的部分。"
+    );
+  }
+  const skipped = [
+    [boundary.skippedSecretCount, "疑似敏感项"],
+    [boundary.skippedLinkCount, "链接或项目外路径"],
+    [boundary.skippedBinaryCount, "非文字项"],
+    [boundary.skippedLargeCount, "过大文件"]
+  ]
+    .filter(([count]) => Number(count) > 0)
+    .map(([count, label]) => `${label} ${count}`);
+  if (skipped.length) {
+    boundaryNotes.push(`为保护隐私和稳定性，本次未读取：${skipped.join("、")}。`);
+  }
+  return ProjectAnalysisSchema.parse({
+    ...analysis,
+    uncertainties: [...new Set([...boundaryNotes, ...analysis.uncertainties])].slice(0, 5)
+  });
+}
