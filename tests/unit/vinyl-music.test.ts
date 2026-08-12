@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createProjectComposition,
@@ -5,6 +6,7 @@ import {
   projectWavFileName,
   renderProjectWav
 } from "@/shared/audio/vinyl-music";
+import { captureLegacyMusicRecipe } from "@/shared/audio/music-recipe";
 import { createProject, type ProjectMood, type RevivalProject } from "@/shared/domain/model";
 import {
   assignAction,
@@ -61,5 +63,18 @@ describe("local vinyl music", () => {
     expect(wav.byteLength).toBeGreaterThan(44);
     expect(wav.byteLength).toBeLessThan(5 * 1024 * 1024);
     expect(projectWavFileName(project)).toBe("黑客松 - 申请.wav");
+  });
+
+  it("keeps the legacy renderer golden WAV stable", () => {
+    const project = completedProject("proud", 777);
+    project.reward = {
+      mood: "proud",
+      createdAt: project.reward?.createdAt ?? 1_800_000_777_001,
+      music: captureLegacyMusicRecipe(project, "proud")
+    };
+    const wav = renderProjectWav(project);
+    expect(createHash("sha256").update(wav).digest("hex")).toBe(
+      "9d9c8c294b14c37a0dd6acdac68598f0927ccf2dd39e52c95e2540bdc9b091b4"
+    );
   });
 });

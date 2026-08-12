@@ -1,13 +1,36 @@
+import { z } from "zod";
 import {
   AppStateSchema,
+  ProjectMoodSchema,
+  ProjectSchema,
   SCHEMA_VERSION,
   createEmptyState,
   createProject,
   type AppState,
   type RevivalProject
 } from "./model";
+import { captureLegacyMusicRecipe } from "../audio/music-recipe";
 
 type UnknownRecord = Record<string, unknown>;
+
+const LegacyProjectRewardV6Schema = z
+  .object({
+    mood: ProjectMoodSchema,
+    createdAt: z.number().int().positive()
+  })
+  .strict();
+
+const LegacyProjectV6Schema = ProjectSchema.extend({
+  schemaVersion: z.literal(6),
+  reward: LegacyProjectRewardV6Schema.nullable()
+});
+
+const LegacyAppStateV6Schema = AppStateSchema.extend({
+  schemaVersion: z.literal(6),
+  projects: z.array(LegacyProjectV6Schema).max(100)
+});
+
+type LegacyAppStateV6 = z.infer<typeof LegacyAppStateV6Schema>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -119,26 +142,51 @@ function migrateEvidenceList(value: unknown): unknown {
   }));
 }
 
+function upgradeValidatedVersion6(state: LegacyAppStateV6): AppState {
+  return AppStateSchema.parse({
+    ...state,
+    schemaVersion: SCHEMA_VERSION,
+    projects: state.projects.map((project) => ({
+      ...project,
+      schemaVersion: SCHEMA_VERSION,
+      reward: project.reward
+        ? {
+            ...project.reward,
+            music: captureLegacyMusicRecipe(project, project.reward.mood)
+          }
+        : null
+    }))
+  });
+}
+
+function upgradeVersion6Candidate(candidate: unknown): AppState | null {
+  const parsed = LegacyAppStateV6Schema.safeParse(candidate);
+  return parsed.success ? upgradeValidatedVersion6(parsed.data) : null;
+}
+
+function migrateVersion6(raw: unknown): AppState | null {
+  return upgradeVersion6Candidate(raw);
+}
+
 function migrateVersion5(raw: unknown): AppState | null {
   const source = asRecord(raw);
   if (source.schemaVersion !== 5 || !Array.isArray(source.projects)) return null;
   const candidate = {
     ...source,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: 6,
     pendingInference: null,
     projects: source.projects.map((item) => {
       const project = asRecord(item);
       return {
         ...project,
-        schemaVersion: SCHEMA_VERSION,
+        schemaVersion: 6,
         evidence: migrateEvidenceList(project.evidence),
         repository: null,
         outcomeDraft: null
       };
     })
   };
-  const parsed = AppStateSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  return upgradeVersion6Candidate(candidate);
 }
 
 function migrateVersion3(raw: unknown): AppState | null {
@@ -146,13 +194,13 @@ function migrateVersion3(raw: unknown): AppState | null {
   if (source.schemaVersion !== 3 || !Array.isArray(source.projects)) return null;
   const candidate = {
     ...source,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: 6,
     pendingInference: null,
     projects: source.projects.map((item) => {
       const project = asRecord(item);
       return {
         ...project,
-        schemaVersion: SCHEMA_VERSION,
+        schemaVersion: 6,
         evidence: migrateEvidenceList(project.evidence),
         analysis: null,
         repository: null,
@@ -161,8 +209,7 @@ function migrateVersion3(raw: unknown): AppState | null {
       };
     })
   };
-  const parsed = AppStateSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  return upgradeVersion6Candidate(candidate);
 }
 
 function migrateVersion4(raw: unknown): AppState | null {
@@ -170,13 +217,13 @@ function migrateVersion4(raw: unknown): AppState | null {
   if (source.schemaVersion !== 4 || !Array.isArray(source.projects)) return null;
   const candidate = {
     ...source,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: 6,
     pendingInference: null,
     projects: source.projects.map((item) => {
       const project = asRecord(item);
       return {
         ...project,
-        schemaVersion: SCHEMA_VERSION,
+        schemaVersion: 6,
         evidence: migrateEvidenceList(project.evidence),
         repository: null,
         outcomeDraft: null,
@@ -184,8 +231,7 @@ function migrateVersion4(raw: unknown): AppState | null {
       };
     })
   };
-  const parsed = AppStateSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+  return upgradeVersion6Candidate(candidate);
 }
 
 export function migrateState(raw: unknown, now = Date.now()): AppState {
@@ -196,6 +242,11 @@ export function migrateState(raw: unknown, now = Date.now()): AppState {
 
   const source = asRecord(raw);
   const declaredVersion = source.schemaVersion;
+  if (declaredVersion === 6) {
+    const version6 = migrateVersion6(raw);
+    if (version6) return version6;
+    throw new Error("版本 6 的本地存档不完整，TryRevive 没有覆盖它");
+  }
   if (declaredVersion === 5) {
     const version5 = migrateVersion5(raw);
     if (version5) return version5;

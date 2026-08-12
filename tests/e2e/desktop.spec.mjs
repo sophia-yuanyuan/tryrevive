@@ -602,7 +602,7 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "未来版本原文件" }],
     legacyMigrationCompleted: true,
@@ -633,16 +633,66 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
 
   try {
     const restored = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(restored.schemaVersion).toBe(6);
+    expect(restored.schemaVersion).toBe(7);
     expect(restored.projects[0]?.title).toBe("备份中保住的项目");
+    const preV7 = JSON.parse(await readFile(`${primaryPath}.pre-v7.json`, "utf8"));
+    expect(preV7.schemaVersion).toBe(6);
+    expect(preV7.projects[0]?.title).toBe("备份中保住的项目");
     const recoveryFiles = (await readdir(userData)).filter((name) =>
       name.startsWith("tryrevive-state.json.recovery-")
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(7);
+    expect(preserved.schemaVersion).toBe(8);
     expect(preserved.projects[0]?.title).toBe("未来版本原文件");
   } finally {
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop preserves a schema-less legacy save only once before migration", async () => {
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-pre-v7-e2e-"));
+  const primaryPath = path.join(userData, "tryrevive-state.json");
+  const preservationPath = `${primaryPath}.pre-v7.json`;
+  const legacyState = {
+    activeProjectId: "legacy-project",
+    projects: [
+      {
+        id: "legacy-project",
+        title: "无版本旧项目",
+        status: "running",
+        lastCompleted: "已经留下旧版进度",
+        obstacle: "需要确认迁移后仍能继续",
+        createdAt: 1_799_999_999_000,
+        updatedAt: 1_800_000_000_000
+      }
+    ],
+    updatedAt: 1_800_000_000_000
+  };
+  const legacyText = JSON.stringify(legacyState);
+  await writeFile(primaryPath, legacyText, "utf8");
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  const desktop = await electron.launch(launchOptions);
+
+  try {
+    const window = await desktop.firstWindow();
+    await expect
+      .poll(async () => JSON.parse(await readFile(primaryPath, "utf8")).schemaVersion)
+      .toBe(7);
+    expect(await readFile(preservationPath, "utf8")).toBe(legacyText);
+
+    const migrated = JSON.parse(await readFile(primaryPath, "utf8"));
+    await window.evaluate((state) => window.tryRevive.saveState(state), migrated);
+    expect(await readFile(preservationPath, "utf8")).toBe(legacyText);
+  } finally {
+    await desktop.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });
   }
 });
@@ -652,7 +702,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "不能覆盖的未来项目" }],
     legacyMigrationCompleted: true,
@@ -709,7 +759,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
 
   try {
     const imported = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(imported.schemaVersion).toBe(6);
+    expect(imported.schemaVersion).toBe(7);
     expect(imported.projects).toHaveLength(0);
     expect(imported.pendingInference?.title).toBe("导入后找回的待确认摘要");
     expect(await readFile(backupPath, "utf8")).toBe(backupBefore);
@@ -718,7 +768,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(7);
+    expect(preserved.schemaVersion).toBe(8);
     expect(preserved.projects[0]?.title).toBe("不能覆盖的未来项目");
 
     const restarted = await electron.launch(launchOptions);

@@ -4,8 +4,9 @@ import {
   RepositorySnapshotSchema,
   SafeRepositoryPathSchema
 } from "./repository";
+import { ProjectMusicRecipeSchema } from "../audio/music-recipe";
 
-export const SCHEMA_VERSION = 6 as const;
+export const SCHEMA_VERSION = 7 as const;
 
 export const ProjectStageSchema = z.enum([
   "restore",
@@ -24,10 +25,13 @@ export const DecisionSchema = z.enum(["continue", "shrink", "help", "pause", "ab
 export const ProjectMoodSchema = z.enum(["calm", "relieved", "proud", "energized", "bittersweet"]);
 export const InferenceSourceSchema = z.enum(["repository", "material", "voice", "text"]);
 
-export const ProjectRewardSchema = z.object({
-  mood: ProjectMoodSchema,
-  createdAt: z.number().int().positive()
-});
+export const ProjectRewardSchema = z
+  .object({
+    mood: ProjectMoodSchema,
+    createdAt: z.number().int().positive(),
+    music: ProjectMusicRecipeSchema
+  })
+  .strict();
 
 export const ProjectAnalysisSchema = z.object({
   id: z.string().min(1),

@@ -13,6 +13,7 @@ import {
   type RevivalProject,
   createId
 } from "./model";
+import { captureLegacyMusicRecipe } from "../audio/music-recipe";
 
 function touch(project: RevivalProject, now = Date.now()): RevivalProject {
   return { ...project, updatedAt: now };
@@ -183,8 +184,26 @@ export function markProjectCompleted(
   mood: ProjectMood | null = null,
   now = Date.now()
 ): RevivalProject {
-  const reward = mood ? ProjectRewardSchema.parse({ mood, createdAt: now }) : project.reward;
+  const reward = mood ? createProjectReward(project, mood, now) : project.reward;
   return touch({ ...project, status: "completed", stage: "closed", reward }, now);
+}
+
+function createProjectReward(
+  project: RevivalProject,
+  mood: ProjectMood,
+  now: number
+): RevivalProject["reward"] {
+  if (project.reward) {
+    if (project.reward.mood !== mood) {
+      throw new Error("这张收藏唱片已经生成；更换心情会改变它的身份。");
+    }
+    return project.reward;
+  }
+  return ProjectRewardSchema.parse({
+    mood,
+    createdAt: now,
+    music: captureLegacyMusicRecipe(project, mood)
+  });
 }
 
 export function setProjectReward(
@@ -193,7 +212,7 @@ export function setProjectReward(
   now = Date.now()
 ): RevivalProject {
   if (project.status !== "completed") throw new Error("项目完成后才能生成收藏唱片。");
-  const reward = ProjectRewardSchema.parse({ mood, createdAt: now });
+  const reward = createProjectReward(project, mood, now);
   return touch({ ...project, reward }, now);
 }
 

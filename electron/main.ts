@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -77,6 +77,21 @@ function recoveryPath(destination: string): string {
   return `${destination}.recovery-${Date.now()}-${process.pid}.json`;
 }
 
+async function preservePreV7State(
+  destination: string,
+  inspected: InspectedStateFile
+): Promise<void> {
+  if (!inspected.valid || !inspected.raw || typeof inspected.raw !== "object") return;
+  const declaredVersion = (inspected.raw as Record<string, unknown>).schemaVersion;
+  if (typeof declaredVersion === "number" && declaredVersion >= 7) return;
+  const preservation = `${destination}.pre-v7.json`;
+  try {
+    await fs.copyFile(destination, preservation, constants.COPYFILE_EXCL);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+}
+
 async function restoreBackup(
   destination: string,
   backup: string,
@@ -139,6 +154,7 @@ async function saveStateToDisk(input: unknown, allowRecovery = false): Promise<v
   await fs.mkdir(path.dirname(destination), { recursive: true });
   const currentState = await inspectStateFile(destination);
   if (currentState.valid) {
+    await preservePreV7State(destination, currentState);
     await fs.copyFile(destination, backup);
   } else if (currentState.exists) {
     await fs.rename(destination, recoveryPath(destination));
