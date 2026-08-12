@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
+import type { RitualGestureIntent } from "@/shared/gesture/interaction";
 import {
   advanceVinylRitual,
   createVinylRitualState,
@@ -9,6 +10,7 @@ import {
   type VinylRitualEvent,
   type VinylRitualPhase
 } from "@/shared/reward/vinyl-ritual";
+import GestureControl from "./GestureControl.vue";
 
 const props = defineProps<{
   projectTitle: string;
@@ -47,6 +49,7 @@ let tonearm: THREE.Group | null = null;
 let stars: THREE.Points | null = null;
 let halo: THREE.Group | null = null;
 let pointerId: number | null = null;
+let gestureDrag: "record" | "tonearm" | null = null;
 const pointer = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -60,13 +63,13 @@ const phaseLabels: Array<{ phase: VinylRitualPhase; label: string }> = [
   { phase: "sleeve_open", label: "取出" },
   { phase: "record_held", label: "放盘" },
   { phase: "on_platter", label: "落针" },
+  { phase: "needle_down", label: "播放" },
   { phase: "playing", label: "聆听" },
   { phase: "ready_to_archive", label: "收藏" },
   { phase: "archived", label: "归档" }
 ];
 
 function phaseIndex(value: VinylRitualPhase): number {
-  if (value === "needle_down") return 3;
   return phaseLabels.findIndex((item) => item.phase === value);
 }
 
@@ -92,7 +95,6 @@ function runPrimaryAction(): void {
       break;
     case "on_platter":
       dispatch({ type: "lower_needle" });
-      emit("requestPlay");
       break;
     case "needle_down":
       emit("requestPlay");
@@ -140,8 +142,69 @@ function handlePointerDown(event: PointerEvent): void {
   }
   if (phase.value === "on_platter" && intersects(tonearm)) {
     dispatch({ type: "lower_needle" });
-    emit("requestPlay");
   }
+}
+
+function setNormalizedPointer(x: number, y: number): void {
+  pointer.x = THREE.MathUtils.clamp(x, 0, 1) * 2 - 1;
+  pointer.y = -(THREE.MathUtils.clamp(y, 0, 1) * 2 - 1);
+  if (camera) raycaster.setFromCamera(pointer, camera);
+}
+
+function moveDraggedRecord(): void {
+  if (!recordGroup || !raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+  recordGroup.position.set(
+    THREE.MathUtils.clamp(dragPoint.x, -3.9, 3.8),
+    THREE.MathUtils.clamp(dragPoint.y, -1.25, 2.5),
+    0.5
+  );
+  recordGroup.rotation.x = Math.PI / 2;
+}
+
+function handleGestureIntent(intent: RitualGestureIntent): void {
+  if (intent.type === "open") {
+    if (phase.value === "sealed") dispatch({ type: "open_sleeve" });
+    return;
+  }
+  if (intent.type === "cancel") {
+    if (gestureDrag === "record" && phase.value === "record_held") {
+      dispatch({ type: "drop_outside" });
+    }
+    gestureDrag = null;
+    dragging.value = false;
+    syncSceneTarget(phase.value);
+    return;
+  }
+
+  setNormalizedPointer(intent.x, intent.y);
+  if (intent.type === "pointer_down") {
+    if (phase.value === "sleeve_open" && intersects(recordGroup)) {
+      dispatch({ type: "grab_record" });
+      gestureDrag = "record";
+      dragging.value = true;
+      moveDraggedRecord();
+    } else if (phase.value === "on_platter" && intersects(tonearm)) {
+      gestureDrag = "tonearm";
+    }
+    return;
+  }
+
+  if (intent.type === "pointer_move") {
+    if (gestureDrag === "record") moveDraggedRecord();
+    if (gestureDrag === "tonearm" && tonearm) {
+      tonearm.rotation.z = THREE.MathUtils.clamp(-0.18 - intent.x * 0.65, -0.82, -0.18);
+    }
+    return;
+  }
+
+  if (gestureDrag === "record") {
+    dragging.value = false;
+    dispatch({ type: intersects(platter) ? "place_record" : "drop_outside" });
+  } else if (gestureDrag === "tonearm") {
+    if (intersects(recordGroup)) dispatch({ type: "lower_needle" });
+    else syncSceneTarget("on_platter");
+  }
+  gestureDrag = null;
 }
 
 function handlePointerMove(event: PointerEvent): void {
@@ -664,6 +727,7 @@ onBeforeUnmount(() => {
       @pointercancel="handlePointerEnd"
       @keydown="handleKeydown"
     >
+      <GestureControl @intent="handleGestureIntent" />
       <div v-if="rendererMode !== 'webgl'" class="vinyl-ritual-fallback" aria-hidden="true">
         <div class="vinyl-ritual-fallback-halo" />
         <div class="vinyl-ritual-fallback-sleeve" :class="`phase-${phase}`" />

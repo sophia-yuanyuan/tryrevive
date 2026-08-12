@@ -1402,7 +1402,7 @@ body.focus-mode-active #app {
   display: grid;
   position: relative;
   z-index: 3;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 0.35rem;
   margin: 1rem clamp(1rem, 4vw, 2rem) 0;
   padding: 0;
@@ -1468,6 +1468,113 @@ body.focus-mode-active #app {
 
 .vinyl-ritual-stage:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(246, 211, 170, 0.78);
+}
+
+.gesture-control.gesture-control-pip {
+  display: block;
+  position: absolute;
+  z-index: 6;
+  top: 1rem;
+  left: 1rem;
+  width: 12.5rem;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 0.9rem;
+  padding: 0.42rem;
+  color: white;
+  background: rgba(4, 6, 10, 0.74);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+}
+
+.gesture-control-pip .gesture-preview {
+  min-height: 0;
+  aspect-ratio: 4 / 3;
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 0.62rem;
+  background:
+    radial-gradient(circle at center, rgba(218, 152, 107, 0.13), transparent 56%), #090b10;
+}
+
+.gesture-control-pip .gesture-preview video {
+  object-fit: contain;
+}
+
+.gesture-control-pip .gesture-preview-active video {
+  opacity: 0.9;
+}
+
+.gesture-preview-badge {
+  position: absolute;
+  top: 0.38rem;
+  left: 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.22rem 0.36rem;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(3, 4, 7, 0.68);
+  font-size: 0.48rem;
+  letter-spacing: 0.02em;
+}
+
+.gesture-control-pip .gesture-preview-overlay {
+  right: 0.38rem;
+  bottom: 0.38rem;
+  left: 0.38rem;
+  border-radius: 0.58rem;
+  padding: 0.42rem 0.48rem;
+  background: rgba(3, 4, 7, 0.72);
+}
+
+.gesture-control-pip .gesture-preview-overlay strong {
+  font-size: 0.58rem;
+  line-height: 1.35;
+}
+
+.gesture-control-pip .gesture-preview-overlay small {
+  font-size: 0.48rem;
+  line-height: 1.35;
+}
+
+.gesture-pip-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-top: 0.38rem;
+}
+
+.gesture-pip-button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 0.34rem 0.55rem;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font-size: 0.54rem;
+}
+
+.gesture-pip-actions a {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.5rem;
+}
+
+.gesture-control-pip .gesture-status {
+  max-height: 2.6rem;
+  margin: 0.38rem 0.15rem 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.5rem;
+  line-height: 1.35;
+}
+
+.gesture-control-pip .gesture-status-active {
+  color: #b9d9c5;
+}
+
+.gesture-control-pip .gesture-status-error {
+  color: #f0ab8f;
 }
 
 .vinyl-ritual-canvas,
@@ -1727,7 +1834,7 @@ body.focus-mode-active #app {
 
   .vinyl-ritual-steps {
     overflow-x: auto;
-    grid-template-columns: repeat(7, minmax(4rem, 1fr));
+    grid-template-columns: repeat(8, minmax(4rem, 1fr));
     padding-bottom: 0.25rem;
   }
 
@@ -1752,6 +1859,30 @@ body.focus-mode-active #app {
 
   .vinyl-ritual-meta .text-button {
     justify-self: start;
+  }
+
+  .gesture-control.gesture-control-pip {
+    top: 0.65rem;
+    left: 0.65rem;
+    width: 8rem;
+    padding: 0.3rem;
+  }
+
+  .gesture-control-pip .gesture-preview-overlay {
+    display: none;
+  }
+
+  .gesture-control-pip .gesture-status {
+    display: none;
+  }
+
+  .gesture-pip-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .gesture-pip-actions a {
+    display: none;
   }
 }
 

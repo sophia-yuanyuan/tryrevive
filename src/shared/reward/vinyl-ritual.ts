@@ -64,23 +64,23 @@ const COPY: Record<VinylRitualPhase, VinylRitualCopy> = {
   on_platter: {
     step: "04 · 落针",
     title: "唱片已经稳稳落在唱盘上。",
-    instruction: "把唱针放到唱片沟槽，声音才会开始。",
-    primaryLabel: "落下唱针并播放"
+    instruction: "把唱针放到唱片沟槽。完成落针后，再由你明确开始播放。",
+    primaryLabel: "把唱针放到唱片"
   },
   needle_down: {
-    step: "04 · 落针",
+    step: "05 · 播放",
     title: "唱针已经落下。",
-    instruction: "如果播放没有启动，可以再次尝试；不会自动重试或上传内容。",
-    primaryLabel: "再次尝试播放"
+    instruction: "按下播放才会发出声音；摄像头手势不会替你自动播放。",
+    primaryLabel: "开始播放项目唱片"
   },
   playing: {
-    step: "05 · 聆听",
+    step: "06 · 聆听",
     title: "这是你完成之后留下的声音。",
     instruction: "可以完整听完，也可以主动抬针停止。",
     primaryLabel: "抬起唱针并停止"
   },
   ready_to_archive: {
-    step: "06 · 收藏",
+    step: "07 · 收藏",
     title: "这段声音已经听见了。",
     instruction: "把唱片收藏回黑胶星球；项目记录仍保存在本机。",
     primaryLabel: "收藏回黑胶星球"

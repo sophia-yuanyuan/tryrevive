@@ -794,7 +794,8 @@ test("desktop camera gestures stay off by default and load the packaged local mo
     await ritual.getByRole("button", { name: "打开项目封套" }).click();
     await ritual.getByRole("button", { name: "捏住并取出唱片" }).click();
     await ritual.getByRole("button", { name: "把唱片放到唱盘" }).click();
-    await ritual.getByRole("button", { name: "落下唱针并播放" }).click();
+    await ritual.getByRole("button", { name: "把唱针放到唱片" }).click();
+    await ritual.getByRole("button", { name: "开始播放项目唱片" }).click();
     await expect(ritual.getByRole("button", { name: "抬起唱针并停止" })).toBeVisible();
     await expect
       .poll(() => window.locator("audio").evaluate((audio) => audio.currentTime))
@@ -804,9 +805,11 @@ test("desktop camera gestures stay off by default and load the packaged local mo
     await expect(ritual.getByRole("button", { name: "收藏回黑胶星球" })).toBeVisible();
     await ritual.getByRole("button", { name: "收藏回黑胶星球" }).click();
     await expect(ritual.getByRole("button", { name: "重新体验这张唱片" })).toBeVisible();
-    await expect(window.getByText("摄像头默认关闭")).toBeVisible();
+    await expect(window.getByRole("region", { name: "可选的本机摄像头手势" })).toBeVisible();
     await window.getByRole("button", { name: "同意说明并开启摄像头手势" }).click();
-    await expect(window.getByText(/本机识别中/)).toBeVisible({ timeout: 60_000 });
+    await expect(window.getByText("本机识别 · 不保存 · 不上传", { exact: true })).toBeVisible({
+      timeout: 60_000
+    });
     await expect(window.getByLabel("本机手势摄像头预览")).toBeVisible();
     await window.getByRole("button", { name: "关闭摄像头" }).click();
     await expect(window.getByText("摄像头已关闭")).toBeVisible();

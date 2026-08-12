@@ -52,7 +52,9 @@ async function playVinylRitual(page) {
   await ritual.getByRole("button", { name: "打开项目封套" }).click();
   await ritual.getByRole("button", { name: "捏住并取出唱片" }).click();
   await ritual.getByRole("button", { name: "把唱片放到唱盘" }).click();
-  await ritual.getByRole("button", { name: "落下唱针并播放" }).click();
+  await ritual.getByRole("button", { name: "把唱针放到唱片" }).click();
+  await expect(ritual.getByRole("button", { name: "开始播放项目唱片" })).toBeVisible();
+  await ritual.getByRole("button", { name: "开始播放项目唱片" }).click();
   await expect(ritual.getByRole("button", { name: "抬起唱针并停止" })).toBeVisible();
   return ritual;
 }
@@ -191,7 +193,7 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
   await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "打开项目封套" })).toBeVisible();
-  await expect(page.getByText("摄像头默认关闭")).toBeVisible();
+  await expect(page.getByRole("region", { name: "可选的本机摄像头手势" })).toBeVisible();
   await expect(page.getByRole("button", { name: "同意说明并开启摄像头手势" })).toBeVisible();
 
   const ritual = await playVinylRitual(page);
@@ -226,7 +228,7 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await refreshedRitual.locator(".vinyl-ritual-stage").press("Enter");
   await expect(refreshedRitual.getByRole("button", { name: "把唱片放到唱盘" })).toBeVisible();
   await refreshedRitual.locator(".vinyl-ritual-stage").press("Space");
-  await expect(refreshedRitual.getByRole("button", { name: "落下唱针并播放" })).toBeVisible();
+  await expect(refreshedRitual.getByRole("button", { name: "把唱针放到唱片" })).toBeVisible();
 });
 
 test("an abandoned project remains available in the black-hole history", async ({ page }) => {
