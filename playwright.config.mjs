@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const localBrowser = process.env.CI ? {} : { channel: "chrome" };
+const localBrowser = { channel: "chrome" };
 
 export default defineConfig({
   testDir: "./tests/e2e",
