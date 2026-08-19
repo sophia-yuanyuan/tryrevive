@@ -14,7 +14,14 @@ const mocks = vi.hoisted(() => ({
   redeemCloudCode: vi.fn(),
   disconnectCloud: vi.fn(),
   importState: vi.fn(),
-  saveState: vi.fn()
+  saveState: vi.fn(),
+  localSpeechCapability: vi.fn(),
+  transcribeLocalSpeech: vi.fn(),
+  startLocalSpeechRecording: vi.fn()
+}));
+
+vi.mock("@/renderer/audio/local-speech-recorder", () => ({
+  startLocalSpeechRecording: mocks.startLocalSpeechRecording
 }));
 
 vi.mock("@/renderer/platform/web", () => ({
@@ -27,7 +34,9 @@ vi.mock("@/renderer/platform/web", () => ({
     redeemCloudCode: mocks.redeemCloudCode,
     disconnectCloud: mocks.disconnectCloud,
     importState: mocks.importState,
-    saveState: mocks.saveState
+    saveState: mocks.saveState,
+    localSpeechCapability: mocks.localSpeechCapability,
+    transcribeLocalSpeech: mocks.transcribeLocalSpeech
   }
 }));
 
@@ -102,6 +111,21 @@ describe("inference-first components", () => {
     mocks.disconnectCloud.mockReset();
     mocks.importState.mockReset();
     mocks.saveState.mockReset().mockResolvedValue(undefined);
+    mocks.localSpeechCapability.mockReset().mockResolvedValue({
+      available: true,
+      culture: "zh-CN",
+      recognizer: "Microsoft Speech Recognizer 8.0",
+      message: "本机可用"
+    });
+    mocks.transcribeLocalSpeech.mockReset().mockResolvedValue({
+      transcript: "我想完成黑客松报名。上次已经写完项目简介。现在卡在团队分工。",
+      culture: "zh-CN",
+      confidence: 0.8
+    });
+    mocks.startLocalSpeechRecording.mockReset().mockResolvedValue({
+      stop: vi.fn().mockResolvedValue(new Uint8Array(64)),
+      cancel: vi.fn().mockResolvedValue(undefined)
+    });
   });
 
   it("selects a repository once and keeps it as a draft", async () => {
@@ -144,13 +168,82 @@ describe("inference-first components", () => {
     expect(wrapper.text()).toContain("本地文字材料或你记得的内容");
     expect(wrapper.text()).toContain("一次请选择属于同一个项目的材料");
     expect(wrapper.text()).toContain("扫描图片不会 OCR");
-    expect(wrapper.text()).toContain("音频当前也不冒充本地已理解");
+    expect(wrapper.text()).toContain("用 Windows 本机语音说");
+    expect(wrapper.text()).toContain("无需 API Key");
+    expect(wrapper.text()).toContain("只有你主动点击上方本机语音");
     const localFileInput = wrapper.get('input[type="file"][accept*=".yaml"]');
     expect(localFileInput.attributes("accept")).toContain(".pdf");
     expect(localFileInput.attributes("accept")).toContain(".docx");
     expect(wrapper.text()).toContain("当前不会上传任何内容");
     expect(wrapper.text()).not.toContain("语音理解暂缓");
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns an explicit Windows local recording into the shared pending draft", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    const voiceButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("用 Windows 本机语音说"));
+    expect(voiceButton).toBeDefined();
+    await voiceButton?.trigger("click");
+    await flushPromises();
+
+    expect(mocks.localSpeechCapability).toHaveBeenCalledTimes(1);
+    expect(mocks.startLocalSpeechRecording).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("停止并本机理解");
+
+    await voiceButton?.trigger("click");
+    await flushPromises();
+
+    expect(mocks.transcribeLocalSpeech).toHaveBeenCalledTimes(1);
+    expect(store.data.projects).toHaveLength(0);
+    expect(store.pendingInference?.sourceKind).toBe("voice");
+    expect(store.pendingInference?.analysis.sourceLabel).toContain("TryRevive 离线语音转写");
+    expect(store.pendingInference?.analysis.lastCompleted).toContain("写完项目简介");
+    expect(store.pendingInference?.analysis.stuckAt).toContain("团队分工");
+    expect(mocks.saveState).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the intake usable when microphone permission is denied", async () => {
+    mocks.startLocalSpeechRecording.mockRejectedValue(
+      new DOMException("permission denied", "NotAllowedError")
+    );
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("用 Windows 本机语音说"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("没有获得麦克风权限");
+    expect(wrapper.text()).toContain("没有保存或上传任何声音");
+    expect(mocks.transcribeLocalSpeech).not.toHaveBeenCalled();
+    expect(wrapper.get("#project-context").attributes("disabled")).toBeUndefined();
+  });
+
+  it("explains a missing offline runtime without starting the microphone", async () => {
+    mocks.localSpeechCapability.mockResolvedValue({
+      available: false,
+      culture: null,
+      recognizer: null,
+      message: "离线语音运行时没有随当前构建完整安装。"
+    });
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("用 Windows 本机语音说"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("离线语音运行时");
+    expect(mocks.startLocalSpeechRecording).not.toHaveBeenCalled();
   });
 
   it("combines several local text materials before creating one pending draft", async () => {

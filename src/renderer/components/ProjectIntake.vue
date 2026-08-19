@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import {
+  startLocalSpeechRecording,
+  type LocalSpeechRecording
+} from "@/renderer/audio/local-speech-recorder";
 import { parseProjectDump } from "@/shared/domain/intake";
 import { readLocalMaterials, type LocalMaterialBundle } from "@/shared/domain/local-materials";
 import type { ProjectAnalysis } from "@/shared/domain/model";
+import { MAX_LOCAL_SPEECH_SECONDS } from "@/shared/speech/contracts";
 import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
+import { platform } from "@/renderer/platform/web";
 
 const store = useRevivalStore();
 const context = ref("");
@@ -13,11 +19,115 @@ const busy = ref(false);
 const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 const localMaterials = ref<LocalMaterialBundle | null>(null);
+const speechPhase = ref<"idle" | "requesting" | "recording" | "transcribing">("idle");
+const speechStatus = ref(
+  "Windows 桌面版使用随应用打包的离线语音模型；无需 API Key，也不会发送给 TryRevive 后端或 OpenAI。"
+);
+const speechSeconds = ref(0);
 const parsedProjectNames = computed(() => parseProjectDump(projectNames.value));
 const localAnalysisLabel = computed(() => {
   const count = localMaterials.value?.materials.length ?? 0;
   return count ? `从 ${count} 份材料生成待确认草稿` : "让 TryRevive 先猜一遍";
 });
+let speechRecording: LocalSpeechRecording | null = null;
+let speechAbort: AbortController | null = null;
+let speechTimer: ReturnType<typeof setInterval> | null = null;
+let speechGeneration = 0;
+
+function stopSpeechTimer(): void {
+  if (speechTimer) clearInterval(speechTimer);
+  speechTimer = null;
+}
+
+async function cancelLocalSpeech(): Promise<void> {
+  speechGeneration += 1;
+  speechAbort?.abort();
+  speechAbort = null;
+  stopSpeechTimer();
+  const active = speechRecording;
+  speechRecording = null;
+  await active?.cancel();
+  speechPhase.value = "idle";
+}
+
+async function finishLocalSpeech(): Promise<void> {
+  const active = speechRecording;
+  if (!active || speechPhase.value !== "recording") return;
+  const generation = speechGeneration;
+  speechRecording = null;
+  stopSpeechTimer();
+  speechPhase.value = "transcribing";
+  busy.value = true;
+  error.value = "";
+  speechStatus.value = "正在使用 TryRevive 离线语音模型转写；录音不会离开这台电脑…";
+  try {
+    const bytes = await active.stop();
+    const result = await platform.transcribeLocalSpeech({ bytes, culture: "zh-CN" });
+    if (generation !== speechGeneration) return;
+    const transcript = result.transcript.trim();
+    context.value = [context.value.trim(), transcript]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 20_000);
+    speechStatus.value = "已得到一份可修改的本机转写；正在生成待你确认的恢复草稿。";
+    await store.inferLocalContext({
+      content: context.value,
+      sourceKind: "voice",
+      sourceLabel: "TryRevive 离线语音转写"
+    });
+  } catch (caught) {
+    if (generation !== speechGeneration) return;
+    error.value = caught instanceof Error ? caught.message : "本机语音转写失败";
+    speechStatus.value = "录音没有保存；你仍可直接修改文字或选择本地材料。";
+  } finally {
+    if (generation === speechGeneration) {
+      speechPhase.value = "idle";
+      busy.value = false;
+    }
+  }
+}
+
+async function toggleLocalSpeech(): Promise<void> {
+  if (speechPhase.value === "recording") {
+    await finishLocalSpeech();
+    return;
+  }
+  if (speechPhase.value !== "idle" || busy.value) return;
+
+  const generation = ++speechGeneration;
+  speechAbort = new AbortController();
+  speechPhase.value = "requesting";
+  error.value = "";
+  speechStatus.value = "正在检查 Windows 中文语音引擎并请求麦克风权限…";
+  try {
+    const capability = await platform.localSpeechCapability();
+    if (generation !== speechGeneration) return;
+    if (!capability.available) throw new Error(capability.message);
+    const recording = await startLocalSpeechRecording(speechAbort.signal);
+    if (generation !== speechGeneration) {
+      await recording.cancel();
+      return;
+    }
+    speechRecording = recording;
+    speechSeconds.value = 0;
+    speechPhase.value = "recording";
+    speechStatus.value = `正在本机录音。请说：最初目标、做到哪里、卡在哪里；最长 ${MAX_LOCAL_SPEECH_SECONDS} 秒。`;
+    speechTimer = setInterval(() => {
+      speechSeconds.value += 1;
+      if (speechSeconds.value >= MAX_LOCAL_SPEECH_SECONDS) void finishLocalSpeech();
+    }, 1_000);
+  } catch (caught) {
+    if (generation !== speechGeneration) return;
+    speechPhase.value = "idle";
+    error.value =
+      caught instanceof DOMException && caught.name === "NotAllowedError"
+        ? "没有获得麦克风权限；你仍可直接输入文字或选择本地材料。"
+        : caught instanceof Error
+          ? caught.message
+          : "无法开始本机语音";
+    speechStatus.value = "没有开始录音，也没有保存或上传任何声音。";
+  }
+}
 
 async function chooseRepository(): Promise<void> {
   busy.value = true;
@@ -108,6 +218,10 @@ async function collectProjectNames(): Promise<void> {
     busy.value = false;
   }
 }
+
+onBeforeUnmount(() => {
+  void cancelLocalSpeech();
+});
 </script>
 
 <template>
@@ -162,9 +276,25 @@ async function collectProjectNames(): Promise<void> {
           </div>
           <div class="flex flex-wrap gap-2">
             <button
+              class="secondary-button voice-button"
+              :class="{ 'voice-button-active': speechPhase === 'recording' }"
+              type="button"
+              :aria-pressed="speechPhase === 'recording'"
+              :disabled="busy || speechPhase === 'requesting' || speechPhase === 'transcribing'"
+              @click="toggleLocalSpeech"
+            >
+              <span class="voice-dot" aria-hidden="true" />
+              <template v-if="speechPhase === 'recording'">
+                停止并本机理解 {{ speechSeconds }} 秒
+              </template>
+              <template v-else-if="speechPhase === 'requesting'">正在请求麦克风…</template>
+              <template v-else-if="speechPhase === 'transcribing'">正在本机转写…</template>
+              <template v-else>用 Windows 本机语音说</template>
+            </button>
+            <button
               class="secondary-button"
               type="button"
-              :disabled="busy"
+              :disabled="busy || speechPhase !== 'idle'"
               @click="fileInput?.click()"
             >
               选择本地材料
@@ -179,6 +309,8 @@ async function collectProjectNames(): Promise<void> {
             />
           </div>
         </div>
+
+        <p class="voice-status" aria-live="polite">{{ speechStatus }}</p>
 
         <div
           v-if="localMaterials"
@@ -217,9 +349,13 @@ async function collectProjectNames(): Promise<void> {
           本机支持 TXT、Markdown、CSV、JSON、YAML、可复制文字的 PDF 和 DOCX，一次最多 8
           份；不会发送给 TryRevive 后端或
           OpenAI。一次请选择属于同一个项目的材料；多个项目请逐个恢复。扫描图片不会
-          OCR，音频当前也不冒充本地已理解。
+          OCR；音频文件不会冒充已理解，只有你主动点击上方本机语音并确认麦克风权限才会转写。
         </p>
-        <button class="primary-button w-full" type="submit" :disabled="busy">
+        <button
+          class="primary-button w-full"
+          type="submit"
+          :disabled="busy || speechPhase !== 'idle'"
+        >
           {{ busy ? "正在整理恢复摘要…" : localAnalysisLabel }}
         </button>
       </form>

@@ -283,7 +283,10 @@ test("initial intake exposes cloud choices safely and never asks for an API key"
   await expect(page.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
   await expect(page.getByText("当前不会上传任何内容")).toBeVisible();
   await expect(page.getByText(/仅在桌面版内测/)).toBeVisible();
-  await expect(page.getByText(/API Key/)).toHaveCount(1);
+  await expect(page.getByRole("textbox", { name: /API Key/i })).toHaveCount(0);
+  await expect(
+    page.locator('input[placeholder*="API" i], textarea[placeholder*="API" i]')
+  ).toHaveCount(0);
 });
 
 test("a completed project becomes a persistent playable and exportable vinyl record", async ({

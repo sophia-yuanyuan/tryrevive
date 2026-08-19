@@ -99,6 +99,12 @@ onMounted(() => {
           项目名称、恢复摘要、下一步、专注记录、成果证据、返回位置和黑胶奖励默认保存在你的设备。只有你主动导出备份时，TryRevive
           才会在你选择的位置生成 JSON 或音频文件。
         </p>
+        <p class="mt-3 text-sm leading-7 text-[var(--muted)]">
+          Windows 本机语音使用随 TryRevive 打包的离线 Whisper 模型，不需要 API
+          Key。只有你主动点击录音并授予麦克风权限时才会开始；录音写入 TryRevive 创建的临时
+          WAV，转写结束、失败或超时后都会删除。转写文字会进入“我猜你做到这里”的待确认草稿，原始录音不会写入项目存档，也不会发送给
+          TryRevive 后端或 OpenAI。
+        </p>
       </section>
 
       <section
@@ -121,9 +127,10 @@ onMounted(() => {
           天；如果法律要求，或为保护服务与第三方免受伤害而合理必要，可能保留更久。
         </p>
         <p class="mt-3 text-sm leading-7 text-[var(--muted)]">
-          为协助识别滥用，每次项目分析还会向 OpenAI 发送一个稳定匿名标识。TryRevive
-          使用随机云账号 ID、固定用途前缀和 SHA-256 生成该标识；OpenAI
-          可以据此关联同一匿名账号的多次分析请求。原始账号 ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不会用于生成该标识。
+          为协助识别滥用，每次项目分析还会向 OpenAI 发送一个稳定匿名标识。TryRevive 使用随机云账号
+          ID、固定用途前缀和 SHA-256 生成该标识；OpenAI
+          可以据此关联同一匿名账号的多次分析请求。原始账号
+          ID、会话令牌、姓名、邮箱、项目名、文件名和材料内容都不会用于生成该标识。
         </p>
         <button class="text-button mt-3" type="button" @click="openOpenAiDataControls">
           查看 OpenAI 官方数据控制说明
