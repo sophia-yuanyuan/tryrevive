@@ -201,6 +201,8 @@ const webPlatform: AppPlatform = {
       graceRemainingSeconds: 0,
       idleSeconds: 0,
       allowedApps: [],
+      blockedApps: [],
+      violationKind: null,
       message: "网页版本没有运行系统级偏离提醒。"
     };
   },

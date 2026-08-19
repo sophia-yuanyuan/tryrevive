@@ -28,7 +28,9 @@ const guardianBusy = ref(false);
 const guardianMessage = ref("");
 const guardianEvent = ref<FocusEvent | null>(null);
 const selectedApps = ref<string[]>([]);
-const customApps = ref("");
+const blockedApps = ref<string[]>([]);
+const customAllowedAppsText = ref("");
+const customBlockedAppsText = ref("");
 const entryHolding = ref(false);
 const entryProgress = ref(0);
 const entryBusy = ref(false);
@@ -106,14 +108,22 @@ function beginEntryHold(): void {
   entryAnimationFrame = requestAnimationFrame(updateEntryHold);
 }
 
-function toggleApp(value: string): void {
+function toggleAllowedApp(value: string): void {
+  blockedApps.value = blockedApps.value.filter((item) => item !== value);
   selectedApps.value = selectedApps.value.includes(value)
     ? selectedApps.value.filter((item) => item !== value)
     : [...selectedApps.value, value];
 }
 
-function customAllowedApps(): string[] {
-  return customApps.value
+function toggleBlockedApp(value: string): void {
+  selectedApps.value = selectedApps.value.filter((item) => item !== value);
+  blockedApps.value = blockedApps.value.includes(value)
+    ? blockedApps.value.filter((item) => item !== value)
+    : [...blockedApps.value, value];
+}
+
+function parseCustomApps(value: string): string[] {
+  return value
     .split(/[，,、;；\n]/u)
     .map((item) => item.trim().slice(0, 80))
     .filter(Boolean)
@@ -138,7 +148,8 @@ async function startGuardian(): Promise<void> {
   try {
     receiveFocusEvent(
       await platform.startFocusGuardian({
-        allowedApps: [...selectedApps.value, ...customAllowedApps()],
+        allowedApps: [...selectedApps.value, ...parseCustomApps(customAllowedAppsText.value)],
+        blockedApps: [...blockedApps.value, ...parseCustomApps(customBlockedAppsText.value)],
         graceSeconds: 12,
         idlePauseSeconds: 90
       })
@@ -324,23 +335,49 @@ onBeforeUnmount(() => {
 
             <template v-if="guardianAvailable && !guardianActive">
               <p class="focus-guardian-copy">
-                选择这一步需要使用的软件；未选择的软件会先获得 12 秒宽限。
+                白名单是这一步需要的软件；未列入的软件有 12 秒返回时间。黑名单命中会立即拉回。
               </p>
-              <div class="focus-apps" aria-label="本次允许的软件">
+              <p class="focus-guardian-title">白名单 · 本次允许</p>
+              <div class="focus-apps" aria-label="本次白名单软件">
                 <button
                   v-for="app in quickApps"
-                  :key="app.value"
+                  :key="`allow-${app.value}`"
                   :class="['focus-app-chip', { selected: selectedApps.includes(app.value) }]"
                   type="button"
                   :aria-pressed="selectedApps.includes(app.value)"
-                  @click="toggleApp(app.value)"
+                  @click="toggleAllowedApp(app.value)"
                 >
                   {{ app.label }}
                 </button>
               </div>
               <label class="focus-custom-app">
-                <span>其他软件（可选，用逗号分开）</span>
-                <input v-model="customApps" maxlength="240" placeholder="例如：Notion, Photoshop" />
+                <span>其他白名单软件（可选，用逗号分开）</span>
+                <input
+                  v-model="customAllowedAppsText"
+                  maxlength="240"
+                  placeholder="例如：Notion, Photoshop"
+                />
+              </label>
+              <p class="focus-guardian-title">黑名单 · 明确排除</p>
+              <div class="focus-apps" aria-label="本次黑名单软件">
+                <button
+                  v-for="app in quickApps"
+                  :key="`block-${app.value}`"
+                  :class="['focus-app-chip', { selected: blockedApps.includes(app.value) }]"
+                  type="button"
+                  :aria-pressed="blockedApps.includes(app.value)"
+                  @click="toggleBlockedApp(app.value)"
+                >
+                  {{ app.label }}
+                </button>
+              </div>
+              <label class="focus-custom-app">
+                <span>其他黑名单软件（可选，用逗号分开）</span>
+                <input
+                  v-model="customBlockedAppsText"
+                  maxlength="240"
+                  placeholder="例如：Discord, Steam"
+                />
               </label>
               <button
                 class="focus-guardian-start"
@@ -348,7 +385,7 @@ onBeforeUnmount(() => {
                 :disabled="guardianBusy"
                 @click="startGuardian"
               >
-                {{ guardianBusy ? "正在开启…" : "开启本次偏离提醒" }}
+                {{ guardianBusy ? "正在开启…" : "开启本次白／黑名单守护" }}
               </button>
             </template>
 
@@ -357,6 +394,9 @@ onBeforeUnmount(() => {
               <p v-if="guardianEvent?.phase === 'grace'" class="focus-guardian-warning">
                 {{ guardianEvent.appName }} 不在允许列表，{{ guardianEvent.graceRemainingSeconds }}
                 秒后拉回。
+              </p>
+              <p v-if="guardianEvent?.violationKind === 'blocked'" class="focus-guardian-warning">
+                {{ guardianEvent.appName }} 在本次黑名单中，已立即拉回。
               </p>
               <button class="focus-secondary" type="button" @click="stopGuardian">
                 结束本次守护
@@ -376,11 +416,12 @@ onBeforeUnmount(() => {
               <strong v-else>{{ anchor }}</strong>
               <p v-if="resetCause === 'guardian' && guardianEvent?.appName" class="focus-reset-app">
                 刚才检测到：{{ guardianEvent.appName }}
+                <template v-if="guardianEvent.violationKind === 'blocked'">（本次黑名单）</template>
               </p>
             </div>
             <div class="focus-reset-actions">
               <button
-                v-if="resetCause === 'guardian'"
+                v-if="resetCause === 'guardian' && guardianEvent?.violationKind !== 'blocked'"
                 class="focus-reset-back"
                 type="button"
                 :disabled="guardianBusy"

@@ -1,4 +1,4 @@
-import { isAllowedApp, type FocusEvent, type FocusSessionRequest } from "./contracts";
+import { isAllowedApp, isBlockedApp, type FocusEvent, type FocusSessionRequest } from "./contracts";
 
 export interface FocusSampleState {
   deviationStartedAt: number | null;
@@ -12,12 +12,14 @@ export interface FocusSampleResult {
 export function evaluateFocusSample(input: {
   appName: string;
   allowedApps: string[];
+  blockedApps: string[];
   idleSeconds: number;
   now: number;
   request: FocusSessionRequest;
   state: FocusSampleState;
 }): FocusSampleResult {
   const allowedApps = input.allowedApps;
+  const blockedApps = input.blockedApps;
   const idleSeconds = Math.max(0, Math.floor(input.idleSeconds));
 
   if (idleSeconds >= input.request.idlePauseSeconds) {
@@ -29,7 +31,25 @@ export function evaluateFocusSample(input: {
         graceRemainingSeconds: 0,
         idleSeconds,
         allowedApps,
+        blockedApps,
+        violationKind: null,
         message: "你暂时没有操作电脑，偏离计时已暂停。"
+      }
+    };
+  }
+
+  if (isBlockedApp(input.appName, blockedApps)) {
+    return {
+      state: { deviationStartedAt: input.now },
+      event: {
+        phase: "blocked",
+        appName: input.appName,
+        graceRemainingSeconds: 0,
+        idleSeconds,
+        allowedApps,
+        blockedApps,
+        violationKind: "blocked",
+        message: `${input.appName} 在你为本次动作设置的黑名单中。`
       }
     };
   }
@@ -43,6 +63,8 @@ export function evaluateFocusSample(input: {
         graceRemainingSeconds: 0,
         idleSeconds,
         allowedApps,
+        blockedApps,
+        violationKind: null,
         message: "仍在本次允许的软件中。"
       }
     };
@@ -61,6 +83,8 @@ export function evaluateFocusSample(input: {
       graceRemainingSeconds,
       idleSeconds,
       allowedApps,
+      blockedApps,
+      violationKind: "unlisted",
       message:
         phase === "grace"
           ? `你切换到了 ${input.appName}，仍有 ${graceRemainingSeconds} 秒决定是否返回。`

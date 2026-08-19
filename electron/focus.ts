@@ -50,9 +50,11 @@ class FocusGuardian {
   private window: BrowserWindow | null = null;
   private request: FocusSessionRequest | null = null;
   private allowedApps: string[] = [];
+  private blockedApps: string[] = [];
   private sampleState: FocusSampleState = { deviationStartedAt: null };
   private stdoutBuffer = "";
   private lastViolationApp = "";
+  private lastViolationKind: FocusEvent["violationKind"] = null;
   private interventionRaised = false;
   private stopping = false;
   private releaseTopTimer: NodeJS.Timeout | null = null;
@@ -94,10 +96,17 @@ class FocusGuardian {
       "TryRevive",
       "electron"
     ]);
+    const protectedApps = new Set(
+      [ownProcess, "TryRevive", "electron"].map((value) => normalizeAppName(value))
+    );
+    this.blockedApps = uniqueApps(this.request.blockedApps).filter(
+      (value) => !protectedApps.has(normalizeAppName(value))
+    );
     this.window = targetWindow;
     this.sampleState = { deviationStartedAt: null };
     this.stdoutBuffer = "";
     this.lastViolationApp = "";
+    this.lastViolationKind = null;
     this.interventionRaised = false;
     this.stopping = false;
 
@@ -134,6 +143,8 @@ class FocusGuardian {
       graceRemainingSeconds: 0,
       idleSeconds: 0,
       allowedApps: this.allowedApps,
+      blockedApps: this.blockedApps,
+      violationKind: null,
       message: "偏离提醒已开启；关闭专注或重启应用后会自动停止。"
     });
   }
@@ -142,12 +153,16 @@ class FocusGuardian {
     if (!this.monitor || !this.window) throw new Error("当前没有运行中的偏离提醒");
     const action: FocusAcknowledge = FocusAcknowledgeSchema.parse(rawAction);
 
+    if (action === "necessary" && this.lastViolationKind === "blocked") {
+      throw new Error("这个应用在本次黑名单中；请先结束守护，再明确调整名单。");
+    }
     if (action === "necessary" && this.lastViolationApp) {
       this.allowedApps = uniqueApps([...this.allowedApps, this.lastViolationApp]);
     }
     const acknowledgedApp = this.lastViolationApp;
     this.sampleState = { deviationStartedAt: null };
     this.lastViolationApp = "";
+    this.lastViolationKind = null;
     this.interventionRaised = false;
     this.releaseAlwaysOnTop();
 
@@ -157,6 +172,8 @@ class FocusGuardian {
       graceRemainingSeconds: 0,
       idleSeconds: powerMonitor.getSystemIdleTime(),
       allowedApps: this.allowedApps,
+      blockedApps: this.blockedApps,
+      violationKind: null,
       message:
         action === "necessary"
           ? `${acknowledgedApp} 已加入本次允许列表；不会保存到下一次启动。`
@@ -180,14 +197,18 @@ class FocusGuardian {
       graceRemainingSeconds: 0,
       idleSeconds: 0,
       allowedApps: [],
+      blockedApps: [],
+      violationKind: null,
       message: "本次系统级偏离提醒已停止。"
     };
     if (notify) this.send(event);
     this.window = null;
     this.request = null;
     this.allowedApps = [];
+    this.blockedApps = [];
     this.sampleState = { deviationStartedAt: null };
     this.lastViolationApp = "";
+    this.lastViolationKind = null;
     this.interventionRaised = false;
     return FocusEventSchema.parse(event);
   }
@@ -208,6 +229,7 @@ class FocusGuardian {
     const result = evaluateFocusSample({
       appName,
       allowedApps: this.allowedApps,
+      blockedApps: this.blockedApps,
       idleSeconds: powerMonitor.getSystemIdleTime(),
       now: Date.now(),
       request: this.request,
@@ -217,6 +239,7 @@ class FocusGuardian {
 
     if (result.event.phase === "blocked") {
       this.lastViolationApp = appName;
+      this.lastViolationKind = result.event.violationKind;
       if (!this.interventionRaised) {
         this.interventionRaised = true;
         this.raiseResetScreen();
@@ -224,6 +247,7 @@ class FocusGuardian {
     } else if (result.event.phase === "allowed" || result.event.phase === "idle") {
       this.interventionRaised = false;
       this.lastViolationApp = "";
+      this.lastViolationKind = null;
     }
     this.send(result.event);
   }
@@ -256,6 +280,8 @@ class FocusGuardian {
       graceRemainingSeconds: 0,
       idleSeconds: 0,
       allowedApps: [],
+      blockedApps: [],
+      violationKind: null,
       message
     });
     this.window = null;

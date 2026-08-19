@@ -40,6 +40,8 @@ const startingEvent: FocusEvent = {
   graceRemainingSeconds: 0,
   idleSeconds: 0,
   allowedApps: ["chrome", "electron"],
+  blockedApps: ["msedge"],
+  violationKind: null,
   message: "偏离提醒已开启"
 };
 
@@ -57,12 +59,14 @@ describe("FocusMode guardian controls", () => {
       ...startingEvent,
       phase: "stopped",
       allowedApps: [],
+      blockedApps: [],
       message: "已停止"
     });
     mocks.acknowledge.mockReset().mockResolvedValue({
       ...startingEvent,
       phase: "allowed",
       appName: "powershell",
+      violationKind: null,
       message: "已回到当前这一步"
     });
     vi.spyOn(performance, "now").mockReturnValue(0);
@@ -106,11 +110,15 @@ describe("FocusMode guardian controls", () => {
 
     expect(wrapper.text()).toContain("默认关闭");
     expect(mocks.start).not.toHaveBeenCalled();
-    await wrapper.get("button.focus-app-chip").trigger("click");
+    await wrapper.get('[aria-label="本次白名单软件"] button.focus-app-chip').trigger("click");
+    await wrapper
+      .get('[aria-label="本次黑名单软件"] button.focus-app-chip:nth-child(2)')
+      .trigger("click");
     await wrapper.get("button.focus-guardian-start").trigger("click");
     await flushPromises();
     expect(mocks.start).toHaveBeenCalledWith({
       allowedApps: ["chrome"],
+      blockedApps: ["msedge"],
       graceSeconds: 12,
       idlePauseSeconds: 90
     });
@@ -121,6 +129,8 @@ describe("FocusMode guardian controls", () => {
       graceRemainingSeconds: 0,
       idleSeconds: 0,
       allowedApps: ["chrome", "electron"],
+      blockedApps: ["msedge"],
+      violationKind: "unlisted",
       message: "你离开了本次允许的软件"
     });
     await nextTick();
@@ -134,6 +144,22 @@ describe("FocusMode guardian controls", () => {
     await necessary?.trigger("click");
     await flushPromises();
     expect(mocks.acknowledge).toHaveBeenCalledWith("necessary");
+
+    mocks.listener?.({
+      phase: "blocked",
+      appName: "msedge",
+      graceRemainingSeconds: 0,
+      idleSeconds: 0,
+      allowedApps: ["chrome", "electron"],
+      blockedApps: ["msedge"],
+      violationKind: "blocked",
+      message: "msedge 在本次黑名单中"
+    });
+    await nextTick();
+    expect(wrapper.text()).toContain("本次黑名单");
+    expect(wrapper.findAll("button").some((button) => button.text() === "这是必要工作")).toBe(
+      false
+    );
     wrapper.unmount();
   });
 

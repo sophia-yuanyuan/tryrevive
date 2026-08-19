@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const FocusSessionRequestSchema = z.object({
   allowedApps: z.array(z.string().trim().min(1).max(80)).max(16),
+  blockedApps: z.array(z.string().trim().min(1).max(80)).max(16).default([]),
   graceSeconds: z.number().int().min(5).max(60).default(12),
   idlePauseSeconds: z.number().int().min(30).max(600).default(90)
 });
@@ -22,12 +23,16 @@ export const FocusPhaseSchema = z.enum([
   "error"
 ]);
 
+export const FocusViolationKindSchema = z.enum(["unlisted", "blocked"]).nullable();
+
 export const FocusEventSchema = z.object({
   phase: FocusPhaseSchema,
   appName: z.string().trim().max(80).default(""),
   graceRemainingSeconds: z.number().int().min(0).max(60).default(0),
   idleSeconds: z.number().int().min(0).default(0),
   allowedApps: z.array(z.string().trim().min(1).max(80)).max(18),
+  blockedApps: z.array(z.string().trim().min(1).max(80)).max(16).default([]),
+  violationKind: FocusViolationKindSchema.default(null),
   message: z.string().max(240)
 });
 
@@ -49,4 +54,9 @@ export function normalizeAppName(value: string): string {
 export function isAllowedApp(appName: string, allowedApps: string[]): boolean {
   const normalized = normalizeAppName(appName);
   return allowedApps.some((allowed) => normalizeAppName(allowed) === normalized);
+}
+
+export function isBlockedApp(appName: string, blockedApps: string[]): boolean {
+  const normalized = normalizeAppName(appName);
+  return blockedApps.some((blocked) => normalizeAppName(blocked) === normalized);
 }

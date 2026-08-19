@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedApp, normalizeAppName } from "@/shared/focus/contracts";
+import { isAllowedApp, isBlockedApp, normalizeAppName } from "@/shared/focus/contracts";
 import { evaluateFocusSample } from "@/shared/focus/guardian";
 
 const request = {
   allowedApps: ["Code"],
+  blockedApps: ["Discord"],
   graceSeconds: 12,
   idlePauseSeconds: 90
 };
@@ -13,12 +14,14 @@ describe("focus guardian", () => {
     expect(normalizeAppName(" Windows-Terminal.exe ")).toBe("windowsterminal");
     expect(isAllowedApp("Code.exe", ["Code"])).toBe(true);
     expect(isAllowedApp("chrome", ["msedge"])).toBe(false);
+    expect(isBlockedApp("Discord.exe", ["discord"])).toBe(true);
   });
 
   it("gives a grace period before blocking an unlisted app", () => {
     const grace = evaluateFocusSample({
       appName: "chrome",
       allowedApps: ["Code"],
+      blockedApps: ["Discord"],
       idleSeconds: 0,
       now: 10_000,
       request,
@@ -33,6 +36,7 @@ describe("focus guardian", () => {
     const blocked = evaluateFocusSample({
       appName: "chrome",
       allowedApps: ["Code"],
+      blockedApps: ["Discord"],
       idleSeconds: 0,
       now: 22_000,
       request,
@@ -40,12 +44,33 @@ describe("focus guardian", () => {
     });
     expect(blocked.event.phase).toBe("blocked");
     expect(blocked.event.graceRemainingSeconds).toBe(0);
+    expect(blocked.event.violationKind).toBe("unlisted");
+  });
+
+  it("blocks an explicitly excluded app immediately, even if it is also allowed", () => {
+    const blocked = evaluateFocusSample({
+      appName: "Discord.exe",
+      allowedApps: ["Code", "Discord"],
+      blockedApps: ["Discord"],
+      idleSeconds: 0,
+      now: 10_000,
+      request,
+      state: { deviationStartedAt: null }
+    });
+
+    expect(blocked.event).toMatchObject({
+      phase: "blocked",
+      appName: "Discord.exe",
+      graceRemainingSeconds: 0,
+      violationKind: "blocked"
+    });
   });
 
   it("clears deviation when the user returns or becomes idle", () => {
     const allowed = evaluateFocusSample({
       appName: "Code.exe",
       allowedApps: ["Code"],
+      blockedApps: ["Discord"],
       idleSeconds: 0,
       now: 20_000,
       request,
@@ -57,6 +82,7 @@ describe("focus guardian", () => {
     const idle = evaluateFocusSample({
       appName: "chrome",
       allowedApps: ["Code"],
+      blockedApps: ["Discord"],
       idleSeconds: 120,
       now: 30_000,
       request,
