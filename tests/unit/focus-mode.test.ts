@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProject } from "@/shared/domain/model";
 import type { FocusEvent } from "@/shared/focus/contracts";
 
@@ -44,6 +44,8 @@ const startingEvent: FocusEvent = {
 };
 
 describe("FocusMode guardian controls", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     setActivePinia(createPinia());
     Object.defineProperty(window, "matchMedia", {
@@ -63,6 +65,12 @@ describe("FocusMode guardian controls", () => {
       appName: "powershell",
       message: "已回到当前这一步"
     });
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(1_000);
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
   });
 
   it("requires an explicit start and exposes all exits after a blocked event", async () => {
@@ -87,6 +95,13 @@ describe("FocusMode guardian controls", () => {
       props: { project, clock: "09:59", started: true },
       global: { stubs: { Teleport: true } }
     });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("回到上次离开的地方");
+    expect(wrapper.text()).not.toContain("Windows 偏离提醒");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     expect(wrapper.text()).toContain("默认关闭");

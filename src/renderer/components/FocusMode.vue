@@ -19,7 +19,7 @@ const emit = defineEmits<{
 
 const store = useRevivalStore();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const phase = ref(props.started ? 3 : 1);
+const phase = ref(1);
 const resetOpen = ref(false);
 const resetCause = ref<"manual" | "guardian">("manual");
 const guardianAvailable = ref(false);
@@ -210,7 +210,7 @@ onMounted(() => {
     .catch((error: unknown) => {
       guardianMessage.value = error instanceof Error ? error.message : "无法读取偏离提醒状态";
     });
-  if (!props.started && !reducedMotion) {
+  if (!reducedMotion) {
     phaseTimers.push(
       window.setTimeout(() => {
         if (phase.value === 1) phase.value = 2;
