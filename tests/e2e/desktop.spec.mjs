@@ -997,11 +997,15 @@ test("desktop cloud sessions top up one account, recover from expiry, and revoke
     await window.getByRole("button", { name: "兑换算力" }).click();
     await expect(window.getByText("还可使用 1 分钟语音、1 次项目理解")).toBeVisible();
     await window.getByRole("button", { name: "退出云端算力", exact: true }).click();
-    await expect(window.getByLabel("算力兑换码")).toBeVisible();
-    const revoke = harness.calls.find(
-      (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
-    );
-    expect(revoke.authorization).toMatch(/^Bearer session_token_/);
+    await expect(window.getByRole("button", { name: "兑换算力", exact: true })).toBeVisible();
+    await expect
+      .poll(
+        () =>
+          harness.calls.find(
+            (call) => call.method === "POST" && call.path === "/v1/cloud/session/revoke"
+          )?.authorization ?? ""
+      )
+      .toMatch(/^Bearer session_token_/);
   } finally {
     await desktop.close().catch(() => undefined);
     await harness.close().catch(() => undefined);
