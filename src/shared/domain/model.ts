@@ -6,7 +6,7 @@ import {
 } from "./repository";
 import { ProjectMusicRecipeSchema } from "../audio/music-recipe";
 
-export const SCHEMA_VERSION = 7 as const;
+export const SCHEMA_VERSION = 8 as const;
 
 export const ProjectStageSchema = z.enum([
   "restore",
@@ -24,6 +24,7 @@ export const ProjectStatusSchema = z.enum(["active", "paused", "abandoned", "com
 export const DecisionSchema = z.enum(["continue", "shrink", "help", "pause", "abandon"]);
 export const ProjectMoodSchema = z.enum(["calm", "relieved", "proud", "energized", "bittersweet"]);
 export const InferenceSourceSchema = z.enum(["repository", "material", "voice", "text"]);
+export const SubstantiveProgressSchema = z.enum(["yes", "no", "uncertain"]);
 
 export const ProjectRewardSchema = z
   .object({
@@ -98,6 +99,8 @@ export const EvidenceSchema = z.object({
   note: z.string().trim().min(1).max(500),
   link: z.string().trim().max(500).default(""),
   observation: RepositoryObservationSchema.nullable(),
+  substantiveProgress: SubstantiveProgressSchema,
+  progressReason: z.string().trim().max(240).default(""),
   createdAt: z.number().int().positive()
 });
 
@@ -193,6 +196,7 @@ export type RestoreContext = z.infer<typeof RestoreContextSchema>;
 export type RevivalAction = z.infer<typeof ActionSchema>;
 export type RepositoryObservation = z.infer<typeof RepositoryObservationSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
+export type SubstantiveProgress = z.infer<typeof SubstantiveProgressSchema>;
 export type ReturnPlan = z.infer<typeof ReturnPlanSchema>;
 export type ProjectAnalysis = z.infer<typeof ProjectAnalysisSchema>;
 export type PendingInference = z.infer<typeof PendingInferenceSchema>;

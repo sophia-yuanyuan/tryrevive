@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   AppStateSchema,
+  EvidenceSchema,
   ProjectMoodSchema,
   ProjectSchema,
   SCHEMA_VERSION,
@@ -20,16 +21,32 @@ const LegacyProjectRewardV6Schema = z
   })
   .strict();
 
-const LegacyProjectV6Schema = ProjectSchema.extend({
+const LegacyEvidenceV7Schema = EvidenceSchema.omit({
+  substantiveProgress: true,
+  progressReason: true
+});
+
+const LegacyProjectV7Schema = ProjectSchema.extend({
+  schemaVersion: z.literal(7),
+  evidence: z.array(LegacyEvidenceV7Schema).max(100)
+});
+
+const LegacyAppStateV7Schema = AppStateSchema.extend({
+  schemaVersion: z.literal(7),
+  projects: z.array(LegacyProjectV7Schema).max(100)
+});
+
+const LegacyProjectV6Schema = LegacyProjectV7Schema.extend({
   schemaVersion: z.literal(6),
   reward: LegacyProjectRewardV6Schema.nullable()
 });
 
-const LegacyAppStateV6Schema = AppStateSchema.extend({
+const LegacyAppStateV6Schema = LegacyAppStateV7Schema.extend({
   schemaVersion: z.literal(6),
   projects: z.array(LegacyProjectV6Schema).max(100)
 });
 
+type LegacyAppStateV7 = z.infer<typeof LegacyAppStateV7Schema>;
 type LegacyAppStateV6 = z.infer<typeof LegacyAppStateV6Schema>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -112,6 +129,8 @@ function migrateLegacyProject(raw: unknown, now: number): RevivalProject | null 
             note,
             link: asString(record.link),
             observation: null,
+            substantiveProgress: "uncertain" as const,
+            progressReason: "旧版记录没有询问是否构成实质推进",
             createdAt: asNumber(record.createdAt, now)
           }
         : null;
@@ -142,13 +161,39 @@ function migrateEvidenceList(value: unknown): unknown {
   }));
 }
 
-function upgradeValidatedVersion6(state: LegacyAppStateV6): AppState {
+function upgradeValidatedVersion7(state: LegacyAppStateV7): AppState {
   return AppStateSchema.parse({
     ...state,
     schemaVersion: SCHEMA_VERSION,
     projects: state.projects.map((project) => ({
       ...project,
       schemaVersion: SCHEMA_VERSION,
+      stage: project.decision === null && project.stage === "action" ? "decision" : project.stage,
+      evidence: project.evidence.map((item) => ({
+        ...item,
+        substantiveProgress: "uncertain" as const,
+        progressReason: "旧版记录没有询问是否构成实质推进"
+      }))
+    }))
+  });
+}
+
+function upgradeVersion7Candidate(candidate: unknown): AppState | null {
+  const parsed = LegacyAppStateV7Schema.safeParse(candidate);
+  return parsed.success ? upgradeValidatedVersion7(parsed.data) : null;
+}
+
+function migrateVersion7(raw: unknown): AppState | null {
+  return upgradeVersion7Candidate(raw);
+}
+
+function upgradeValidatedVersion6(state: LegacyAppStateV6): AppState {
+  const version7 = LegacyAppStateV7Schema.parse({
+    ...state,
+    schemaVersion: 7,
+    projects: state.projects.map((project) => ({
+      ...project,
+      schemaVersion: 7,
       reward: project.reward
         ? {
             ...project.reward,
@@ -157,6 +202,7 @@ function upgradeValidatedVersion6(state: LegacyAppStateV6): AppState {
         : null
     }))
   });
+  return upgradeValidatedVersion7(version7);
 }
 
 function upgradeVersion6Candidate(candidate: unknown): AppState | null {
@@ -242,6 +288,11 @@ export function migrateState(raw: unknown, now = Date.now()): AppState {
 
   const source = asRecord(raw);
   const declaredVersion = source.schemaVersion;
+  if (declaredVersion === 7) {
+    const version7 = migrateVersion7(raw);
+    if (version7) return version7;
+    throw new Error("版本 7 的本地存档不完整，TryRevive 没有覆盖它");
+  }
   if (declaredVersion === 6) {
     const version6 = migrateVersion6(raw);
     if (version6) return version6;

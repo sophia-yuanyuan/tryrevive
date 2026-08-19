@@ -80,6 +80,8 @@ describe("frozen vinyl music recipes", () => {
       note: "展示已经保存",
       link: "",
       observation: null,
+      substantiveProgress: "yes",
+      progressReason: "展示已经能够打开",
       createdAt: startedAt + 777_001
     });
 

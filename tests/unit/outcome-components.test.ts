@@ -129,7 +129,11 @@ describe("repository outcome confirmation", () => {
     expect(store.activeProject?.repository?.actionBaseline).toMatchObject({ actionId });
 
     await store.finishAction();
-    expect(store.activeProject).toMatchObject({ stage: "evidence", status: "active", reward: null });
+    expect(store.activeProject).toMatchObject({
+      stage: "evidence",
+      status: "active",
+      reward: null
+    });
     expect(store.activeProject?.evidence).toHaveLength(0);
     expect(store.activeProject?.outcomeDraft?.changes).toContainEqual({
       path: "src/main.ts",
@@ -140,7 +144,8 @@ describe("repository outcome confirmation", () => {
     const observation = wrapper.get('[aria-label="TryRevive 观察到的文件变化"]');
     expect(observation.text()).toContain("src/main.ts");
     expect(observation.text()).toContain("内容与开始前不同");
-    await observation.get("button.primary-button").trigger("click");
+    await wrapper.get('input[value="yes"]').setValue(true);
+    await wrapper.get("button.primary-button").trigger("click");
     await flushPromises();
 
     expect(store.activeProject?.stage).toBe("return");
@@ -148,6 +153,7 @@ describe("repository outcome confirmation", () => {
     expect(store.activeProject?.evidence).toHaveLength(1);
     expect(store.activeProject?.evidence[0]).toMatchObject({
       actionId,
+      substantiveProgress: "yes",
       observation: { kind: "repository_diff", paths: ["src/main.ts"] }
     });
 
@@ -168,11 +174,34 @@ describe("repository outcome confirmation", () => {
 
     await wrapper.get("button.secondary-button").trigger("click");
     await wrapper.get("#evidence-note").setValue("我补上了报名截止日期");
+    await wrapper.get('input[value="uncertain"]').setValue(true);
+    await wrapper.get("#progress-reason").setValue("文件变了，但还没有走真实报名流程");
     await wrapper.find("form").trigger("submit");
     await flushPromises();
 
     expect(store.activeProject?.evidence[0]?.note).toBe("我补上了报名截止日期");
+    expect(store.activeProject?.evidence[0]).toMatchObject({
+      substantiveProgress: "uncertain",
+      progressReason: "文件变了，但还没有走真实报名流程"
+    });
     expect(store.activeProject?.evidence[0]?.observation?.paths).toEqual(["src/main.ts"]);
+  });
+
+  it("requires a substantive-progress judgment before saving evidence", async () => {
+    const store = seedStore();
+    mocks.rescanRepository
+      .mockResolvedValueOnce(scanResult(snapshot("a", 1_800_000_001_000)))
+      .mockResolvedValueOnce(scanResult(snapshot("b", 1_800_000_002_000)));
+    await store.beginAction();
+    await store.finishAction();
+    const wrapper = mount(EvidenceStep, { props: { project: store.activeProject! } });
+
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("请选择这次是否让项目产生了实质推进");
+    expect(store.activeProject?.stage).toBe("evidence");
+    expect(store.activeProject?.evidence).toHaveLength(0);
   });
 
   it("does not block focus when the baseline scan fails and falls back to a manual result", async () => {
@@ -196,9 +225,7 @@ describe("repository outcome confirmation", () => {
     const store = seedStore();
     mocks.rescanRepository
       .mockResolvedValueOnce(scanResult(snapshot("a", 1_800_000_001_000)))
-      .mockResolvedValueOnce(
-        scanResult(snapshot("a", 1_800_000_002_000, 1_800_000_009_000))
-      );
+      .mockResolvedValueOnce(scanResult(snapshot("a", 1_800_000_002_000, 1_800_000_009_000)));
 
     await store.beginAction();
     await store.finishAction();

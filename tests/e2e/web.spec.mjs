@@ -41,6 +41,7 @@ async function completeRevivalLoop(page) {
 
   await page.getByLabel("我实际完成了").fill("导航已经可以在 390px 下打开和关闭");
   await page.getByLabel("结果链接或文件位置（可选）").fill("src/components/Nav.vue");
+  await page.getByRole("radio", { name: "是", exact: true }).check();
   await page.getByRole("button", { name: "把真实进度留下" }).click();
 
   await page.getByRole("button", { name: "保存，下次从这里继续" }).click();

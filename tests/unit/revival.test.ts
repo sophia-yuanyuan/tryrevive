@@ -44,7 +44,12 @@ describe("revival domain flow", () => {
     project = completeAction(project, start + 604_000);
     project = addEvidence(
       project,
-      { note: "移动端导航已经可以打开和关闭", link: "src/nav.vue" },
+      {
+        note: "移动端导航已经可以打开和关闭",
+        link: "src/nav.vue",
+        substantiveProgress: "yes",
+        progressReason: "已经达到这一步的完成标准"
+      },
       start + 604_001
     );
     project = scheduleReturn(
@@ -55,6 +60,10 @@ describe("revival domain flow", () => {
 
     expect(project.stage).toBe("resume");
     expect(project.evidence.at(-1)?.note).toContain("已经可以");
+    expect(project.evidence.at(-1)).toMatchObject({
+      substantiveProgress: "yes",
+      progressReason: "已经达到这一步的完成标准"
+    });
     expect(project.returnPlan?.cue).toBe("先检查键盘操作");
 
     project = resumeProject(project, start + 3 * 86_400_000);

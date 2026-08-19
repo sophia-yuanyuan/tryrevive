@@ -8,6 +8,7 @@ import {
   type ProjectAnalysis,
   type RestoreContext,
   type RevivalProject,
+  type SubstantiveProgress,
   AppStateSchema,
   createEmptyState,
   createProject
@@ -429,7 +430,12 @@ export const useRevivalStore = defineStore("revival", () => {
     });
   }
 
-  async function recordEvidence(input: { note: string; link?: string }): Promise<void> {
+  async function recordEvidence(input: {
+    note: string;
+    link?: string;
+    substantiveProgress: SubstantiveProgress;
+    progressReason?: string;
+  }): Promise<void> {
     if (!activeProject.value) return;
     const projectId = activeProject.value.id;
     await commitCandidateBuild(() => {

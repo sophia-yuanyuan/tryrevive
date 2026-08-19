@@ -26,7 +26,7 @@ describe("state migrations", () => {
     };
 
     const state = migrateState(legacy, 1_800_000_000_000);
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.activeProjectId).toBe("legacy-1");
     expect(state.projects[0]).toMatchObject({
       title: "课程网站",
@@ -34,6 +34,10 @@ describe("state migrations", () => {
       restore: { lastCompleted: "完成了首页", stuckAt: "导航在手机上溢出" }
     });
     expect(state.projects[0]?.evidence[0]?.note).toContain("flex");
+    expect(state.projects[0]?.evidence[0]).toMatchObject({
+      substantiveProgress: "uncertain",
+      progressReason: "旧版记录没有询问是否构成实质推进"
+    });
   });
 
   it("upgrades version 3 without losing project progress", () => {
@@ -67,7 +71,7 @@ describe("state migrations", () => {
       updatedAt: 1_800_000_000_001
     });
 
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.projects[0]?.analysis).toBeNull();
     expect(state.projects[0]?.reward).toBeNull();
     expect(state.projects[0]?.evidence[0]?.note).toBe("问题陈述已保存");
@@ -106,7 +110,7 @@ describe("state migrations", () => {
       updatedAt: 1_800_000_000_001
     });
 
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.projects[0]).toMatchObject({
       id: "p-4",
       title: "作品集投递",
@@ -159,7 +163,7 @@ describe("state migrations", () => {
       updatedAt: 1_800_000_000_003
     });
 
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.pendingInference).toBeNull();
     expect(state.projects[0]).toMatchObject({
       repository: null,
@@ -170,7 +174,8 @@ describe("state migrations", () => {
     expect(state.projects[0]?.evidence[0]).toMatchObject({
       note: "首页已经保存",
       actionId: null,
-      observation: null
+      observation: null,
+      substantiveProgress: "uncertain"
     });
   });
 
@@ -203,6 +208,8 @@ describe("state migrations", () => {
         note: "结果已经保存",
         link: "src/result.ts",
         observation: null,
+        substantiveProgress: "uncertain",
+        progressReason: "旧版记录没有询问是否构成实质推进",
         createdAt: now - 500
       }
     ];
@@ -238,11 +245,11 @@ describe("state migrations", () => {
       updatedAt: now
     });
 
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.activeProjectId).toBe(project.id);
     expect(state.projects[0]).toMatchObject({
       id: project.id,
-      schemaVersion: 7,
+      schemaVersion: 8,
       restore: project.restore,
       action: project.action,
       evidence: project.evidence,
@@ -259,6 +266,48 @@ describe("state migrations", () => {
     });
   });
 
+  it("upgrades version 7 evidence and restores the skipped decision stage", () => {
+    const now = 1_800_000_000_000;
+    const project = createProject("待判断项目", now);
+    const legacyProject = {
+      ...project,
+      schemaVersion: 7,
+      stage: "action",
+      evidence: [
+        {
+          id: "legacy-v7-evidence",
+          actionId: null,
+          note: "旧版留下的结果",
+          link: "",
+          observation: null,
+          createdAt: now
+        }
+      ]
+    };
+
+    const state = migrateState({
+      schemaVersion: 7,
+      activeProjectId: project.id,
+      projects: [legacyProject],
+      pendingInference: null,
+      legacyMigrationCompleted: true,
+      updatedAt: now
+    });
+
+    expect(state.schemaVersion).toBe(8);
+    expect(state.projects[0]).toMatchObject({
+      schemaVersion: 8,
+      stage: "decision",
+      decision: null,
+      evidence: [
+        {
+          substantiveProgress: "uncertain",
+          progressReason: "旧版记录没有询问是否构成实质推进"
+        }
+      ]
+    });
+  });
+
   it("extracts the revive payload from the old local guest save", () => {
     const profile = JSON.stringify({ nickname: "朋友", revive: { projects: [{ id: "one" }] } });
     expect(extractLegacyReviveState(profile)).toEqual({ projects: [{ id: "one" }] });
@@ -268,7 +317,7 @@ describe("state migrations", () => {
   it("refuses a future schema instead of rebuilding and overwriting it as legacy", () => {
     expect(() =>
       migrateState({
-        schemaVersion: 8,
+        schemaVersion: 9,
         activeProjectId: "future-project",
         projects: [{ id: "future-project", title: "未来版本项目" }],
         legacyMigrationCompleted: true,
@@ -280,12 +329,12 @@ describe("state migrations", () => {
   it("refuses a damaged current schema instead of dropping its progress fields", () => {
     expect(() =>
       migrateState({
-        schemaVersion: 7,
+        schemaVersion: 8,
         activeProjectId: "damaged-project",
         projects: [
           {
             id: "damaged-project",
-            schemaVersion: 7,
+            schemaVersion: 8,
             title: "不能被静默重建的项目",
             evidence: [{ id: "evidence-1", note: "真实成果不能丢" }]
           }

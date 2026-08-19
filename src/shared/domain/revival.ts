@@ -8,6 +8,7 @@ import {
   ProjectRewardSchema,
   type RepositoryObservation,
   type RestoreContext,
+  type SubstantiveProgress,
   ReturnPlanSchema,
   type RevivalAction,
   type RevivalProject,
@@ -140,7 +141,13 @@ export function completeAction(project: RevivalProject, now = Date.now()): Reviv
 
 export function addEvidence(
   project: RevivalProject,
-  input: { note: string; link?: string; observation?: RepositoryObservation | null },
+  input: {
+    note: string;
+    link?: string;
+    observation?: RepositoryObservation | null;
+    substantiveProgress: SubstantiveProgress;
+    progressReason?: string;
+  },
   now = Date.now()
 ): RevivalProject {
   const evidence = EvidenceSchema.parse({
@@ -149,6 +156,8 @@ export function addEvidence(
     note: input.note,
     link: input.link ?? "",
     observation: input.observation ?? null,
+    substantiveProgress: input.substantiveProgress,
+    progressReason: input.progressReason ?? "",
     createdAt: now
   });
   return touch(

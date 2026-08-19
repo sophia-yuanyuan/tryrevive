@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import type { RevivalProject } from "@/shared/domain/model";
+import type { RevivalProject, SubstantiveProgress } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import StageShell from "./StageShell.vue";
 
@@ -9,9 +9,16 @@ const store = useRevivalStore();
 const draft = computed(() => props.project.outcomeDraft);
 const detected = computed(() => draft.value?.status === "changes_detected");
 const editingDetected = ref(false);
-const form = reactive({
+const form = reactive<{
+  note: string;
+  link: string;
+  substantiveProgress: SubstantiveProgress | "";
+  progressReason: string;
+}>({
   note: detected.value ? (draft.value?.suggestedNote ?? "") : "",
-  link: ""
+  link: "",
+  substantiveProgress: "",
+  progressReason: ""
 });
 const busy = ref(false);
 const error = ref("");
@@ -24,10 +31,18 @@ function beginModify(): void {
 
 async function acceptDetected(): Promise<void> {
   if (!draft.value || draft.value.status !== "changes_detected") return;
+  if (!form.substantiveProgress) {
+    error.value = "请选择这次是否让项目产生了实质推进。";
+    return;
+  }
   busy.value = true;
   error.value = "";
   try {
-    await store.recordEvidence({ note: draft.value.suggestedNote });
+    await store.recordEvidence({
+      note: draft.value.suggestedNote,
+      substantiveProgress: form.substantiveProgress,
+      progressReason: form.progressReason
+    });
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "进度记录失败";
   } finally {
@@ -36,10 +51,20 @@ async function acceptDetected(): Promise<void> {
 }
 
 async function submit(): Promise<void> {
+  if (!form.substantiveProgress) {
+    error.value = "请选择这次是否让项目产生了实质推进。";
+    return;
+  }
+  const substantiveProgress = form.substantiveProgress;
   busy.value = true;
   error.value = "";
   try {
-    await store.recordEvidence(form);
+    await store.recordEvidence({
+      note: form.note,
+      link: form.link,
+      substantiveProgress,
+      progressReason: form.progressReason
+    });
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "进度记录失败";
   } finally {
@@ -70,11 +95,7 @@ async function submit(): Promise<void> {
           >
             <strong class="break-all text-[var(--ink)]">{{ change.path }}</strong>
             <span class="ml-2 text-[var(--muted)]">
-              {{
-                change.kind === "content_changed"
-                  ? "内容与开始前不同"
-                  : "本次新扫描到"
-              }}
+              {{ change.kind === "content_changed" ? "内容与开始前不同" : "本次新扫描到" }}
             </span>
           </li>
         </ul>
@@ -88,15 +109,6 @@ async function submit(): Promise<void> {
       <p class="rounded-2xl bg-[var(--ink)] p-4 text-sm leading-6 text-white/85">
         {{ draft.suggestedNote }}
       </p>
-      <p v-if="error && !editingDetected" class="form-error" role="alert">{{ error }}</p>
-      <div v-if="!editingDetected" class="grid gap-3 sm:grid-cols-2">
-        <button class="primary-button w-full" type="button" :disabled="busy" @click="acceptDetected">
-          {{ busy ? "正在保存…" : "正确，留下这条记录" }}
-        </button>
-        <button class="secondary-button w-full" type="button" :disabled="busy" @click="beginModify">
-          修改
-        </button>
-      </div>
     </section>
 
     <div
@@ -105,13 +117,52 @@ async function submit(): Promise<void> {
       role="status"
     >
       <strong class="block text-[var(--ink)]">
-        {{
-          draft.status === "scan_failed"
-            ? "这次自动对比没有成功"
-            : "有限扫描没有读到内容变化"
-        }}
+        {{ draft.status === "scan_failed" ? "这次自动对比没有成功" : "有限扫描没有读到内容变化" }}
       </strong>
       <span class="mt-2 block">{{ draft.suggestedNote }}</span>
+    </div>
+
+    <fieldset class="mt-5 rounded-3xl border border-[var(--line)] bg-white/55 p-5 sm:p-6">
+      <legend class="field-label px-1">和开始前相比，这次是否让项目产生了实质推进？</legend>
+      <p class="field-help">没有标准答案，也不会因为选择“否”而减少奖励。</p>
+      <div class="mt-4 grid gap-3 sm:grid-cols-3">
+        <label
+          v-for="option in [
+            { value: 'yes', label: '是' },
+            { value: 'no', label: '否' },
+            { value: 'uncertain', label: '不确定' }
+          ]"
+          :key="option.value"
+          class="choice-card flex cursor-pointer items-center gap-3"
+        >
+          <input
+            v-model="form.substantiveProgress"
+            type="radio"
+            name="substantive-progress"
+            :value="option.value"
+            :disabled="busy"
+          />
+          <span class="font-semibold text-[var(--ink)]">{{ option.label }}</span>
+        </label>
+      </div>
+      <label class="field-label mt-4 block" for="progress-reason">为什么这样判断（可选）</label>
+      <textarea
+        id="progress-reason"
+        v-model="form.progressReason"
+        class="field-input mt-2 min-h-20 resize-y"
+        maxlength="240"
+        placeholder="例如：页面能打开了，但还没有经过真实报名流程验证"
+      />
+    </fieldset>
+
+    <p v-if="error && !editingDetected" class="form-error mt-4" role="alert">{{ error }}</p>
+    <div v-if="detected && !editingDetected" class="mt-5 grid gap-3 sm:grid-cols-2">
+      <button class="primary-button w-full" type="button" :disabled="busy" @click="acceptDetected">
+        {{ busy ? "正在保存…" : "正确，留下这条记录" }}
+      </button>
+      <button class="secondary-button w-full" type="button" :disabled="busy" @click="beginModify">
+        修改
+      </button>
     </div>
 
     <form v-if="!detected || editingDetected" class="mt-5 space-y-5" @submit.prevent="submit">

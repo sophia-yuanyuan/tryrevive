@@ -553,8 +553,9 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     await expect(observation).toContainText("src/main.ts");
     await expect(observation).toContainText("内容与开始前不同");
     await expect(observation).toContainText("不代表完成标准或成果质量");
-    await observation.getByRole("button", { name: "修改" }).click();
+    await window.getByRole("button", { name: "修改" }).click();
     await window.getByLabel("我实际完成了").fill("我补上了报名截止日期");
+    await window.getByRole("radio", { name: "是", exact: true }).check();
     await window.getByRole("button", { name: "把真实进度留下" }).click();
     const returnCue = window.getByLabel("回来时先看哪句话？");
     await expect(returnCue).toBeVisible();
@@ -566,6 +567,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     expect(evidenceProject.evidence[0]).toMatchObject({
       actionId: evidenceProject.action.id,
       note: "我补上了报名截止日期",
+      substantiveProgress: "yes",
       observation: { kind: "repository_diff", paths: ["src/main.ts"] }
     });
     expect(evidenceProject.reward).toBeNull();
@@ -604,7 +606,7 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 8,
+    schemaVersion: 9,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "未来版本原文件" }],
     legacyMigrationCompleted: true,
@@ -635,17 +637,17 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
 
   try {
     const restored = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(restored.schemaVersion).toBe(7);
+    expect(restored.schemaVersion).toBe(8);
     expect(restored.projects[0]?.title).toBe("备份中保住的项目");
-    const preV7 = JSON.parse(await readFile(`${primaryPath}.pre-v7.json`, "utf8"));
-    expect(preV7.schemaVersion).toBe(6);
-    expect(preV7.projects[0]?.title).toBe("备份中保住的项目");
+    const preV8 = JSON.parse(await readFile(`${primaryPath}.pre-v8.json`, "utf8"));
+    expect(preV8.schemaVersion).toBe(6);
+    expect(preV8.projects[0]?.title).toBe("备份中保住的项目");
     const recoveryFiles = (await readdir(userData)).filter((name) =>
       name.startsWith("tryrevive-state.json.recovery-")
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(8);
+    expect(preserved.schemaVersion).toBe(9);
     expect(preserved.projects[0]?.title).toBe("未来版本原文件");
   } finally {
     await rm(userData, { recursive: true, force: true });
@@ -653,9 +655,9 @@ test("desktop restores a valid backup and preserves an unsupported primary save"
 });
 
 test("desktop preserves a schema-less legacy save only once before migration", async () => {
-  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-pre-v7-e2e-"));
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-pre-v8-e2e-"));
   const primaryPath = path.join(userData, "tryrevive-state.json");
-  const preservationPath = `${primaryPath}.pre-v7.json`;
+  const preservationPath = `${primaryPath}.pre-v8.json`;
   const legacyState = {
     activeProjectId: "legacy-project",
     projects: [
@@ -687,7 +689,7 @@ test("desktop preserves a schema-less legacy save only once before migration", a
     const window = await desktop.firstWindow();
     await expect
       .poll(async () => JSON.parse(await readFile(primaryPath, "utf8")).schemaVersion)
-      .toBe(7);
+      .toBe(8);
     expect(await readFile(preservationPath, "utf8")).toBe(legacyText);
 
     const migrated = JSON.parse(await readFile(primaryPath, "utf8"));
@@ -704,7 +706,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
   const primaryPath = path.join(userData, "tryrevive-state.json");
   const backupPath = `${primaryPath}.bak`;
   const futureState = {
-    schemaVersion: 8,
+    schemaVersion: 9,
     activeProjectId: "future-project",
     projects: [{ id: "future-project", title: "不能覆盖的未来项目" }],
     legacyMigrationCompleted: true,
@@ -761,7 +763,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
 
   try {
     const imported = JSON.parse(await readFile(primaryPath, "utf8"));
-    expect(imported.schemaVersion).toBe(7);
+    expect(imported.schemaVersion).toBe(8);
     expect(imported.projects).toHaveLength(0);
     expect(imported.pendingInference?.title).toBe("导入后找回的待确认摘要");
     expect(await readFile(backupPath, "utf8")).toBe(backupBefore);
@@ -770,7 +772,7 @@ test("desktop blocks writes when neither the primary nor backup can be verified"
     );
     expect(recoveryFiles).toHaveLength(1);
     const preserved = JSON.parse(await readFile(path.join(userData, recoveryFiles[0]), "utf8"));
-    expect(preserved.schemaVersion).toBe(8);
+    expect(preserved.schemaVersion).toBe(9);
     expect(preserved.projects[0]?.title).toBe("不能覆盖的未来项目");
 
     const restarted = await electron.launch(launchOptions);
