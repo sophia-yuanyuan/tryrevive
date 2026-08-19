@@ -4,6 +4,7 @@ import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPendingInference, confirmPendingInference } from "@/shared/domain/inference-flow";
 import { ProjectAnalysisSchema, createEmptyState } from "@/shared/domain/model";
+import { chooseDecision } from "@/shared/domain/revival";
 
 const mocks = vi.hoisted(() => ({
   chooseRepository: vi.fn(),
@@ -200,7 +201,7 @@ describe("inference-first components", () => {
     expect(mocks.saveState).toHaveBeenCalledTimes(1);
   });
 
-  it("corrects a draft before confirmation creates one actionable project", async () => {
+  it("corrects a draft before confirmation creates one project awaiting a decision", async () => {
     const store = useRevivalStore();
     const result = scanResult();
     const pending = createPendingInference({
@@ -247,7 +248,8 @@ describe("inference-first components", () => {
     await flushPromises();
 
     expect(store.data.projects).toHaveLength(1);
-    expect(store.activeProject?.stage).toBe("action");
+    expect(store.activeProject?.stage).toBe("decision");
+    expect(store.activeProject?.decision).toBeNull();
     expect(store.activeProject?.restore.lastCompleted).toBe("报名表单布局已经完成");
     expect(store.pendingInference).toBeNull();
   });
@@ -441,17 +443,18 @@ describe("inference-first components", () => {
         }
       })
     );
+    const decidedProject = chooseDecision(project, "continue");
     store.data = {
       ...createEmptyState(),
-      activeProjectId: project.id,
-      projects: [project],
+      activeProjectId: decidedProject.id,
+      projects: [decidedProject],
       legacyMigrationCompleted: true
     };
     Object.defineProperty(document.documentElement, "requestFullscreen", {
       configurable: true,
       value: vi.fn().mockResolvedValue(undefined)
     });
-    const wrapper = mount(ActionStep, { props: { project } });
+    const wrapper = mount(ActionStep, { props: { project: decidedProject } });
 
     await wrapper.find("form").trigger("submit");
     await flushPromises();

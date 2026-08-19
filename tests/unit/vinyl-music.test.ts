@@ -10,6 +10,7 @@ import { captureLegacyMusicRecipe } from "@/shared/audio/music-recipe";
 import { createProject, type ProjectMood, type RevivalProject } from "@/shared/domain/model";
 import {
   assignAction,
+  chooseDecision,
   completeAction,
   markProjectCompleted,
   startAction
@@ -19,6 +20,7 @@ function completedProject(mood: ProjectMood, actualSeconds = 600): RevivalProjec
   const startedAt = 1_800_000_000_000;
   let project = createProject("黑客松 / 申请", startedAt - 10_000);
   project.id = "project-music-test";
+  project = chooseDecision(project, "continue", startedAt - 2);
   project = assignAction(
     project,
     { text: "提交申请", doneDefinition: "收到确认页", minutes: 10 },

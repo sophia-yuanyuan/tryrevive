@@ -410,6 +410,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     window = await desktop.firstWindow();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await window.getByRole("button", { name: "正确，继续" }).click();
+    await window.getByRole("button", { name: "继续", exact: true }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -491,6 +492,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     await window.getByLabel("实际上次做到哪里？").fill("报名表单布局已经完成");
     await window.getByRole("button", { name: "保存修改" }).click();
     await window.getByRole("button", { name: "正确，继续" }).click();
+    await window.getByRole("button", { name: "继续", exact: true }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -1194,6 +1196,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(pendingState.pendingInference.sourceKind).toBe("material");
 
     await window.getByRole("button", { name: "正确，继续" }).click();
+    await window.getByRole("button", { name: "继续", exact: true }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();

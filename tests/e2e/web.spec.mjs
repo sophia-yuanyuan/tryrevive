@@ -12,6 +12,8 @@ async function completeRevivalLoop(page) {
   await page.getByRole("button", { name: "让 TryRevive 先猜一遍" }).click();
   await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
   await page.getByRole("button", { name: "正确，继续" }).click();
+  await expect(page.getByRole("heading", { name: "现在最诚实的选择是什么？" })).toBeVisible();
+  await page.getByRole("button", { name: "继续", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
   ).toBeVisible();
@@ -222,6 +224,7 @@ test("local text materials become one editable draft without persisting the sour
   await page.getByLabel("预计时间").selectOption("5");
   await page.getByRole("button", { name: "保存修改" }).click();
   await page.getByRole("button", { name: "正确，继续" }).click();
+  await page.getByRole("button", { name: "继续", exact: true }).click();
 
   await expect(
     page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })

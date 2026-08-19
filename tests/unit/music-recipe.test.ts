@@ -9,6 +9,7 @@ import {
 import { createProject } from "@/shared/domain/model";
 import {
   assignAction,
+  chooseDecision,
   completeAction,
   markProjectCompleted,
   setProjectReward,
@@ -65,6 +66,7 @@ describe("frozen vinyl music recipes", () => {
     const startedAt = 1_800_000_000_000;
     let project = createProject("毕业作品", startedAt - 3 * 86_400_000);
     project.id = "project-recipe-test";
+    project = chooseDecision(project, "continue", startedAt - 2);
     project = assignAction(
       project,
       { text: "完成展示", doneDefinition: "展示可打开", minutes: 10 },

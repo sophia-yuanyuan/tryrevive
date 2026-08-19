@@ -93,6 +93,9 @@ export function assignAction(
   input: Pick<RevivalAction, "text" | "doneDefinition" | "minutes">,
   now = Date.now()
 ): RevivalProject {
+  if (!project.decision || ["pause", "abandon"].includes(project.decision)) {
+    throw new Error("请先判断这个项目要继续、缩小还是求助。");
+  }
   const action = ActionSchema.parse({
     id: createId("action"),
     ...input,

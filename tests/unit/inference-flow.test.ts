@@ -7,7 +7,7 @@ import {
   titleFromAnalysis
 } from "@/shared/domain/inference-flow";
 import { inferLocalProject } from "@/shared/domain/local-inference";
-import { assignAction } from "@/shared/domain/revival";
+import { assignAction, chooseDecision } from "@/shared/domain/revival";
 
 function analysis() {
   return ProjectAnalysisSchema.parse({
@@ -106,7 +106,7 @@ describe("inference-first confirmation", () => {
 
     expect(project).toMatchObject({
       title: "课程报名页面",
-      stage: "action",
+      stage: "decision",
       status: "active",
       decision: null,
       action: null,
@@ -125,9 +125,25 @@ describe("inference-first confirmation", () => {
     expect(project.repository?.lastSnapshot.fingerprint).toBe("a".repeat(64));
     expect(project.repository?.evidence[0]?.path).toBe("src/main.ts");
 
-    const actionable = assignAction(project, project.analysis!.nextAction, 1_800_000_000_004);
+    const decided = chooseDecision(project, "continue", 1_800_000_000_004);
+    const actionable = assignAction(decided, project.analysis!.nextAction, 1_800_000_000_005);
     expect(actionable.stage).toBe("execute");
     expect(actionable.action?.minutes).toBe(5);
+  });
+
+  it("does not let a confirmed inference bypass the project decision", () => {
+    const project = confirmPendingInference(
+      createPendingInference({
+        sourceKind: "material",
+        title: "课程报名页面",
+        analysis: analysis(),
+        repository: null
+      })
+    );
+
+    expect(() => assignAction(project, project.analysis!.nextAction)).toThrow(
+      "请先判断这个项目要继续、缩小还是求助"
+    );
   });
 
   it("derives a cautious local draft without retaining credentials or absolute paths", () => {

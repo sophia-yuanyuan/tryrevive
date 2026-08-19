@@ -114,7 +114,7 @@ export function confirmPendingInference(
         }
       : null,
     decision: null,
-    stage: "action",
+    stage: "decision",
     status: "active",
     updatedAt: now
   });

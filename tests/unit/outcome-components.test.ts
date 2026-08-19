@@ -7,7 +7,7 @@ import { useRevivalStore } from "@/renderer/stores/revival";
 import { confirmPendingInference, createPendingInference } from "@/shared/domain/inference-flow";
 import { ProjectAnalysisSchema, createEmptyState } from "@/shared/domain/model";
 import type { RepositorySnapshot } from "@/shared/domain/repository";
-import { assignAction } from "@/shared/domain/revival";
+import { assignAction, chooseDecision } from "@/shared/domain/revival";
 
 const mocks = vi.hoisted(() => ({
   rescanRepository: vi.fn(),
@@ -96,7 +96,10 @@ function seedStore() {
       }
     })
   );
-  const project = assignAction(confirmed, confirmed.analysis!.nextAction);
+  const project = assignAction(
+    chooseDecision(confirmed, "continue"),
+    confirmed.analysis!.nextAction
+  );
   store.data = {
     ...createEmptyState(),
     activeProjectId: project.id,
