@@ -143,6 +143,11 @@ describe("inference-first components", () => {
     expect(wrapper.text()).toContain("说一段话，或上传现有材料");
     expect(wrapper.text()).toContain("本地文字材料或你记得的内容");
     expect(wrapper.text()).toContain("一次请选择属于同一个项目的材料");
+    expect(wrapper.text()).toContain("扫描图片不会 OCR");
+    expect(wrapper.text()).toContain("音频当前也不冒充本地已理解");
+    const localFileInput = wrapper.get('input[type="file"][accept*=".yaml"]');
+    expect(localFileInput.attributes("accept")).toContain(".pdf");
+    expect(localFileInput.attributes("accept")).toContain(".docx");
     expect(wrapper.text()).toContain("当前不会上传任何内容");
     expect(wrapper.text()).not.toContain("语音理解暂缓");
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);

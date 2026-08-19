@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import { parseProjectDump } from "@/shared/domain/intake";
-import { readLocalTextMaterials, type LocalMaterialBundle } from "@/shared/domain/local-materials";
+import { readLocalMaterials, type LocalMaterialBundle } from "@/shared/domain/local-materials";
 import type { ProjectAnalysis } from "@/shared/domain/model";
 import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
 
@@ -39,7 +39,7 @@ async function importMaterials(event: Event): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-    localMaterials.value = await readLocalTextMaterials(files);
+    localMaterials.value = await readLocalMaterials(files);
   } catch (caught) {
     localMaterials.value = null;
     error.value = caught instanceof Error ? caught.message : "无法读取这些文字材料";
@@ -167,14 +167,14 @@ async function collectProjectNames(): Promise<void> {
               :disabled="busy"
               @click="fileInput?.click()"
             >
-              选择本地文字材料
+              选择本地材料
             </button>
             <input
               ref="fileInput"
               class="sr-only"
               type="file"
               multiple
-              accept="text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.yaml,.yml"
+              accept="text/plain,text/markdown,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.docx"
               @change="importMaterials"
             />
           </div>
@@ -214,8 +214,10 @@ async function collectProjectNames(): Promise<void> {
           placeholder="我想完成 TryRevive 桌面版。上次已经接好 Vue 页面，现在卡在不知道怎样把仓库现状变成下一小步。"
         />
         <p class="voice-status">
-          本机支持 TXT、Markdown、CSV、JSON、YAML，一次最多 8 份；不会发送给 TryRevive 后端或
-          OpenAI。一次请选择属于同一个项目的材料；多个项目请逐个恢复。PDF、DOCX、图片和音频当前不冒充本地已理解。
+          本机支持 TXT、Markdown、CSV、JSON、YAML、可复制文字的 PDF 和 DOCX，一次最多 8
+          份；不会发送给 TryRevive 后端或
+          OpenAI。一次请选择属于同一个项目的材料；多个项目请逐个恢复。扫描图片不会
+          OCR，音频当前也不冒充本地已理解。
         </p>
         <button class="primary-button w-full" type="submit" :disabled="busy">
           {{ busy ? "正在整理恢复摘要…" : localAnalysisLabel }}

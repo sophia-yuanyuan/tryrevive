@@ -1,6 +1,9 @@
+import { extractDocxText, extractPdfText } from "@/shared/domain/local-document-text";
+
 export const MAX_LOCAL_MATERIAL_FILES = 8;
-export const MAX_LOCAL_MATERIAL_BYTES = 1024 * 1024;
-export const MAX_LOCAL_MATERIAL_TOTAL_BYTES = 2 * 1024 * 1024;
+export const MAX_LOCAL_TEXT_MATERIAL_BYTES = 1024 * 1024;
+export const MAX_LOCAL_DOCUMENT_BYTES = 8 * 1024 * 1024;
+export const MAX_LOCAL_MATERIAL_TOTAL_BYTES = 16 * 1024 * 1024;
 export const MAX_LOCAL_MATERIAL_CHARACTERS = 200_000;
 
 const LOCAL_TEXT_EXTENSIONS = new Set([
@@ -18,6 +21,7 @@ export interface LocalMaterialFile {
   size: number;
   type?: string;
   text(): Promise<string>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
 }
 
 export interface LocalMaterialSummary {
@@ -32,6 +36,8 @@ export interface LocalMaterialBundle {
   titleHint: string;
   materials: LocalMaterialSummary[];
 }
+
+type LocalMaterialKind = "text" | "pdf" | "docx";
 
 function safeFileName(value: string): string {
   const finalSegment = value.split(/[\\/]+/u).at(-1) ?? value;
@@ -73,6 +79,37 @@ export function isSupportedLocalTextMaterial(name: string, mimeType = ""): boole
   );
 }
 
+function localMaterialKind(name: string, mimeType = ""): LocalMaterialKind | null {
+  if (isSupportedLocalTextMaterial(name, mimeType)) return "text";
+  const extension = extensionOf(name);
+  const normalizedMime = mimeType.toLocaleLowerCase("en-US");
+  if (/^(?:audio|image|video)\//u.test(normalizedMime)) return null;
+  if (
+    extension === ".pdf" &&
+    ["", "application/pdf", "application/x-pdf", "application/octet-stream"].includes(
+      normalizedMime
+    )
+  ) {
+    return "pdf";
+  }
+  if (
+    extension === ".docx" &&
+    [
+      "",
+      "application/octet-stream",
+      "application/zip",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ].includes(normalizedMime)
+  ) {
+    return "docx";
+  }
+  return null;
+}
+
+export function isSupportedLocalMaterial(name: string, mimeType = ""): boolean {
+  return localMaterialKind(name, mimeType) !== null;
+}
+
 function hasUnreadableCharacters(value: string): boolean {
   let replacementCharacters = 0;
   for (const character of value) {
@@ -89,7 +126,54 @@ function hasUnreadableCharacters(value: string): boolean {
   return replacementCharacters >= 3 && replacementCharacters / Math.max(1, value.length) >= 0.01;
 }
 
-export async function readLocalTextMaterials(
+async function readDocumentBytes(file: LocalMaterialFile): Promise<Uint8Array> {
+  if (!file.arrayBuffer) throw new Error("missing_binary_reader");
+  return new Uint8Array(await file.arrayBuffer());
+}
+
+async function readMaterialText(
+  file: LocalMaterialFile,
+  name: string,
+  kind: LocalMaterialKind
+): Promise<string> {
+  if (kind === "text") return (await file.text()).replace(/^\uFEFF/u, "").trim();
+
+  try {
+    const bytes = await readDocumentBytes(file);
+    if (kind === "docx") return extractDocxText(bytes);
+    return await extractPdfText(bytes);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "docx_text_too_large") {
+      throw new Error(`“${name}”解压后的正文超过 2 MB；请只保留与恢复项目有关的内容。`, {
+        cause: error
+      });
+    }
+    if (code === "pdf_page_limit") {
+      throw new Error(`“${name}”超过 80 页；请只选择与当前项目直接相关的页面。`, {
+        cause: error
+      });
+    }
+    if (code === "pdf_processing_timeout") {
+      throw new Error(`“${name}”处理超过 10 秒；请压缩文件或只保留相关页面后重试。`, {
+        cause: error
+      });
+    }
+    if (code === "password_protected_pdf") {
+      throw new Error(`“${name}”受密码保护；请另存一份可读取的 PDF 后重试。`, {
+        cause: error
+      });
+    }
+    throw new Error(
+      kind === "pdf"
+        ? `“${name}”不是可读取的 PDF，或文件已经损坏。`
+        : `“${name}”不是可读取的 DOCX，或文件已经损坏。`,
+      { cause: error }
+    );
+  }
+}
+
+export async function readLocalMaterials(
   inputFiles: readonly LocalMaterialFile[]
 ): Promise<LocalMaterialBundle> {
   const files = [...inputFiles];
@@ -98,31 +182,42 @@ export async function readLocalTextMaterials(
     throw new Error(`一次最多选择 ${MAX_LOCAL_MATERIAL_FILES} 份本地文字材料。`);
   }
 
-  const normalized = files.map((file) => ({ file, name: safeFileName(file.name) }));
-  const unsupported = normalized.find(
-    ({ file, name }) => !isSupportedLocalTextMaterial(name, file.type ?? "")
-  );
+  const normalized = files.map((file) => {
+    const name = safeFileName(file.name);
+    return { file, name, kind: localMaterialKind(name, file.type ?? "") };
+  });
+  const unsupported = normalized.find(({ kind }) => !kind);
   if (unsupported) {
     throw new Error(
-      `“${unsupported.name}”不能在本机按文字读取。PDF、DOCX 和音频需要受控云端理解，或请先另存为 TXT / Markdown。`
+      `“${unsupported.name}”不能在本机按文字读取。当前支持 TXT、Markdown、CSV、JSON、YAML、PDF 和 DOCX；图片与音频仍未启用本地识别。`
     );
   }
 
-  const oversized = normalized.find(({ file }) => file.size > MAX_LOCAL_MATERIAL_BYTES);
+  const oversized = normalized.find(
+    ({ file, kind }) =>
+      file.size > (kind === "text" ? MAX_LOCAL_TEXT_MATERIAL_BYTES : MAX_LOCAL_DOCUMENT_BYTES)
+  );
   if (oversized) {
-    throw new Error(`“${oversized.name}”超过 1 MB；请只保留与恢复项目有关的文字。`);
+    const limit = oversized.kind === "text" ? "1 MB" : "8 MB";
+    throw new Error(`“${oversized.name}”超过 ${limit}；请只保留与恢复项目有关的文字。`);
   }
   const totalBytes = normalized.reduce((sum, { file }) => sum + file.size, 0);
   if (totalBytes > MAX_LOCAL_MATERIAL_TOTAL_BYTES) {
-    throw new Error("本次本地文字材料合计不能超过 2 MB。");
+    throw new Error("本次本地材料合计不能超过 16 MB。");
   }
 
   const parts: string[] = [];
   const materials: LocalMaterialSummary[] = [];
   let totalCharacters = 0;
-  for (const { file, name } of normalized) {
-    const text = (await file.text()).replace(/^\uFEFF/u, "").trim();
-    if (!text) throw new Error(`“${name}”没有可读取的文字。`);
+  for (const { file, name, kind } of normalized) {
+    const text = await readMaterialText(file, name, kind!);
+    if (!text) {
+      throw new Error(
+        kind === "pdf"
+          ? `“${name}”没有可复制文字；如果它是扫描件，请先做 OCR 或另存为文字版 PDF。`
+          : `“${name}”没有可读取的文字。`
+      );
+    }
     if (hasUnreadableCharacters(text)) {
       throw new Error(`“${name}”不像可读的 UTF-8 文字；请确认文件格式，或另存为 UTF-8 后重试。`);
     }
@@ -146,3 +241,5 @@ export async function readLocalTextMaterials(
     materials
   };
 }
+
+export const readLocalTextMaterials = readLocalMaterials;

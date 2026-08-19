@@ -7,7 +7,7 @@
   "author": "TryRevive",
   "main": "out/main/index.js",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "vite",
@@ -35,6 +35,8 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.2.108",
     "pinia": "^4.0.2",
     "reka-ui": "^2.10.1",
     "three": "0.185.1",
