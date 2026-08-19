@@ -19,6 +19,7 @@ coverage/
 playwright-report/
 test-results/
 .cache/
+resources/vendor/whisper/windows-x64/
 
 # 日志
 *.log

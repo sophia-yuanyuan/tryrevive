@@ -8,6 +8,79 @@ import { createTextPdf } from "./material-fixtures.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
+function createAudiblePcmWav() {
+  const sampleRate = 16_000;
+  const samples = sampleRate / 2;
+  const bytes = Buffer.alloc(44 + samples * 2);
+  bytes.write("RIFF", 0, "ascii");
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVE", 8, "ascii");
+  bytes.write("fmt ", 12, "ascii");
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(sampleRate, 24);
+  bytes.writeUInt32LE(sampleRate * 2, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36, "ascii");
+  bytes.writeUInt32LE(samples * 2, 40);
+  for (let index = 0; index < samples; index += 1) {
+    bytes.writeInt16LE(
+      Math.round(Math.sin((index / sampleRate) * Math.PI * 2 * 440) * 5_000),
+      44 + index * 2
+    );
+  }
+  return bytes;
+}
+
+test("desktop exposes the packaged offline speech runtime without an API key", async () => {
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-offline-speech-e2e-"));
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    const capability = await window.evaluate(() => window.tryRevive?.localSpeechCapability());
+    expect(capability).toMatchObject({ available: true, culture: "zh-CN" });
+    expect(capability?.recognizer).toContain("whisper.cpp 1.9.1");
+    expect(capability?.message).toContain("不发送给 TryRevive 后端或 OpenAI");
+    await expect(
+      window.evaluate(() =>
+        window.tryRevive?.transcribeLocalSpeech({ bytes: new Uint8Array(44), culture: "zh-CN" })
+      )
+    ).rejects.toThrow("WAV 文件头");
+
+    const before = new Set(
+      (await readdir(os.tmpdir())).filter((name) => name.startsWith("tryrevive-speech-"))
+    );
+    const speechAttempt = await window.evaluate(
+      async (values) => {
+        try {
+          const result = await window.tryRevive?.transcribeLocalSpeech({
+            bytes: Uint8Array.from(values),
+            culture: "zh-CN"
+          });
+          return { transcript: result?.transcript ?? "", error: "" };
+        } catch (error) {
+          return { transcript: "", error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      [...createAudiblePcmWav()]
+    );
+    expect(speechAttempt.transcript || speechAttempt.error).not.toBe("");
+    const after = new Set(
+      (await readdir(os.tmpdir())).filter((name) => name.startsWith("tryrevive-speech-"))
+    );
+    expect(after).toEqual(before);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
 function createCurrentState(title, id, now = 1_800_000_000_000) {
   return {
     schemaVersion: 6,

@@ -122,6 +122,17 @@ const webPlatform: AppPlatform = {
   async rescanRepository() {
     throw new Error("项目文件夹安全扫描当前仅在 TryRevive Windows 桌面版提供");
   },
+  async localSpeechCapability() {
+    return {
+      available: false,
+      culture: null,
+      recognizer: null,
+      message: "无需 API Key 的本机语音转写当前仅在 TryRevive Windows 桌面版提供。"
+    };
+  },
+  async transcribeLocalSpeech() {
+    throw new Error("无需 API Key 的本机语音转写当前仅在 TryRevive Windows 桌面版提供");
+  },
   async fullScreenState() {
     return Boolean(document.fullscreenElement);
   },
@@ -224,6 +235,8 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     importState: () => bridge.importState(),
     chooseRepository: () => bridge.chooseRepository(),
     rescanRepository: (bindingId) => bridge.rescanRepository(bindingId),
+    localSpeechCapability: () => bridge.localSpeechCapability(),
+    transcribeLocalSpeech: (request) => bridge.transcribeLocalSpeech(request),
     fullScreenState: () => bridge.fullScreenState(),
     setFullScreen: (enabled) => bridge.setFullScreen(enabled),
     onFullScreenChanged: (listener) => bridge.onFullScreenChanged(listener),

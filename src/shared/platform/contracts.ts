@@ -20,6 +20,11 @@ import type {
   FocusSessionRequest
 } from "../focus/contracts";
 import type { RepositoryScanResult } from "../domain/repository-inference";
+import type {
+  LocalSpeechCapability,
+  LocalSpeechRequest,
+  LocalSpeechResult
+} from "../speech/contracts";
 
 export interface ExportResult {
   canceled: boolean;
@@ -47,6 +52,8 @@ export interface AppPlatform {
   importState(): Promise<ImportResult>;
   chooseRepository(): Promise<RepositoryScanResult>;
   rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
+  localSpeechCapability(): Promise<LocalSpeechCapability>;
+  transcribeLocalSpeech(request: LocalSpeechRequest): Promise<LocalSpeechResult>;
   fullScreenState(): Promise<boolean>;
   setFullScreen(enabled: boolean): Promise<boolean>;
   onFullScreenChanged(listener: (enabled: boolean) => void): () => void;
@@ -79,6 +86,8 @@ export interface DesktopBridge {
   importState(): Promise<ImportResult>;
   chooseRepository(): Promise<RepositoryScanResult>;
   rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
+  localSpeechCapability(): Promise<LocalSpeechCapability>;
+  transcribeLocalSpeech(request: LocalSpeechRequest): Promise<LocalSpeechResult>;
   fullScreenState(): Promise<boolean>;
   setFullScreen(enabled: boolean): Promise<boolean>;
   onFullScreenChanged(listener: (enabled: boolean) => void): () => void;

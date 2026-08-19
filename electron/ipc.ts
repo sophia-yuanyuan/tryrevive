@@ -6,6 +6,8 @@ export const IPC_CHANNELS = {
   importState: "state:import",
   chooseRepository: "repository:choose",
   rescanRepository: "repository:rescan",
+  localSpeechCapability: "speech:local-capability",
+  transcribeLocalSpeech: "speech:local-transcribe",
   fullScreenState: "window:fullscreen-state",
   setFullScreen: "window:set-fullscreen",
   fullScreenChanged: "window:fullscreen-changed",

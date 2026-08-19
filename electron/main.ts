@@ -32,6 +32,7 @@ import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
 import { isTrustedRendererUrl } from "./renderer-trust";
 import { chooseLocalRepository, rescanLocalRepository } from "./repository";
+import { getLocalSpeechCapability, transcribeLocalSpeech } from "./speech";
 
 const APP_SCHEME = "app";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -255,6 +256,14 @@ function registerIpc(): void {
   ipcMain.handle(IPC_CHANNELS.rescanRepository, async (event, bindingId: unknown) => {
     assertTrustedSender(event);
     return rescanLocalRepository(bindingId);
+  });
+  ipcMain.handle(IPC_CHANNELS.localSpeechCapability, async (event) => {
+    assertTrustedSender(event);
+    return getLocalSpeechCapability();
+  });
+  ipcMain.handle(IPC_CHANNELS.transcribeLocalSpeech, async (event, request: unknown) => {
+    assertTrustedSender(event);
+    return transcribeLocalSpeech(request);
   });
   ipcMain.handle(IPC_CHANNELS.fullScreenState, (event) => {
     assertTrustedSender(event);

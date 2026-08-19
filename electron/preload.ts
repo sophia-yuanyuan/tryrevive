@@ -12,6 +12,9 @@ const bridge: DesktopBridge = {
   importState: () => ipcRenderer.invoke(IPC_CHANNELS.importState),
   chooseRepository: () => ipcRenderer.invoke(IPC_CHANNELS.chooseRepository),
   rescanRepository: (bindingId) => ipcRenderer.invoke(IPC_CHANNELS.rescanRepository, bindingId),
+  localSpeechCapability: () => ipcRenderer.invoke(IPC_CHANNELS.localSpeechCapability),
+  transcribeLocalSpeech: (request) =>
+    ipcRenderer.invoke(IPC_CHANNELS.transcribeLocalSpeech, request),
   fullScreenState: () => ipcRenderer.invoke(IPC_CHANNELS.fullScreenState),
   setFullScreen: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setFullScreen, enabled),
   onFullScreenChanged: (listener) => {

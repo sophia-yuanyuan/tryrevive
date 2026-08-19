@@ -11,6 +11,8 @@ files:
 extraResources:
   - from: resources/windows/foreground-monitor.ps1
     to: foreground-monitor.ps1
+  - from: resources/vendor/whisper
+    to: whisper
 win:
   target:
     - target: nsis
