@@ -2,6 +2,7 @@
 import { reactive, ref } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import CloudContextAssist from "./CloudContextAssist.vue";
 import StageShell from "./StageShell.vue";
 
 const props = defineProps<{ project: RevivalProject }>();
@@ -29,6 +30,7 @@ async function submit(): Promise<void> {
     :title="`先找回「${project.title}」的现场`"
     description="只回答最有用的四件事。不需要复盘全部，也不用把计划写得漂亮。"
   >
+    <CloudContextAssist account-only />
     <form class="space-y-5" @submit.prevent="submit">
       <div>
         <label class="field-label" for="last-completed">上次最后完成了什么？</label>

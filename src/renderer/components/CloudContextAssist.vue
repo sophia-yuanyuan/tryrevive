@@ -16,7 +16,8 @@ const props = withDefaults(
     projectTitle?: string;
     initiallyExpanded?: boolean;
     presentation?: "embedded" | "intake";
-    persistDraft: (
+    accountOnly?: boolean;
+    persistDraft?: (
       analysis: ProjectAnalysis,
       sourceKind: "material" | "voice",
       titleHint: string
@@ -25,7 +26,8 @@ const props = withDefaults(
   {
     projectTitle: "",
     initiallyExpanded: false,
-    presentation: "embedded"
+    presentation: "embedded",
+    accountOnly: false
   }
 );
 
@@ -351,6 +353,7 @@ async function confirmUpload(): Promise<void> {
 
 async function persistCurrentDraft(): Promise<void> {
   if (!draft.value || !source.value) return;
+  if (!props.persistDraft) throw new Error("当前入口没有配置恢复草稿保存目标");
   const parsed = ProjectAnalysisSchema.safeParse(draft.value);
   if (!parsed.success) {
     error.value = "这份恢复草稿缺少必要内容，请补全后再继续。";
@@ -390,9 +393,11 @@ onBeforeUnmount(() => {
   <section class="mb-7 rounded-2xl border border-[var(--line)] bg-white/45 p-4 sm:p-5">
     <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
       <div>
-        <p class="summary-label">{{ isIntake ? "语音或常见附件" : "可选 · 云端理解" }}</p>
+        <p class="summary-label">
+          {{ isIntake ? "语音或常见附件" : "可选 · 云端算力与数据" }}
+        </p>
         <h2 class="mt-2 text-base font-semibold">
-          {{ isIntake ? "说一段话，或上传现有材料" : "把语音或附件整理成一份待确认草稿" }}
+          {{ isIntake ? "说一段话，或上传现有材料" : "查看余额、补充算力或退出账户" }}
         </h2>
         <p class="mt-1 text-xs leading-5 text-[var(--muted)]">
           不需要 API Key。只有确认报价后才上传；也可以继续手动填写。
@@ -531,7 +536,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="!source" class="grid gap-3 sm:grid-cols-2">
+        <div v-if="!accountOnly && !source" class="grid gap-3 sm:grid-cols-2">
           <button
             class="secondary-button"
             :class="{ 'voice-button-active': recording }"
@@ -553,7 +558,7 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <div v-else class="rounded-xl border border-[var(--line)] bg-white/55 p-4">
+        <div v-else-if="source" class="rounded-xl border border-[var(--line)] bg-white/55 p-4">
           <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div class="min-w-0">
               <strong class="block truncate text-sm">{{ source.metadata.name }}</strong>
