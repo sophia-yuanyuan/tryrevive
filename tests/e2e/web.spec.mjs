@@ -62,6 +62,16 @@ async function playVinylRitual(page) {
   return ritual;
 }
 
+async function forceWebglFallbackForFunctionalTest(page) {
+  await page.addInitScript(() => {
+    const originalGetContext = globalThis.HTMLCanvasElement.prototype.getContext;
+    globalThis.HTMLCanvasElement.prototype.getContext = function getContext(type, ...args) {
+      if (["webgl", "webgl2", "experimental-webgl"].includes(String(type))) return null;
+      return Reflect.apply(originalGetContext, this, [type, ...args]);
+    };
+  });
+}
+
 async function seedCollectionState(page) {
   const now = 1_800_000_000_000;
   const project = (id, title, status, mood = null) => ({
@@ -246,6 +256,7 @@ test("initial intake exposes cloud choices safely and never asks for an API key"
 test("a completed project becomes a persistent playable and exportable vinyl record", async ({
   page
 }) => {
+  await forceWebglFallbackForFunctionalTest(page);
   await completeRevivalLoop(page);
   await page.getByRole("button", { name: "这个项目已经完成" }).click();
   await expect(page.getByText("完成这一刻，更接近哪种感觉？")).toBeVisible();
