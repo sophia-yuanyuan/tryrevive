@@ -410,7 +410,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     window = await desktop.firstWindow();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: "继续", exact: true }).click();
+    await window.getByRole("button", { name: /^继续/u }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -427,8 +427,8 @@ test("desktop app launches with an isolated bridge and persists state across res
     await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
     await expect(focus.getByText("Windows 偏离提醒", { exact: true })).toBeVisible();
     await expect(focus.getByText(/不读取按键、窗口标题或网页/)).toBeVisible();
-    await focus.getByRole("button", { name: "Chrome" }).click();
-    await focus.getByRole("button", { name: "开启本次偏离提醒" }).click();
+    await focus.getByLabel("本次白名单软件").getByRole("button", { name: "Chrome" }).click();
+    await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
     await expect(focus.getByText("运行中", { exact: true })).toBeVisible();
 
     await focus.getByRole("button", { name: "结束本次守护" }).click();
@@ -492,7 +492,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     await window.getByLabel("实际上次做到哪里？").fill("报名表单布局已经完成");
     await window.getByRole("button", { name: "保存修改" }).click();
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: "继续", exact: true }).click();
+    await window.getByRole("button", { name: /^继续/u }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -1198,7 +1198,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(pendingState.pendingInference.sourceKind).toBe("material");
 
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: "继续", exact: true }).click();
+    await window.getByRole("button", { name: /^继续/u }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
