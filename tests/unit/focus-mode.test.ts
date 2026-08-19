@@ -7,6 +7,7 @@ import type { FocusEvent } from "@/shared/focus/contracts";
 
 const mocks = vi.hoisted(() => ({
   listener: null as ((event: FocusEvent) => void) | null,
+  capability: vi.fn(),
   start: vi.fn(),
   stop: vi.fn(),
   acknowledge: vi.fn()
@@ -15,11 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/renderer/platform/web", () => ({
   platform: {
     kind: "desktop",
-    focusCapability: vi.fn().mockResolvedValue({
-      available: true,
-      active: false,
-      message: "可选开启"
-    }),
+    focusCapability: mocks.capability,
     startFocusGuardian: mocks.start,
     stopFocusGuardian: mocks.stop,
     acknowledgeFocusGuardian: mocks.acknowledge,
@@ -55,6 +52,11 @@ describe("FocusMode guardian controls", () => {
       value: vi.fn().mockReturnValue({ matches: true })
     });
     mocks.start.mockReset().mockResolvedValue(startingEvent);
+    mocks.capability.mockReset().mockResolvedValue({
+      available: true,
+      active: false,
+      message: "可选开启"
+    });
     mocks.stop.mockReset().mockResolvedValue({
       ...startingEvent,
       phase: "stopped",
@@ -109,6 +111,14 @@ describe("FocusMode guardian controls", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("默认关闭");
+    expect(wrapper.text()).toContain("严格白名单 · 立即拉回");
+    expect(wrapper.get('[aria-label="白名单守护强度"] button').attributes("aria-pressed")).toBe(
+      "true"
+    );
+    expect(mocks.start).not.toHaveBeenCalled();
+    await wrapper.get("button.focus-guardian-start").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("严格白名单至少要选择一个");
     expect(mocks.start).not.toHaveBeenCalled();
     await wrapper.get('[aria-label="本次白名单软件"] button.focus-app-chip').trigger("click");
     await wrapper
@@ -119,6 +129,7 @@ describe("FocusMode guardian controls", () => {
     expect(mocks.start).toHaveBeenCalledWith({
       allowedApps: ["chrome"],
       blockedApps: ["msedge"],
+      strictAllowlist: true,
       graceSeconds: 12,
       idlePauseSeconds: 90
     });
@@ -161,6 +172,8 @@ describe("FocusMode guardian controls", () => {
       false
     );
     wrapper.unmount();
+    await flushPromises();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the last real scene visible when reduced motion is requested", async () => {
@@ -190,5 +203,80 @@ describe("FocusMode guardian controls", () => {
     await nextTick();
     expect(wrapper.text()).toContain("按住 0.8 秒，让唱针落下");
     wrapper.unmount();
+  });
+
+  it("lets the user explicitly choose the 12-second fallback", async () => {
+    const project = createProject("论文项目", 1_800_000_000_000);
+    project.restore.lastCompleted = "已经整理完目录";
+    project.action = {
+      id: "action-grace",
+      text: "补写第一段",
+      doneDefinition: "第一段保存到文档",
+      minutes: 10,
+      startedAt: 1_800_000_000_000,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "09:59", started: true },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    await wrapper.get('[aria-label="白名单守护强度"] button:nth-child(2)').trigger("click");
+    await wrapper.get("button.focus-guardian-start").trigger("click");
+    await flushPromises();
+
+    expect(mocks.start).toHaveBeenCalledWith({
+      allowedApps: [],
+      blockedApps: [],
+      strictAllowlist: false,
+      graceSeconds: 12,
+      idlePauseSeconds: 90
+    });
+    wrapper.unmount();
+    await flushPromises();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps manual focus usable when the Windows monitor is unavailable", async () => {
+    mocks.capability.mockResolvedValue({
+      available: false,
+      active: false,
+      message: "前台应用监测组件未随安装包找到；本次不会开始监测。"
+    });
+    const project = createProject("申请项目", 1_800_000_000_000);
+    project.restore.lastCompleted = "已经列好材料";
+    project.action = {
+      id: "action-manual",
+      text: "写申请开头",
+      doneDefinition: "开头保存到文档",
+      minutes: 10,
+      startedAt: 1_800_000_000_000,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "09:59", started: true },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("写申请开头");
+    expect(wrapper.text()).toContain("本次不会开始监测");
+    expect(wrapper.find("button.focus-guardian-start").exists()).toBe(false);
+    wrapper.unmount();
+    await flushPromises();
+    expect(mocks.stop).not.toHaveBeenCalled();
   });
 });

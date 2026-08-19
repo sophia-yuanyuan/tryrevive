@@ -1,15 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedApp, isBlockedApp, normalizeAppName } from "@/shared/focus/contracts";
+import {
+  FocusSessionRequestSchema,
+  isAllowedApp,
+  isBlockedApp,
+  normalizeAppName
+} from "@/shared/focus/contracts";
 import { evaluateFocusSample } from "@/shared/focus/guardian";
 
 const request = {
   allowedApps: ["Code"],
   blockedApps: ["Discord"],
+  strictAllowlist: false,
   graceSeconds: 12,
   idlePauseSeconds: 90
 };
 
 describe("focus guardian", () => {
+  it("keeps old requests on the 12-second safe default", () => {
+    expect(
+      FocusSessionRequestSchema.parse({
+        allowedApps: ["Code"],
+        blockedApps: [],
+        graceSeconds: 12,
+        idlePauseSeconds: 90
+      }).strictAllowlist
+    ).toBe(false);
+  });
+
   it("matches only normalized process names", () => {
     expect(normalizeAppName(" Windows-Terminal.exe ")).toBe("windowsterminal");
     expect(isAllowedApp("Code.exe", ["Code"])).toBe(true);
@@ -64,6 +81,26 @@ describe("focus guardian", () => {
       graceRemainingSeconds: 0,
       violationKind: "blocked"
     });
+  });
+
+  it("immediately returns from every unlisted app in strict allowlist mode", () => {
+    const blocked = evaluateFocusSample({
+      appName: "chrome",
+      allowedApps: ["Code"],
+      blockedApps: [],
+      idleSeconds: 0,
+      now: 10_000,
+      request: { ...request, strictAllowlist: true },
+      state: { deviationStartedAt: null }
+    });
+
+    expect(blocked.event).toMatchObject({
+      phase: "blocked",
+      appName: "chrome",
+      graceRemainingSeconds: 0,
+      violationKind: "unlisted"
+    });
+    expect(blocked.event.message).toContain("严格白名单");
   });
 
   it("clears deviation when the user returns or becomes idle", () => {

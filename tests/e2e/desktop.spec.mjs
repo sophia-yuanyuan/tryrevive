@@ -501,6 +501,9 @@ test("desktop app launches with an isolated bridge and persists state across res
     await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
     await expect(focus.getByText("Windows 偏离提醒", { exact: true })).toBeVisible();
     await expect(focus.getByText(/不读取按键、窗口标题或网页/)).toBeVisible();
+    await expect(
+      focus.getByLabel("白名单守护强度").getByRole("button", { name: "严格白名单 · 立即拉回" })
+    ).toHaveAttribute("aria-pressed", "true");
     await focus.getByLabel("本次白名单软件").getByRole("button", { name: "Chrome" }).click();
     await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
     await expect(focus.getByText("运行中", { exact: true })).toBeVisible();

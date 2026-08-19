@@ -70,6 +70,22 @@ export function evaluateFocusSample(input: {
     };
   }
 
+  if (input.request.strictAllowlist) {
+    return {
+      state: { deviationStartedAt: input.now },
+      event: {
+        phase: "blocked",
+        appName: input.appName,
+        graceRemainingSeconds: 0,
+        idleSeconds,
+        allowedApps,
+        blockedApps,
+        violationKind: "unlisted",
+        message: `${input.appName} 不在本次严格白名单中。`
+      }
+    };
+  }
+
   const deviationStartedAt = input.state.deviationStartedAt ?? input.now;
   const elapsedSeconds = Math.max(0, Math.floor((input.now - deviationStartedAt) / 1_000));
   const graceRemainingSeconds = Math.max(0, input.request.graceSeconds - elapsedSeconds);

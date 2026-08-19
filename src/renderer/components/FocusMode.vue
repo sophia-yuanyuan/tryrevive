@@ -29,6 +29,7 @@ const guardianMessage = ref("");
 const guardianEvent = ref<FocusEvent | null>(null);
 const selectedApps = ref<string[]>([]);
 const blockedApps = ref<string[]>([]);
+const strictAllowlist = ref(true);
 const customAllowedAppsText = ref("");
 const customBlockedAppsText = ref("");
 const entryHolding = ref(false);
@@ -60,6 +61,10 @@ const anchor = computed(
 const entryStyle = computed(() => ({
   "--entry-progress": `${Math.round(entryProgress.value * 360)}deg`
 }));
+const configuredAllowedApps = computed(() => [
+  ...selectedApps.value,
+  ...parseCustomApps(customAllowedAppsText.value)
+]);
 
 function advance(): void {
   if (phase.value === 1) phase.value = 2;
@@ -143,13 +148,19 @@ function receiveFocusEvent(event: FocusEvent): void {
 }
 
 async function startGuardian(): Promise<void> {
+  const allowedApps = configuredAllowedApps.value;
+  if (strictAllowlist.value && allowedApps.length === 0) {
+    guardianMessage.value = "严格白名单至少要选择一个完成这一步需要的软件。";
+    return;
+  }
   guardianBusy.value = true;
   guardianMessage.value = "";
   try {
     receiveFocusEvent(
       await platform.startFocusGuardian({
-        allowedApps: [...selectedApps.value, ...parseCustomApps(customAllowedAppsText.value)],
+        allowedApps,
         blockedApps: [...blockedApps.value, ...parseCustomApps(customBlockedAppsText.value)],
+        strictAllowlist: strictAllowlist.value,
         graceSeconds: 12,
         idlePauseSeconds: 90
       })
@@ -335,8 +346,27 @@ onBeforeUnmount(() => {
 
             <template v-if="guardianAvailable && !guardianActive">
               <p class="focus-guardian-copy">
-                白名单是这一步需要的软件；未列入的软件有 12 秒返回时间。黑名单命中会立即拉回。
+                白名单是这一步需要的软件；黑名单始终立即拉回。守护不会关闭其他软件，也不能区分浏览器里的具体网页。
               </p>
+              <p class="focus-guardian-title">未列入白名单时</p>
+              <div class="focus-apps" aria-label="白名单守护强度">
+                <button
+                  :class="['focus-app-chip', { selected: strictAllowlist }]"
+                  type="button"
+                  :aria-pressed="strictAllowlist"
+                  @click="strictAllowlist = true"
+                >
+                  严格白名单 · 立即拉回
+                </button>
+                <button
+                  :class="['focus-app-chip', { selected: !strictAllowlist }]"
+                  type="button"
+                  :aria-pressed="!strictAllowlist"
+                  @click="strictAllowlist = false"
+                >
+                  12 秒宽限 · 可短暂切换
+                </button>
+              </div>
               <p class="focus-guardian-title">白名单 · 本次允许</p>
               <div class="focus-apps" aria-label="本次白名单软件">
                 <button
@@ -387,6 +417,9 @@ onBeforeUnmount(() => {
               >
                 {{ guardianBusy ? "正在开启…" : "开启本次白／黑名单守护" }}
               </button>
+              <p v-if="guardianMessage" class="focus-guardian-warning" role="status">
+                {{ guardianMessage }}
+              </p>
             </template>
 
             <div v-else-if="guardianActive" class="focus-guardian-running">

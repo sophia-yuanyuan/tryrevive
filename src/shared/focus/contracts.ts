@@ -3,6 +3,7 @@ import { z } from "zod";
 export const FocusSessionRequestSchema = z.object({
   allowedApps: z.array(z.string().trim().min(1).max(80)).max(16),
   blockedApps: z.array(z.string().trim().min(1).max(80)).max(16).default([]),
+  strictAllowlist: z.boolean().default(false),
   graceSeconds: z.number().int().min(5).max(60).default(12),
   idlePauseSeconds: z.number().int().min(30).max(600).default(90)
 });
