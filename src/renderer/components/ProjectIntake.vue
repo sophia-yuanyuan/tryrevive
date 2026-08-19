@@ -149,7 +149,7 @@ async function collectProjectNames(): Promise<void> {
       <CloudContextAssist
         presentation="intake"
         :initially-expanded="true"
-        @accepted="acceptCloudAnalysis"
+        :persist-draft="acceptCloudAnalysis"
       />
 
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>

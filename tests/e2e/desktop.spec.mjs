@@ -1167,7 +1167,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(harness.calls.some((call) => call.path === "/v1/cloud/analyze")).toBe(false);
 
     await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
-    await expect(window.getByText("恢复草稿已生成", { exact: true })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
 
     const relevantCalls = harness.calls.filter((call) =>
       ["/v1/cloud/quote", "/v1/cloud/reservations", "/v1/cloud/analyze"].includes(call.path)
@@ -1188,7 +1188,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
       "还没有整理个人分工"
     );
 
-    await window.getByRole("button", { name: "查看 TryRevive 的恢复判断" }).click();
+    await window.reload();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await expect(window.getByText("完成黑客松报名", { exact: true }).first()).toBeVisible();
     const pendingState = JSON.parse(

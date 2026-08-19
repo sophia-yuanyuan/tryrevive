@@ -16,6 +16,11 @@ const props = withDefaults(
     projectTitle?: string;
     initiallyExpanded?: boolean;
     presentation?: "embedded" | "intake";
+    persistDraft: (
+      analysis: ProjectAnalysis,
+      sourceKind: "material" | "voice",
+      titleHint: string
+    ) => Promise<void>;
   }>(),
   {
     projectTitle: "",
@@ -23,9 +28,6 @@ const props = withDefaults(
     presentation: "embedded"
   }
 );
-const emit = defineEmits<{
-  accepted: [analysis: ProjectAnalysis, sourceKind: "material" | "voice", titleHint: string];
-}>();
 
 const expanded = ref(props.initiallyExpanded);
 const status = ref<CloudStatus | null>(null);
@@ -324,7 +326,9 @@ async function confirmUpload(): Promise<void> {
       projectTitle: props.projectTitle.trim() || "待恢复项目",
       source: plainSourcePayload()
     });
-    draft.value = result.draft;
+    const parsed = ProjectAnalysisSchema.safeParse(result.draft);
+    if (!parsed.success) throw new Error("云端返回的恢复草稿缺少必要内容，本地没有采用它");
+    draft.value = parsed.data;
     status.value = {
       ...(status.value ?? {
         available: true,
@@ -337,6 +341,7 @@ async function confirmUpload(): Promise<void> {
       message: "云端分析已完成；确认前不会改动本地项目。"
     };
     notice.value = `本次已结算 ${result.charged.speechMinutes} 分钟语音、${result.charged.projectAnalyses} 次项目理解。`;
+    await persistCurrentDraft();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "云端分析失败";
   } finally {
@@ -344,19 +349,31 @@ async function confirmUpload(): Promise<void> {
   }
 }
 
-function acceptDraft(): void {
+async function persistCurrentDraft(): Promise<void> {
   if (!draft.value || !source.value) return;
   const parsed = ProjectAnalysisSchema.safeParse(draft.value);
   if (!parsed.success) {
     error.value = "这份恢复草稿缺少必要内容，请补全后再继续。";
     return;
   }
-  emit(
-    "accepted",
+  error.value = "";
+  await props.persistDraft(
     parsed.data,
     source.value.metadata.kind === "audio" ? "voice" : "material",
     source.value.metadata.kind === "audio" ? "" : source.value.metadata.name
   );
+}
+
+async function retryPersistDraft(): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    await persistCurrentDraft();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "恢复草稿仍然无法保存到本机";
+  } finally {
+    busy.value = false;
+  }
 }
 
 onMounted(() => {
@@ -599,68 +616,20 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div
-          v-if="draft && isIntake"
-          class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4"
-        >
+        <div v-if="draft" class="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
           <div>
-            <p class="summary-label">恢复草稿已生成</p>
+            <p class="summary-label">恢复草稿已生成，但还没有保存到本机</p>
             <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
-              下一页只需要判断“正确”或“修改”；确认前不会创建正式项目。
+              不会再次扣除本次分析次数。请重试本地保存，再进入“正确／修改”。
             </p>
           </div>
-          <button class="primary-button w-full" type="button" @click="acceptDraft">
-            查看 TryRevive 的恢复判断
-          </button>
-        </div>
-
-        <div
-          v-if="draft && !isIntake"
-          class="space-y-4 rounded-xl border border-[var(--accent)]/25 bg-white/70 p-4"
-        >
-          <div>
-            <p class="summary-label">待你确认的草稿</p>
-            <p class="mt-2 text-xs leading-5 text-[var(--muted)]">
-              AI 可能理解错。下面每一项都能修改，采用前不会写入项目。
-            </p>
-          </div>
-          <div>
-            <label class="field-label" for="draft-goal">最开始的目标</label>
-            <textarea id="draft-goal" v-model="draft.originalGoal" class="field-input min-h-20" />
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label class="field-label" for="draft-completed">上次做到哪里</label>
-              <textarea
-                id="draft-completed"
-                v-model="draft.lastCompleted"
-                class="field-input min-h-20"
-              />
-            </div>
-            <div>
-              <label class="field-label" for="draft-stuck">现在停在哪里</label>
-              <textarea id="draft-stuck" v-model="draft.stuckAt" class="field-input min-h-20" />
-            </div>
-          </div>
-          <div>
-            <span class="field-label">可能停滞的原因</span>
-            <ul class="space-y-2 text-sm leading-6 text-[var(--ink)]">
-              <li v-for="reason in draft.stallReasons" :key="reason">· {{ reason }}</li>
-            </ul>
-          </div>
-          <div class="summary-card">
-            <span class="field-label">建议的下一小步</span>
-            <textarea v-model="draft.nextAction.text" class="field-input min-h-20" />
-            <input v-model="draft.nextAction.doneDefinition" class="field-input mt-2" />
-          </div>
-          <div v-if="draft.uncertainties.length" class="rounded-xl bg-amber-50 p-3">
-            <strong class="text-xs">仍需你确认</strong>
-            <ul class="mt-2 space-y-1 text-xs leading-5 text-[var(--muted)]">
-              <li v-for="item in draft.uncertainties" :key="item">· {{ item }}</li>
-            </ul>
-          </div>
-          <button class="primary-button w-full" type="button" @click="acceptDraft">
-            采用这份草稿，进入项目判断
+          <button
+            class="primary-button w-full"
+            type="button"
+            :disabled="busy"
+            @click="retryPersistDraft"
+          >
+            重新保存并查看恢复判断
           </button>
         </div>
       </div>
