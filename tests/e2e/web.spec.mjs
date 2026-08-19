@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createTextPdf } from "./material-fixtures.mjs";
 
 async function completeRevivalLoop(page) {
   await page.goto("/");
@@ -241,6 +242,38 @@ test("local text materials become one editable draft without persisting the sour
     page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
   ).toBeVisible();
   await expect(page.getByLabel("这一步具体做什么？")).toHaveValue("先写出三行个人分工");
+});
+
+test("a searchable local PDF becomes a draft while a scanned PDF stays explicit", async ({
+  page
+}) => {
+  await page.goto("/");
+  const input = page.locator('input[type="file"][accept*=".yaml"]');
+
+  await input.setInputFiles({
+    name: "扫描版报名材料.pdf",
+    mimeType: "application/pdf",
+    buffer: createTextPdf()
+  });
+  await expect(page.getByRole("alert")).toContainText("没有可复制文字");
+  await expect(page.getByRole("alert")).toContainText("先做 OCR");
+
+  await input.setInputFiles({
+    name: "黑客松报名.pdf",
+    mimeType: "application/pdf",
+    buffer: createTextPdf([
+      "Project goal: submit the hackathon application.",
+      "Last completed: the project summary is written.",
+      "Current blocker: team roles are not confirmed."
+    ])
+  });
+  await expect(page.getByText("将在本机读取的材料")).toBeVisible();
+  await expect(page.getByText(/黑客松报名\.pdf/)).toBeVisible();
+  await page.getByRole("button", { name: "从 1 份材料生成待确认草稿" }).click();
+
+  await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+  await expect(page.getByText("黑客松报名", { exact: true })).toBeVisible();
+  await expect(page.getByText(/本地推断：只用文字规则整理线索/)).toBeVisible();
 });
 
 test("initial intake exposes cloud choices safely and never asks for an API key", async ({

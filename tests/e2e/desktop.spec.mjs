@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test } from "@playwright/test";
+import { createTextPdf } from "./material-fixtures.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -433,6 +434,53 @@ test("desktop app launches with an isolated bridge and persists state across res
 
     await focus.getByRole("button", { name: "结束本次守护" }).click();
     await expect(focus.getByText("默认关闭", { exact: true })).toBeVisible();
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop extracts a packaged local PDF without CSP or cloud access", async () => {
+  test.setTimeout(60_000);
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-local-pdf-"));
+  const executablePath = process.env.ELECTRON_EXECUTABLE_PATH;
+  const launchOptions = executablePath
+    ? {
+        executablePath: path.resolve(projectRoot, executablePath),
+        args: [`--user-data-dir=${userData}`],
+        cwd: projectRoot
+      }
+    : { args: [`--user-data-dir=${userData}`, projectRoot], cwd: projectRoot };
+  const desktop = await electron.launch(launchOptions);
+
+  try {
+    const window = await desktop.firstWindow();
+    const cspMessages = [];
+    window.on("console", (message) => {
+      if (/content security policy|refused to/u.test(message.text())) {
+        cspMessages.push(message.text());
+      }
+    });
+    await window.locator('input[type="file"][accept*=".yaml"]').setInputFiles({
+      name: "桌面端黑客松报名.pdf",
+      mimeType: "application/pdf",
+      buffer: createTextPdf([
+        "Project goal: submit the desktop hackathon application.",
+        "Last completed: the project summary is written.",
+        "Current blocker: team roles are not confirmed.",
+        "Side note only for source-retention verification 782641."
+      ])
+    });
+    await expect(window.getByText(/桌面端黑客松报名\.pdf/)).toBeVisible();
+    await window.getByRole("button", { name: "从 1 份材料生成待确认草稿" }).click();
+
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    await expect(window.getByText("桌面端黑客松报名", { exact: true })).toBeVisible();
+    expect(cspMessages).toEqual([]);
+    const saved = JSON.parse(await readFile(path.join(userData, "tryrevive-state.json"), "utf8"));
+    expect(saved.projects).toHaveLength(0);
+    expect(saved.pendingInference.sourceKind).toBe("material");
+    expect(JSON.stringify(saved)).not.toContain("source-retention verification 782641");
   } finally {
     await desktop.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });
@@ -1155,7 +1203,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     await expect(window.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
     await window.getByLabel("算力兑换码").fill("FIRST-CODE");
     await window.getByRole("button", { name: "兑换算力" }).click();
-    await window.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
+    await window.locator('input[type="file"][accept*=".pptx"]').setInputFiles({
       name: "真实姓名-黑客松报名材料.md",
       mimeType: "text/markdown",
       buffer: Buffer.from("已经写完项目简介，现在还没有整理个人分工。", "utf8")
