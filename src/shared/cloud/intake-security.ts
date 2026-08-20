@@ -18,6 +18,9 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   ppt: "application/vnd.ms-powerpoint",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   mp3: "audio/mpeg",
+  mp4: "video/mp4",
+  mpeg: "video/mpeg",
+  mpga: "audio/mpga",
   m4a: "audio/mp4",
   wav: "audio/wav",
   webm: "audio/webm",
@@ -57,5 +60,10 @@ export function normalizeCloudMimeType(fileName: string, reportedMimeType: strin
 }
 
 export function isCloudAudioFile(fileName: string, reportedMimeType: string): boolean {
-  return normalizeCloudMimeType(fileName, reportedMimeType).startsWith("audio/");
+  const mimeType = normalizeCloudMimeType(fileName, reportedMimeType);
+  return (
+    mimeType.startsWith("audio/") ||
+    ["video/mp4", "video/mpeg"].includes(mimeType) ||
+    /\.(mp3|mp4|mpeg|mpga|m4a|wav|webm)$/i.test(fileName.trim())
+  );
 }

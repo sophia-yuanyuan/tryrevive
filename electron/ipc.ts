@@ -24,6 +24,8 @@ export const IPC_CHANNELS = {
   redeemCloudCode: "cloud:redeem-code",
   quoteCloudContext: "cloud:quote-context",
   analyzeCloudContext: "cloud:analyze-context",
+  recoverCloudAnalysis: "cloud:recover-analysis",
+  clearCloudAnalysisCheckpoint: "cloud:clear-analysis-checkpoint",
   focusCapability: "focus:capability",
   startFocusGuardian: "focus:start",
   stopFocusGuardian: "focus:stop",

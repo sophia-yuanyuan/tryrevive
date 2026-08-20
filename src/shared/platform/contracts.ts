@@ -2,6 +2,7 @@ import type { AppState } from "../domain/model";
 import type { AudioExportRequest } from "../audio/export";
 import type {
   CloudAnalysisResult,
+  CloudAnalysisRecovery,
   CloudAccountDeletionResult,
   CloudAnalyzeRequest,
   CloudSourceDeletionResult,
@@ -77,6 +78,8 @@ export interface AppPlatform {
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
+  recoverCloudAnalysis(): Promise<CloudAnalysisRecovery>;
+  clearCloudAnalysisCheckpoint(idempotencyKey: string): Promise<void>;
   focusCapability(): Promise<FocusCapability>;
   startFocusGuardian(request: FocusSessionRequest): Promise<FocusEvent>;
   stopFocusGuardian(): Promise<FocusEvent>;
@@ -113,6 +116,8 @@ export interface DesktopBridge {
   redeemCloudCode(code: string): Promise<CloudRedeemResult>;
   quoteCloudContext(source: CloudSourceMetadata): Promise<CloudQuote>;
   analyzeCloudContext(request: CloudAnalyzeRequest): Promise<CloudAnalysisResult>;
+  recoverCloudAnalysis(): Promise<CloudAnalysisRecovery>;
+  clearCloudAnalysisCheckpoint(idempotencyKey: string): Promise<void>;
   focusCapability(): Promise<FocusCapability>;
   startFocusGuardian(request: FocusSessionRequest): Promise<FocusEvent>;
   stopFocusGuardian(): Promise<FocusEvent>;

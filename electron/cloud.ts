@@ -17,7 +17,10 @@ import {
   type CloudPaymentCheckout,
   CloudAnalysisResultSchema,
   type CloudAnalysisResult,
+  CloudAnalysisRecoverySchema,
+  type CloudAnalysisRecovery,
   type CloudAnalyzeRequest,
+  CloudOperationStatusSchema,
   CloudQuoteSchema,
   type CloudQuote,
   CloudRedeemResultSchema,
@@ -30,7 +33,15 @@ import {
 import { resolveCloudBaseUrl } from "../src/shared/cloud/intake-security";
 
 const SESSION_FILENAME = "tryrevive-cloud-session.bin";
+const ANALYSIS_CHECKPOINT_FILENAME = "tryrevive-cloud-analysis-checkpoint.bin";
 const MAX_TEXT_LENGTH = 120_000;
+
+const AnalysisCheckpointSchema = z.object({
+  idempotencyKey: z.string().trim().min(12).max(120),
+  sourceKind: z.enum(["material", "voice"]),
+  createdAt: z.number().int().nonnegative()
+});
+type AnalysisCheckpoint = z.infer<typeof AnalysisCheckpointSchema>;
 
 const RedeemResponseSchema = CloudRedeemResultSchema.extend({
   sessionToken: z.string().min(32).max(512)
@@ -76,6 +87,10 @@ function sessionPath(): string {
   return path.join(app.getPath("userData"), SESSION_FILENAME);
 }
 
+function analysisCheckpointPath(): string {
+  return path.join(app.getPath("userData"), ANALYSIS_CHECKPOINT_FILENAME);
+}
+
 async function loadSessionToken(): Promise<string | null> {
   if (!safeStorage.isEncryptionAvailable()) return null;
   try {
@@ -104,6 +119,46 @@ async function saveSessionToken(token: string): Promise<void> {
 async function clearSessionToken(): Promise<void> {
   try {
     await fs.unlink(sessionPath());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+async function loadAnalysisCheckpoint(): Promise<AnalysisCheckpoint | null> {
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  try {
+    const encrypted = await fs.readFile(analysisCheckpointPath());
+    return AnalysisCheckpointSchema.parse(JSON.parse(safeStorage.decryptString(encrypted)));
+  } catch {
+    return null;
+  }
+}
+
+async function saveAnalysisCheckpoint(checkpoint: AnalysisCheckpoint): Promise<void> {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("当前系统无法安全保存云端处理检查点，因此没有上传内容");
+  }
+  const destination = analysisCheckpointPath();
+  const temporary = `${destination}.${process.pid}.tmp`;
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  try {
+    await fs.writeFile(
+      temporary,
+      safeStorage.encryptString(JSON.stringify(AnalysisCheckpointSchema.parse(checkpoint)))
+    );
+    await fs.rename(temporary, destination);
+  } finally {
+    await fs.unlink(temporary).catch(() => undefined);
+  }
+}
+
+async function deleteAnalysisCheckpoint(expectedIdempotencyKey?: string): Promise<void> {
+  if (expectedIdempotencyKey) {
+    const current = await loadAnalysisCheckpoint();
+    if (current && current.idempotencyKey !== expectedIdempotencyKey) return;
+  }
+  try {
+    await fs.unlink(analysisCheckpointPath());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -258,6 +313,9 @@ export async function redeemCloudCode(input: unknown): Promise<CloudRedeemResult
 }
 
 export async function disconnectCloud(): Promise<CloudDisconnectResult> {
+  if (await loadAnalysisCheckpoint()) {
+    throw new Error("上次云端任务仍需对账；请先检查结果或确认退款，再退出云端算力");
+  }
   const token = await loadSessionToken();
   let remoteRevoked = !token;
   if (token && configuredBaseUrl()) {
@@ -313,6 +371,7 @@ export async function deleteCloudAccount(input: unknown): Promise<CloudAccountDe
     token
   );
   await clearSessionToken();
+  await deleteAnalysisCheckpoint();
   return result;
 }
 
@@ -370,6 +429,11 @@ export async function analyzeCloudContext(
     throw new Error("单个云端文件不能超过 25 MB");
   }
   const redactedMetadata = redactSourceMetadata(metadata);
+  await saveAnalysisCheckpoint({
+    idempotencyKey,
+    sourceKind: metadata.kind === "audio" ? "voice" : "material",
+    createdAt: Date.now()
+  });
   const reservation = await requestJson(
     "/v1/cloud/reservations",
     CloudReservationResultSchema,
@@ -414,4 +478,30 @@ export async function analyzeCloudContext(
     throw new Error("云端返回了不属于本次请求的结果，本地项目没有改变");
   }
   return result;
+}
+
+export async function recoverCloudAnalysis(): Promise<CloudAnalysisRecovery> {
+  const checkpoint = await loadAnalysisCheckpoint();
+  if (!checkpoint) return { status: "none" };
+  const token = await loadSessionToken();
+  if (!token) throw new Error("请先重新连接原云端账户，再恢复上次处理结果");
+  const operation = await requestJson(
+    "/v1/cloud/operations/status",
+    CloudOperationStatusSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ idempotencyKey: checkpoint.idempotencyKey })
+    },
+    token
+  );
+  return CloudAnalysisRecoverySchema.parse({
+    ...operation,
+    sourceKind: checkpoint.sourceKind,
+    createdAt: checkpoint.createdAt
+  });
+}
+
+export async function clearCloudAnalysisCheckpoint(input: unknown): Promise<void> {
+  const idempotencyKey = z.string().trim().min(12).max(120).parse(input);
+  await deleteAnalysisCheckpoint(idempotencyKey);
 }

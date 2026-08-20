@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canAffordCloudQuote,
+  CloudAnalysisRecoverySchema,
   CloudAnalysisResultSchema,
   CloudDataExportSchema,
+  CloudOperationStatusSchema,
   CloudPaymentCheckoutSchema,
   CloudReservationResultSchema,
   estimateCloudCost
@@ -99,7 +101,47 @@ describe("cloud usage contracts", () => {
     );
     expect(normalizeCloudMimeType("项目说明.mp3", "application/octet-stream")).toBe("audio/mpeg");
     expect(isCloudAudioFile("项目说明.mp3", "")).toBe(true);
+    expect(normalizeCloudMimeType("项目说明.mp4", "application/octet-stream")).toBe("video/mp4");
+    expect(isCloudAudioFile("项目说明.mp4", "video/mp4")).toBe(true);
     expect(normalizeCloudMimeType("未知文件.bin", "")).toBe("application/octet-stream");
+  });
+
+  it("keeps operation recovery account-scoped and structurally bounded", () => {
+    expect(
+      CloudOperationStatusSchema.safeParse({
+        status: "pending",
+        idempotencyKey: "request-123456",
+        balance: { speechMinutes: 2, projectAnalyses: 1 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        claimed: false,
+        expiresAt: 1_800_000_600_000
+      }).success
+    ).toBe(true);
+    expect(
+      CloudOperationStatusSchema.safeParse({
+        status: "pending",
+        idempotencyKey: "short",
+        balance: { speechMinutes: 2, projectAnalyses: 1 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        claimed: false,
+        expiresAt: 1_800_000_600_000
+      }).success
+    ).toBe(false);
+    expect(
+      CloudAnalysisRecoverySchema.safeParse({
+        status: "not_found",
+        idempotencyKey: "request-123456",
+        sourceKind: "material",
+        createdAt: 1_800_000_000_000
+      }).success
+    ).toBe(true);
+    expect(
+      CloudAnalysisRecoverySchema.safeParse({
+        status: "not_found",
+        idempotencyKey: "request-123456",
+        sourceKind: "material"
+      }).success
+    ).toBe(false);
   });
 
   it("accepts a privacy export only when it contains no stored source-content claim", () => {

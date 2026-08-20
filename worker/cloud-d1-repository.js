@@ -93,6 +93,38 @@ async function storedResult(db, operation) {
   };
 }
 
+async function publicOperationStatus(db, accountId, idempotencyKey) {
+  const operation = await operationByKey(db, idempotencyKey);
+  if (!operation || operation.account_id !== accountId) {
+    return { status: "not_found", idempotencyKey };
+  }
+  if (operation.status === "succeeded") {
+    return { status: "succeeded", result: await storedResult(db, operation) };
+  }
+  const account = await accountById(db, accountId);
+  if (!account) return { status: "not_found", idempotencyKey };
+  if (operation.status === "failed") {
+    return {
+      status: "failed",
+      idempotencyKey,
+      balance: balanceFrom(account),
+      charged: costFrom(operation),
+      refunded: Boolean(operation.released_at),
+      errorCode: operation.error_code || null
+    };
+  }
+  return {
+    status: "pending",
+    idempotencyKey,
+    balance: balanceFrom(account),
+    charged: costFrom(operation),
+    claimed: Boolean(operation.claimed_at),
+    expiresAt: operation.claimed_at
+      ? Number(operation.claimed_at) + STALE_PROCESSING_MS
+      : Number(operation.reservation_expires_at)
+  };
+}
+
 function expiryFilter(accountScoped) {
   return `status = 'pending'
     AND released_at IS NULL
@@ -187,6 +219,11 @@ export function createCloudD1Repository(db) {
   return {
     async releaseExpired(now, accountId = null) {
       await releaseExpired(now, accountId);
+    },
+
+    async operationStatus(accountId, idempotencyKey, now) {
+      await releaseExpired(now, accountId);
+      return publicOperationStatus(db, accountId, idempotencyKey);
     },
 
     async purgeAnalysisAdmissions(before) {

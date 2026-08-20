@@ -783,6 +783,17 @@ export function createCloudService({
     }
   }
 
+  async function handleOperationStatus(request) {
+    const timestamp = now();
+    const account = await requireAccount(request, repository, timestamp);
+    const body = await readJson(request);
+    const idempotencyKey = boundedString(body.idempotencyKey, 120, "幂等请求号");
+    if (idempotencyKey.length < 12) {
+      throw new HttpError(400, "invalid_idempotency_key", "幂等请求号格式无效");
+    }
+    return json(await repository.operationStatus(account.id, idempotencyKey, timestamp));
+  }
+
   return async function fetch(request) {
     try {
       const url = new URL(request.url);
@@ -819,6 +830,9 @@ export function createCloudService({
       }
       if (request.method === "POST" && url.pathname === "/v1/cloud/reservations") {
         return await handleReserve(request);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/cloud/operations/status") {
+        return await handleOperationStatus(request);
       }
       if (request.method === "POST" && url.pathname === "/v1/cloud/analyze") {
         return await handleAnalyze(request);

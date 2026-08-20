@@ -201,6 +201,12 @@ const webPlatform: AppPlatform = {
   async analyzeCloudContext() {
     throw new Error("云端理解当前仅在桌面版内测");
   },
+  async recoverCloudAnalysis() {
+    return { status: "none" as const };
+  },
+  async clearCloudAnalysisCheckpoint() {
+    return undefined;
+  },
   async focusCapability() {
     return {
       available: false,
@@ -260,6 +266,9 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     redeemCloudCode: (code) => bridge.redeemCloudCode(code),
     quoteCloudContext: (source) => bridge.quoteCloudContext(source),
     analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),
+    recoverCloudAnalysis: () => bridge.recoverCloudAnalysis(),
+    clearCloudAnalysisCheckpoint: (idempotencyKey) =>
+      bridge.clearCloudAnalysisCheckpoint(idempotencyKey),
     focusCapability: () => bridge.focusCapability(),
     startFocusGuardian: (request) => bridge.startFocusGuardian(request),
     stopFocusGuardian: () => bridge.stopFocusGuardian(),

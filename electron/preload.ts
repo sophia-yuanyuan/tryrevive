@@ -38,6 +38,9 @@ const bridge: DesktopBridge = {
   redeemCloudCode: (code: string) => ipcRenderer.invoke(IPC_CHANNELS.redeemCloudCode, code),
   quoteCloudContext: (source) => ipcRenderer.invoke(IPC_CHANNELS.quoteCloudContext, source),
   analyzeCloudContext: (request) => ipcRenderer.invoke(IPC_CHANNELS.analyzeCloudContext, request),
+  recoverCloudAnalysis: () => ipcRenderer.invoke(IPC_CHANNELS.recoverCloudAnalysis),
+  clearCloudAnalysisCheckpoint: (idempotencyKey) =>
+    ipcRenderer.invoke(IPC_CHANNELS.clearCloudAnalysisCheckpoint, idempotencyKey),
   focusCapability: () => ipcRenderer.invoke(IPC_CHANNELS.focusCapability),
   startFocusGuardian: (request) => ipcRenderer.invoke(IPC_CHANNELS.startFocusGuardian, request),
   stopFocusGuardian: () => ipcRenderer.invoke(IPC_CHANNELS.stopFocusGuardian),

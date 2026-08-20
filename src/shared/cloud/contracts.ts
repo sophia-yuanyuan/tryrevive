@@ -205,6 +205,67 @@ export const CloudAnalysisResultSchema = z.object({
   idempotencyKey: z.string().min(1)
 });
 
+const CloudOperationIdentitySchema = z.object({
+  idempotencyKey: z.string().trim().min(12).max(120)
+});
+
+export const CloudOperationStatusSchema = z.discriminatedUnion("status", [
+  CloudOperationIdentitySchema.extend({
+    status: z.literal("not_found")
+  }),
+  CloudOperationIdentitySchema.extend({
+    status: z.literal("pending"),
+    balance: CloudBalanceSchema,
+    charged: CloudBalanceSchema,
+    claimed: z.boolean(),
+    expiresAt: CloudTimestampSchema
+  }),
+  CloudOperationIdentitySchema.extend({
+    status: z.literal("failed"),
+    balance: CloudBalanceSchema,
+    charged: CloudBalanceSchema,
+    refunded: z.boolean(),
+    errorCode: z.string().trim().max(80).nullable()
+  }),
+  z.object({
+    status: z.literal("succeeded"),
+    result: CloudAnalysisResultSchema
+  })
+]);
+
+const CloudRecoverySourceKindSchema = z.enum(["material", "voice"]);
+const CloudRecoveryCheckpointSchema = CloudOperationIdentitySchema.extend({
+  sourceKind: CloudRecoverySourceKindSchema,
+  createdAt: CloudTimestampSchema
+});
+
+export const CloudAnalysisRecoverySchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("none") }),
+  CloudRecoveryCheckpointSchema.extend({
+    status: z.literal("not_found")
+  }),
+  CloudRecoveryCheckpointSchema.extend({
+    status: z.literal("pending"),
+    balance: CloudBalanceSchema,
+    charged: CloudBalanceSchema,
+    claimed: z.boolean(),
+    expiresAt: CloudTimestampSchema
+  }),
+  CloudRecoveryCheckpointSchema.extend({
+    status: z.literal("failed"),
+    balance: CloudBalanceSchema,
+    charged: CloudBalanceSchema,
+    refunded: z.boolean(),
+    errorCode: z.string().trim().max(80).nullable()
+  }),
+  z.object({
+    status: z.literal("succeeded"),
+    sourceKind: CloudRecoverySourceKindSchema,
+    createdAt: CloudTimestampSchema,
+    result: CloudAnalysisResultSchema
+  })
+]);
+
 export const CloudReservationResultSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("reserved"),
@@ -232,6 +293,8 @@ export type CloudDataExport = z.infer<typeof CloudDataExportSchema>;
 export type CloudSourceDeletionResult = z.infer<typeof CloudSourceDeletionResultSchema>;
 export type CloudAccountDeletionResult = z.infer<typeof CloudAccountDeletionResultSchema>;
 export type CloudAnalysisResult = z.infer<typeof CloudAnalysisResultSchema>;
+export type CloudOperationStatus = z.infer<typeof CloudOperationStatusSchema>;
+export type CloudAnalysisRecovery = z.infer<typeof CloudAnalysisRecoverySchema>;
 export type CloudReservationResult = z.infer<typeof CloudReservationResultSchema>;
 
 export interface CloudSourcePayload {

@@ -77,6 +77,43 @@ class MemoryCloudRepository {
     return this.accountResult(session.accountId);
   }
 
+  async operationStatus(accountId, idempotencyKey, now) {
+    const operation = this.operations.get(idempotencyKey);
+    if (!operation || operation.accountId !== accountId) {
+      return { status: "not_found", idempotencyKey };
+    }
+    if (operation.status === "pending" && operation.expiresAt <= now && !operation.released) {
+      const account = this.accounts.get(accountId);
+      account.balance.speechMinutes += operation.cost.speechMinutes;
+      account.balance.projectAnalyses += operation.cost.projectAnalyses;
+      operation.status = "failed";
+      operation.errorCode = operation.claimedAt ? "processing_timeout" : "reservation_expired";
+      operation.released = true;
+    }
+    if (operation.status === "succeeded") {
+      return { status: "succeeded", result: structuredClone(operation.result) };
+    }
+    const account = this.accounts.get(accountId);
+    if (operation.status === "failed") {
+      return {
+        status: "failed",
+        idempotencyKey,
+        balance: copyBalance(account.balance),
+        charged: copyBalance(operation.cost),
+        refunded: operation.released,
+        errorCode: operation.errorCode || null
+      };
+    }
+    return {
+      status: "pending",
+      idempotencyKey,
+      balance: copyBalance(account.balance),
+      charged: copyBalance(operation.cost),
+      claimed: Boolean(operation.claimedAt),
+      expiresAt: operation.expiresAt
+    };
+  }
+
   async revokeSession(input) {
     this.sessions.delete(input.tokenHash);
   }
@@ -679,6 +716,16 @@ test("duplicate requests reserve once, reject the duplicate token, and return th
   assert.equal(second.body.error, "already_processing");
   assert.equal(repository.ledger.filter((entry) => entry.kind === "reserve").length, 1);
 
+  const pending = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "request-audio-once" }
+  });
+  assert.equal(pending.response.status, 200);
+  assert.equal(pending.body.status, "pending");
+  assert.equal(pending.body.claimed, false);
+  assert.deepEqual(pending.body.balance, { speechMinutes: 8, projectAnalyses: 1 });
+
   const analyzed = await request(service, "/v1/cloud/analyze", {
     method: "POST",
     token: account.sessionToken,
@@ -705,6 +752,29 @@ test("duplicate requests reserve once, reject the duplicate token, and return th
   assert.equal(duplicate.body.status, "succeeded");
   assert.equal(duplicate.body.result.idempotencyKey, "request-audio-once");
   assert.equal(providerCalls, 1);
+
+  const recovered = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "request-audio-once" }
+  });
+  assert.equal(recovered.body.status, "succeeded");
+  assert.equal(recovered.body.result.idempotencyKey, "request-audio-once");
+  assert.equal(providerCalls, 1);
+
+  const other = await redeem(service, repository, "OTHER-ACCOUNT-CODE", {
+    speechMinutes: 1,
+    projectAnalyses: 1
+  });
+  const hidden = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: other.sessionToken,
+    body: { idempotencyKey: "request-audio-once" }
+  });
+  assert.deepEqual(hidden.body, {
+    status: "not_found",
+    idempotencyKey: "request-audio-once"
+  });
 });
 
 test("provider failure restores the full reservation and records one release", async () => {
@@ -748,6 +818,16 @@ test("provider failure restores the full reservation and records one release", a
   assert.equal(failed.body.details.refunded, true);
   assert.deepEqual(failed.body.details.balance, { speechMinutes: 4, projectAnalyses: 1 });
   assert.equal(repository.ledger.filter((entry) => entry.kind === "release").length, 1);
+
+  const recovered = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "request-refund-once" }
+  });
+  assert.equal(recovered.body.status, "failed");
+  assert.equal(recovered.body.refunded, true);
+  assert.equal(recovered.body.errorCode, "upstream_unavailable");
+  assert.deepEqual(recovered.body.balance, { speechMinutes: 4, projectAnalyses: 1 });
 });
 
 test("production-disabled providers reject reservations without charging anything", async () => {

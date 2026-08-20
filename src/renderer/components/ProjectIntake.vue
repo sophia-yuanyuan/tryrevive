@@ -270,14 +270,16 @@ async function analyzeContext(): Promise<void> {
 async function acceptCloudAnalysis(
   analysis: ProjectAnalysis,
   sourceKind: "material" | "voice",
-  titleHint: string
+  titleHint: string,
+  cloudOperationId: string
 ): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-    await store.inferProvidedAnalysis({ analysis, sourceKind, titleHint });
+    await store.inferProvidedAnalysis({ analysis, sourceKind, titleHint, cloudOperationId });
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "云端恢复草稿保存失败";
+    throw caught;
   } finally {
     busy.value = false;
   }

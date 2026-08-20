@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ProjectAnalysisSchema, type ProjectAnalysis } from "@/shared/domain/model";
 import type {
+  CloudAnalysisResult,
   CloudPaymentCatalog,
   CloudQuote,
   CloudSourcePayload,
@@ -20,7 +21,8 @@ const props = withDefaults(
     persistDraft?: (
       analysis: ProjectAnalysis,
       sourceKind: "material" | "voice",
-      titleHint: string
+      titleHint: string,
+      cloudOperationId: string
     ) => Promise<void>;
   }>(),
   {
@@ -37,6 +39,11 @@ const paymentCatalog = ref<CloudPaymentCatalog | null>(null);
 const source = ref<CloudSourcePayload | null>(null);
 const quote = ref<CloudQuote | null>(null);
 const draft = ref<ProjectAnalysis | null>(null);
+const draftSourceKind = ref<"material" | "voice" | null>(null);
+const draftTitleHint = ref("");
+const draftOperationId = ref("");
+const recoveryPending = ref(false);
+const RECOVERY_NOT_FOUND_GRACE_MS = 2 * 60 * 1000;
 const redeemCode = ref("");
 const busy = ref(false);
 const recording = ref(false);
@@ -64,6 +71,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatSourceType(payload: CloudSourcePayload): string {
+  const mimeType = payload.metadata.mimeType.toLowerCase();
+  if (payload.metadata.kind === "audio") return `语音／媒体音轨 · ${mimeType}`;
+  if (mimeType === "application/pdf") return "PDF · application/pdf";
+  if (mimeType.includes("word") || mimeType === "application/msword") return `Word · ${mimeType}`;
+  if (mimeType.includes("spreadsheet") || mimeType === "application/vnd.ms-excel") {
+    return `表格 · ${mimeType}`;
+  }
+  if (mimeType.includes("presentation") || mimeType === "application/vnd.ms-powerpoint") {
+    return `演示文稿 · ${mimeType}`;
+  }
+  if (mimeType.startsWith("text/") || mimeType === "application/json") {
+    return `文字材料 · ${mimeType}`;
+  }
+  return `附件 · ${mimeType}`;
+}
+
 function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat("zh-CN", {
     style: "currency",
@@ -74,6 +98,9 @@ function formatMoney(amount: number, currency: string): string {
 function clearQuote(): void {
   quote.value = null;
   draft.value = null;
+  draftSourceKind.value = null;
+  draftTitleHint.value = "";
+  draftOperationId.value = "";
   idempotencyKey = crypto.randomUUID();
 }
 
@@ -91,6 +118,81 @@ function plainSourcePayload(): CloudSourcePayload {
     ...(typeof payload.text === "string" ? { text: payload.text } : {}),
     ...(payload.bytes ? { bytes: payload.bytes.slice() } : {})
   };
+}
+
+function updateBalance(balance: NonNullable<CloudStatus["balance"]>, message: string): void {
+  status.value = {
+    ...(status.value ?? {
+      available: true,
+      authenticated: true,
+      secureSessionStorage: true,
+      paymentAvailable: false,
+      message: ""
+    }),
+    authenticated: true,
+    balance,
+    message
+  };
+}
+
+async function acceptAnalysisResult(
+  result: CloudAnalysisResult,
+  sourceKind: "material" | "voice",
+  titleHint = ""
+): Promise<void> {
+  const parsed = ProjectAnalysisSchema.safeParse(result.draft);
+  if (!parsed.success) throw new Error("云端返回的恢复草稿缺少必要内容，本地没有采用它");
+  draft.value = parsed.data;
+  draftSourceKind.value = sourceKind;
+  draftTitleHint.value = titleHint;
+  draftOperationId.value = result.idempotencyKey;
+  recoveryPending.value = true;
+  updateBalance(result.balance, "云端分析已完成；确认前不会改动本地项目。");
+  notice.value = `本次已结算 ${result.charged.speechMinutes} 分钟语音、${result.charged.projectAnalyses} 次项目理解。`;
+  await persistCurrentDraft();
+  recoveryPending.value = false;
+}
+
+async function recoverPendingAnalysis(): Promise<void> {
+  const recovery = await platform.recoverCloudAnalysis();
+  if (recovery.status === "none") {
+    recoveryPending.value = false;
+    return;
+  }
+  if (recovery.status === "not_found") {
+    recoveryPending.value = true;
+    idempotencyKey = recovery.idempotencyKey;
+    if (Date.now() - recovery.createdAt < RECOVERY_NOT_FOUND_GRACE_MS) {
+      notice.value =
+        "上次任务刚建立，云端暂时还查不到记录。请稍后再次检查；不会重复上传或再次预留。";
+      return;
+    }
+    await platform.clearCloudAnalysisCheckpoint(recovery.idempotencyKey);
+    recoveryPending.value = false;
+    idempotencyKey = crypto.randomUUID();
+    notice.value = "没有找到上次云端任务；没有恢复或创建本地项目，你可以重新选择材料。";
+    return;
+  }
+  if (recovery.status === "pending") {
+    recoveryPending.value = true;
+    idempotencyKey = recovery.idempotencyKey;
+    updateBalance(recovery.balance, "上次云端任务仍在处理或等待自动退回预留额度。");
+    notice.value = recovery.claimed
+      ? "上次材料已经进入处理；可稍后点击“检查上次处理结果”，不要重复上传。"
+      : "上次只完成了额度预留，原材料没有保存在本机；任务过期后会自动退回。";
+    return;
+  }
+  if (recovery.status === "failed") {
+    await platform.clearCloudAnalysisCheckpoint(recovery.idempotencyKey);
+    recoveryPending.value = false;
+    updateBalance(recovery.balance, "上次云端任务没有生成可用草稿。");
+    clearQuote();
+    notice.value = recovery.refunded
+      ? "上次云端处理失败或过期，预留额度已经退回。请重新选择材料。"
+      : "上次云端处理失败；请先刷新余额确认额度状态，再重新选择材料。";
+    return;
+  }
+  await acceptAnalysisResult(recovery.result, recovery.sourceKind);
 }
 
 function audioDuration(file: File): Promise<number> {
@@ -118,6 +220,7 @@ async function loadStatus(): Promise<void> {
   error.value = "";
   try {
     status.value = await platform.cloudStatus();
+    if (status.value.authenticated) await recoverPendingAnalysis();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "无法检查云端服务";
   } finally {
@@ -139,6 +242,7 @@ async function redeem(): Promise<void> {
     redeemCode.value = "";
     notice.value = result.message;
     status.value = await platform.cloudStatus();
+    if (status.value.authenticated) await recoverPendingAnalysis();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "算力兑换失败";
   } finally {
@@ -152,6 +256,7 @@ async function disconnectAccount(): Promise<void> {
   try {
     const result = await platform.disconnectCloud();
     notice.value = result.message;
+    recoveryPending.value = false;
     status.value = await platform.cloudStatus();
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "无法退出云端算力";
@@ -322,37 +427,28 @@ async function confirmUpload(): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
+    const sourceKind = source.value.metadata.kind === "audio" ? "voice" : "material";
     const result = await platform.analyzeCloudContext({
       idempotencyKey: idempotencyKey || crypto.randomUUID(),
       quoteId: quote.value.id,
       projectTitle: props.projectTitle.trim() || "待恢复项目",
       source: plainSourcePayload()
     });
-    const parsed = ProjectAnalysisSchema.safeParse(result.draft);
-    if (!parsed.success) throw new Error("云端返回的恢复草稿缺少必要内容，本地没有采用它");
-    draft.value = parsed.data;
-    status.value = {
-      ...(status.value ?? {
-        available: true,
-        authenticated: true,
-        secureSessionStorage: true,
-        paymentAvailable: false,
-        message: ""
-      }),
-      balance: result.balance,
-      message: "云端分析已完成；确认前不会改动本地项目。"
-    };
-    notice.value = `本次已结算 ${result.charged.speechMinutes} 分钟语音、${result.charged.projectAnalyses} 次项目理解。`;
-    await persistCurrentDraft();
+    await acceptAnalysisResult(
+      result,
+      sourceKind,
+      sourceKind === "voice" ? "" : source.value.metadata.name
+    );
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "云端分析失败";
+    recoveryPending.value = true;
   } finally {
     busy.value = false;
   }
 }
 
 async function persistCurrentDraft(): Promise<void> {
-  if (!draft.value || !source.value) return;
+  if (!draft.value) return;
   if (!props.persistDraft) throw new Error("当前入口没有配置恢复草稿保存目标");
   const parsed = ProjectAnalysisSchema.safeParse(draft.value);
   if (!parsed.success) {
@@ -360,11 +456,34 @@ async function persistCurrentDraft(): Promise<void> {
     return;
   }
   error.value = "";
+  const sourceKind =
+    draftSourceKind.value ?? (source.value?.metadata.kind === "audio" ? "voice" : "material");
   await props.persistDraft(
     parsed.data,
-    source.value.metadata.kind === "audio" ? "voice" : "material",
-    source.value.metadata.kind === "audio" ? "" : source.value.metadata.name
+    sourceKind,
+    draftTitleHint.value || (sourceKind === "voice" ? "" : (source.value?.metadata.name ?? "")),
+    draftOperationId.value
   );
+  if (draftOperationId.value) {
+    try {
+      await platform.clearCloudAnalysisCheckpoint(draftOperationId.value);
+    } catch {
+      notice.value =
+        "恢复草稿已经安全保存到本机；旧检查点将在下次进入时继续清理，不会重复创建项目。";
+    }
+  }
+}
+
+async function retryRecovery(): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    await recoverPendingAnalysis();
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "暂时无法检查上次云端处理结果";
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function retryPersistDraft(): Promise<void> {
@@ -372,6 +491,7 @@ async function retryPersistDraft(): Promise<void> {
   error.value = "";
   try {
     await persistCurrentDraft();
+    recoveryPending.value = false;
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "恢复草稿仍然无法保存到本机";
   } finally {
@@ -420,7 +540,7 @@ onBeforeUnmount(() => {
           v-if="status.authenticated"
           class="text-button mt-3"
           type="button"
-          :disabled="busy"
+          :disabled="busy || recoveryPending"
           @click="disconnectAccount"
         >
           退出这台设备的云端算力
@@ -457,7 +577,7 @@ onBeforeUnmount(() => {
           <button
             class="text-button shrink-0"
             type="button"
-            :disabled="busy"
+            :disabled="busy || recoveryPending"
             @click="disconnectAccount"
           >
             退出云端算力
@@ -536,7 +656,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="!accountOnly && !source" class="grid gap-3 sm:grid-cols-2">
+        <div v-if="!accountOnly && !source && !recoveryPending" class="grid gap-3 sm:grid-cols-2">
           <button
             class="secondary-button"
             :class="{ 'voice-button-active': recording }"
@@ -562,6 +682,9 @@ onBeforeUnmount(() => {
           <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div class="min-w-0">
               <strong class="block truncate text-sm">{{ source.metadata.name }}</strong>
+              <span class="mt-1 block text-xs text-[var(--muted)]">
+                {{ formatSourceType(source) }}
+              </span>
               <span class="mt-1 block text-xs text-[var(--muted)]">
                 {{ formatBytes(source.metadata.sizeBytes) }}
                 <template v-if="source.metadata.durationSeconds">
@@ -614,7 +737,7 @@ onBeforeUnmount(() => {
           <button
             class="primary-button mt-4 w-full"
             type="button"
-            :disabled="busy || !quote.canAfford"
+            :disabled="busy || recoveryPending || !quote.canAfford"
             @click="confirmUpload"
           >
             {{ busy ? "正在理解，先不要关闭…" : "确认上传并生成草稿" }}
@@ -637,6 +760,21 @@ onBeforeUnmount(() => {
             重新保存并查看恢复判断
           </button>
         </div>
+      </div>
+
+      <div v-if="recoveryPending" class="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+        <p class="summary-label">上次云端任务还需要对账</p>
+        <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+          不会重复上传或再次预留。请检查上次结果；处理中可稍后再试，失败或过期会显示退款状态。
+        </p>
+        <button
+          class="secondary-button mt-3 w-full"
+          type="button"
+          :disabled="busy"
+          @click="retryRecovery"
+        >
+          {{ busy ? "正在检查…" : "检查上次处理结果" }}
+        </button>
       </div>
 
       <p v-if="notice" class="mt-3 text-xs leading-5 text-[var(--muted)]" role="status">

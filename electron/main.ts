@@ -18,6 +18,7 @@ import type { LoadStateResult } from "../src/shared/platform/contracts";
 import { parseAudioExportRequest } from "../src/shared/audio/export";
 import {
   analyzeCloudContext,
+  clearCloudAnalysisCheckpoint,
   deleteCloudAccount,
   deleteCloudSourceContent,
   disconnectCloud,
@@ -26,6 +27,7 @@ import {
   getCloudPaymentPackages,
   getCloudStatus,
   quoteCloudContext,
+  recoverCloudAnalysis,
   redeemCloudCode
 } from "./cloud";
 import { focusGuardian } from "./focus";
@@ -348,6 +350,17 @@ function registerIpc(): void {
     assertTrustedSender(event);
     return analyzeCloudContext(request as Parameters<typeof analyzeCloudContext>[0]);
   });
+  ipcMain.handle(IPC_CHANNELS.recoverCloudAnalysis, async (event) => {
+    assertTrustedSender(event);
+    return recoverCloudAnalysis();
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.clearCloudAnalysisCheckpoint,
+    async (event, idempotencyKey: unknown) => {
+      assertTrustedSender(event);
+      return clearCloudAnalysisCheckpoint(idempotencyKey);
+    }
+  );
   ipcMain.handle(IPC_CHANNELS.focusCapability, (event) => {
     assertTrustedSender(event);
     return focusGuardian.capability();

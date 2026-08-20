@@ -293,6 +293,15 @@ test("D1 migrations persist one charge, one result, and an auditable ledger", as
   assert.equal(reserved.response.status, 200);
   assert.deepEqual(reserved.body.balance, { speechMinutes: 5, projectAnalyses: 1 });
 
+  const pending = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: reservationBody.idempotencyKey }
+  });
+  assert.equal(pending.body.status, "pending");
+  assert.equal(pending.body.claimed, false);
+  assert.deepEqual(pending.body.balance, { speechMinutes: 5, projectAnalyses: 1 });
+
   const analyzed = await request(service, "/v1/cloud/analyze", {
     method: "POST",
     token: account.sessionToken,
@@ -315,6 +324,14 @@ test("D1 migrations persist one charge, one result, and an auditable ledger", as
   assert.equal(duplicate.body.result.idempotencyKey, reservationBody.idempotencyKey);
   assert.equal(providerCalls, 1);
 
+  const recovered = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: reservationBody.idempotencyKey }
+  });
+  assert.equal(recovered.body.status, "succeeded");
+  assert.equal(recovered.body.result.idempotencyKey, reservationBody.idempotencyKey);
+
   const otherAccount = await redeem(service, database, "D1-OTHER-ACCOUNT", {
     speechMinutes: 5,
     projectAnalyses: 2
@@ -331,6 +348,12 @@ test("D1 migrations persist one charge, one result, and an auditable ledger", as
   });
   assert.equal(privateResult.response.status, 409);
   assert.equal(providerCalls, 1);
+  const hidden = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: otherAccount.sessionToken,
+    body: { idempotencyKey: reservationBody.idempotencyKey }
+  });
+  assert.equal(hidden.body.status, "not_found");
 
   const ledger = database
     .prepare("SELECT kind FROM cloud_ledger ORDER BY rowid")
@@ -1169,6 +1192,16 @@ test("an abandoned D1 reservation is returned after expiry without a second char
   assert.deepEqual(reserved.body.balance, { speechMinutes: 0, projectAnalyses: 0 });
 
   setNow(start + 11 * 60 * 1000);
+  const recovered = await request(service, "/v1/cloud/operations/status", {
+    method: "POST",
+    token: account.sessionToken,
+    body: { idempotencyKey: "d1-request-expire-refund" }
+  });
+  assert.equal(recovered.response.status, 200);
+  assert.equal(recovered.body.status, "failed");
+  assert.equal(recovered.body.refunded, true);
+  assert.equal(recovered.body.errorCode, "reservation_expired");
+  assert.deepEqual(recovered.body.balance, { speechMinutes: 0, projectAnalyses: 1 });
   const status = await request(service, "/v1/cloud/account", { token: account.sessionToken });
   assert.equal(status.response.status, 200);
   assert.deepEqual(status.body.balance, { speechMinutes: 0, projectAnalyses: 1 });

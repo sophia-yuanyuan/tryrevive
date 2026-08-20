@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   cloudStatus: vi.fn(),
   quoteCloudContext: vi.fn(),
   analyzeCloudContext: vi.fn(),
+  recoverCloudAnalysis: vi.fn(),
+  clearCloudAnalysisCheckpoint: vi.fn(),
   redeemCloudCode: vi.fn(),
   disconnectCloud: vi.fn(),
   importState: vi.fn(),
@@ -35,6 +37,8 @@ vi.mock("@/renderer/platform/web", () => ({
     cloudStatus: mocks.cloudStatus,
     quoteCloudContext: mocks.quoteCloudContext,
     analyzeCloudContext: mocks.analyzeCloudContext,
+    recoverCloudAnalysis: mocks.recoverCloudAnalysis,
+    clearCloudAnalysisCheckpoint: mocks.clearCloudAnalysisCheckpoint,
     redeemCloudCode: mocks.redeemCloudCode,
     disconnectCloud: mocks.disconnectCloud,
     importState: mocks.importState,
@@ -47,6 +51,7 @@ vi.mock("@/renderer/platform/web", () => ({
 import ActionStep from "@/renderer/components/ActionStep.vue";
 import InferenceConfirmStep from "@/renderer/components/InferenceConfirmStep.vue";
 import DecisionStep from "@/renderer/components/DecisionStep.vue";
+import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
 import ProjectIntake from "@/renderer/components/ProjectIntake.vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 
@@ -128,6 +133,8 @@ describe("inference-first components", () => {
     });
     mocks.quoteCloudContext.mockReset();
     mocks.analyzeCloudContext.mockReset();
+    mocks.recoverCloudAnalysis.mockReset().mockResolvedValue({ status: "none" });
+    mocks.clearCloudAnalysisCheckpoint.mockReset().mockResolvedValue(undefined);
     mocks.redeemCloudCode.mockReset();
     mocks.disconnectCloud.mockReset();
     mocks.importState.mockReset();
@@ -443,11 +450,13 @@ describe("inference-first components", () => {
 
   it("keeps a provided cloud analysis pending until the shared confirmation step", async () => {
     const store = useRevivalStore();
+    const cloudOperationId = "cloud-operation-123456";
 
     await store.inferProvidedAnalysis({
       analysis: { ...scanResult().analysis, originalGoal: "我想完成黑客松报名。" },
       sourceKind: "material",
-      titleHint: "真实姓名-黑客松报名材料.md"
+      titleHint: "真实姓名-黑客松报名材料.md",
+      cloudOperationId
     });
 
     expect(store.data.projects).toHaveLength(0);
@@ -456,7 +465,120 @@ describe("inference-first components", () => {
       title: "完成黑客松报名",
       repository: null
     });
+    expect(store.data.deliveredCloudOperations).toEqual([cloudOperationId]);
     expect(mocks.saveState).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not import the same delivered cloud operation twice", async () => {
+    const store = useRevivalStore();
+    const input = {
+      analysis: { ...scanResult().analysis, originalGoal: "我想完成黑客松报名。" },
+      sourceKind: "material" as const,
+      titleHint: "黑客松报名材料.md",
+      cloudOperationId: "cloud-operation-idempotent-123456"
+    };
+
+    await store.inferProvidedAnalysis(input);
+    await store.confirmInference();
+    await store.inferProvidedAnalysis(input);
+
+    expect(store.data.projects).toHaveLength(1);
+    expect(store.pendingInference).toBeNull();
+    expect(store.data.deliveredCloudOperations).toEqual([input.cloudOperationId]);
+    expect(mocks.saveState).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mark a cloud operation delivered when local saving fails", async () => {
+    const store = useRevivalStore();
+    mocks.saveState.mockRejectedValueOnce(new Error("disk unavailable"));
+
+    await expect(
+      store.inferProvidedAnalysis({
+        analysis: scanResult().analysis,
+        sourceKind: "material",
+        cloudOperationId: "cloud-operation-unsaved-123456"
+      })
+    ).rejects.toThrow("disk unavailable");
+
+    expect(store.pendingInference).toBeNull();
+    expect(store.data.deliveredCloudOperations).toEqual([]);
+  });
+
+  it("keeps a recent not-found cloud checkpoint for retry", async () => {
+    mocks.cloudStatus.mockResolvedValue({
+      available: true,
+      authenticated: true,
+      balance: { speechMinutes: 2, projectAnalyses: 1 },
+      secureSessionStorage: true,
+      paymentAvailable: false,
+      message: "云端测试账户已连接"
+    });
+    mocks.recoverCloudAnalysis.mockResolvedValue({
+      status: "not_found",
+      idempotencyKey: "cloud-operation-recent-123456",
+      sourceKind: "material",
+      createdAt: Date.now()
+    });
+
+    const wrapper = mount(CloudContextAssist, {
+      props: { presentation: "intake", initiallyExpanded: true }
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("任务刚建立");
+    expect(wrapper.text()).toContain("检查上次处理结果");
+    expect(mocks.clearCloudAnalysisCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("keeps a recovered draft when local saving fails and clears only after retry", async () => {
+    const persistDraft = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("disk unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const operationId = "cloud-operation-recovered-123456";
+    mocks.cloudStatus.mockResolvedValue({
+      available: true,
+      authenticated: true,
+      balance: { speechMinutes: 2, projectAnalyses: 1 },
+      secureSessionStorage: true,
+      paymentAvailable: false,
+      message: "云端测试账户已连接"
+    });
+    mocks.recoverCloudAnalysis.mockResolvedValue({
+      status: "succeeded",
+      sourceKind: "material",
+      createdAt: 1_800_000_000_000,
+      result: {
+        draft: scanResult().analysis,
+        balance: { speechMinutes: 2, projectAnalyses: 0 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        idempotencyKey: operationId
+      }
+    });
+
+    const wrapper = mount(CloudContextAssist, {
+      props: { presentation: "intake", initiallyExpanded: true, persistDraft }
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("disk unavailable");
+    expect(wrapper.text()).toContain("重新保存并查看恢复判断");
+    expect(mocks.clearCloudAnalysisCheckpoint).not.toHaveBeenCalled();
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("重新保存"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(persistDraft).toHaveBeenCalledTimes(2);
+    expect(persistDraft).toHaveBeenLastCalledWith(
+      scanResult().analysis,
+      "material",
+      "",
+      operationId
+    );
+    expect(mocks.clearCloudAnalysisCheckpoint).toHaveBeenCalledWith(operationId);
   });
 
   it("corrects a draft before confirmation creates one project awaiting a decision", async () => {

@@ -279,8 +279,11 @@ export const useRevivalStore = defineStore("revival", () => {
     analysis: ProjectAnalysis;
     sourceKind: Extract<InferenceSource, "material" | "voice">;
     titleHint?: string;
+    cloudOperationId?: string;
   }): Promise<void> {
     const candidate = stateSnapshot();
+    const cloudOperationId = input.cloudOperationId?.trim();
+    if (cloudOperationId && candidate.deliveredCloudOperations.includes(cloudOperationId)) return;
     candidate.activeProjectId = null;
     candidate.pendingInference = createPendingInference({
       sourceKind: input.sourceKind,
@@ -288,6 +291,12 @@ export const useRevivalStore = defineStore("revival", () => {
       analysis: input.analysis,
       repository: null
     });
+    if (cloudOperationId) {
+      candidate.deliveredCloudOperations = [
+        ...candidate.deliveredCloudOperations.filter((id) => id !== cloudOperationId),
+        cloudOperationId
+      ].slice(-50);
+    }
     await commitCandidate(candidate);
   }
 

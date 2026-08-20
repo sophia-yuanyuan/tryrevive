@@ -182,6 +182,7 @@ export const AppStateSchema = z.object({
   activeProjectId: z.string().nullable(),
   projects: z.array(ProjectSchema).max(100),
   pendingInference: PendingInferenceSchema.nullable(),
+  deliveredCloudOperations: z.array(z.string().trim().min(12).max(120)).max(50).default([]),
   legacyMigrationCompleted: z.boolean(),
   updatedAt: z.number().int().positive()
 });
@@ -216,6 +217,7 @@ export function createEmptyState(now = Date.now()): AppState {
     activeProjectId: null,
     projects: [],
     pendingInference: null,
+    deliveredCloudOperations: [],
     legacyMigrationCompleted: false,
     updatedAt: now
   };

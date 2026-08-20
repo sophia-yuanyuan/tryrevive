@@ -244,6 +244,7 @@ async function startCloudSessionHarness() {
   let rejectAccounts = false;
   let analysisMode = "approved";
   let costProtection = true;
+  let dropNextAnalyzeResponse = false;
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -447,6 +448,8 @@ async function startCloudSessionHarness() {
         token,
         reservationToken,
         charged: quote.cost,
+        claimed: false,
+        expiresAt: Date.now() + 10 * 60 * 1000,
         result: null
       });
       return send(200, {
@@ -455,6 +458,22 @@ async function startCloudSessionHarness() {
         balance,
         charged: quote.cost,
         expiresAt: Date.now() + 10 * 60 * 1000
+      });
+    }
+    if (request.method === "POST" && request.url === "/v1/cloud/operations/status") {
+      const balance = sessions.get(token);
+      const reservation = reservations.get(body.idempotencyKey);
+      if (!balance || !reservation || reservation.token !== token) {
+        return send(200, { status: "not_found", idempotencyKey: body.idempotencyKey });
+      }
+      if (reservation.result) return send(200, { status: "succeeded", result: reservation.result });
+      return send(200, {
+        status: "pending",
+        idempotencyKey: body.idempotencyKey,
+        balance,
+        charged: reservation.charged,
+        claimed: reservation.claimed,
+        expiresAt: reservation.expiresAt
       });
     }
     if (request.method === "POST" && request.url === "/v1/cloud/analyze") {
@@ -468,6 +487,7 @@ async function startCloudSessionHarness() {
       ) {
         return send(409, { error: "reservation_unavailable", message: "测试预留无效" });
       }
+      reservation.claimed = true;
       const result = {
         draft: {
           id: "analysis_cloud_e2e",
@@ -492,6 +512,11 @@ async function startCloudSessionHarness() {
         idempotencyKey: body.idempotencyKey
       };
       reservation.result = result;
+      if (dropNextAnalyzeResponse) {
+        dropNextAnalyzeResponse = false;
+        response.destroy();
+        return;
+      }
       return send(200, result);
     }
     return send(404, { error: "not_found", message: "测试接口不存在" });
@@ -516,6 +541,9 @@ async function startCloudSessionHarness() {
     },
     setCostProtection(value) {
       costProtection = value;
+    },
+    dropAnalyzeResponseOnce() {
+      dropNextAnalyzeResponse = true;
     },
     close: () => new Promise((resolve) => server.close(resolve))
   };
@@ -1425,6 +1453,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
       buffer: Buffer.from("已经写完项目简介，现在还没有整理个人分工。", "utf8")
     });
     await expect(window.getByText("真实姓名-黑客松报名材料.md", { exact: true })).toBeVisible();
+    await expect(window.getByText("文字材料 · text/markdown", { exact: true })).toBeVisible();
     await window.getByRole("button", { name: "查看预计消耗（不上传内容）" }).click();
     await expect(window.getByText("上传确认", { exact: true })).toBeVisible();
 
@@ -1434,7 +1463,15 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(JSON.stringify(quoteCall.body)).not.toContain("已经写完项目简介");
     expect(harness.calls.some((call) => call.path === "/v1/cloud/analyze")).toBe(false);
 
+    harness.dropAnalyzeResponseOnce();
     await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
+    await expect(window.getByRole("button", { name: "检查上次处理结果" })).toBeVisible();
+    const encryptedCheckpoint = await readFile(
+      path.join(userData, "tryrevive-cloud-analysis-checkpoint.bin")
+    );
+    expect(encryptedCheckpoint.toString("utf8")).not.toContain("真实姓名");
+    expect(encryptedCheckpoint.toString("utf8")).not.toContain("已经写完项目简介");
+    await window.reload();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
 
     const relevantCalls = harness.calls.filter((call) =>
@@ -1456,6 +1493,9 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
       "还没有整理个人分工"
     );
 
+    expect(
+      harness.calls.filter((call) => call.path === "/v1/cloud/operations/status")
+    ).toHaveLength(1);
     await window.reload();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await expect(window.getByText("完成黑客松报名", { exact: true }).first()).toBeVisible();
@@ -1464,6 +1504,14 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     );
     expect(pendingState.projects).toHaveLength(0);
     expect(pendingState.pendingInference.sourceKind).toBe("material");
+    expect(pendingState.deliveredCloudOperations).toHaveLength(1);
+    expect(pendingState.deliveredCloudOperations[0]).toBe(analyzeCall.body.idempotencyKey);
+    expect(
+      await readFile(path.join(userData, "tryrevive-cloud-analysis-checkpoint.bin")).then(
+        () => false,
+        () => true
+      )
+    ).toBe(true);
 
     await window.getByRole("button", { name: "正确，继续" }).click();
     await window.getByRole("button", { name: "接受建议：缩小" }).click();
