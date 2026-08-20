@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
 import { platform } from "@/renderer/platform/web";
 import { useRevivalStore } from "@/renderer/stores/revival";
@@ -22,6 +22,7 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matc
 const phase = ref(1);
 const resetOpen = ref(false);
 const resetCause = ref<"manual" | "guardian">("manual");
+const resetPrimaryButton = ref<HTMLButtonElement | null>(null);
 const guardianAvailable = ref(false);
 const guardianActive = ref(false);
 const guardianBusy = ref(false);
@@ -45,6 +46,8 @@ let completionTimer = 0;
 let guardianLifecycleGeneration = 0;
 let guardianStarting = false;
 let focusModeUnmounted = false;
+let resetReturnFocus: HTMLElement | null = null;
+const resetFocusTimers: number[] = [];
 const quickAppGroups = [
   {
     label: "文档与申请",
@@ -263,7 +266,7 @@ async function acknowledgeGuardian(action: "resume" | "necessary"): Promise<void
 
 function openManualReset(): void {
   resetCause.value = "manual";
-  resetOpen.value = !resetOpen.value;
+  resetOpen.value = true;
 }
 
 async function close(): Promise<void> {
@@ -283,9 +286,56 @@ function onKeydown(event: KeyboardEvent): void {
   if (event.key === "Enter" && phase.value === 1) advance();
 }
 
+function clearResetFocusTimers(): void {
+  resetFocusTimers.splice(0).forEach(window.clearTimeout);
+}
+
+function focusResetPrimary(): void {
+  if (!resetOpen.value || focusModeUnmounted) return;
+  const button = resetPrimaryButton.value;
+  if (!button) return;
+  const activeElement = document.activeElement;
+  const takeover = button.closest('[role="alertdialog"]');
+  if (activeElement instanceof HTMLElement && takeover?.contains(activeElement)) return;
+  button.focus({ preventScroll: true });
+}
+
+function scheduleResetFocus(): void {
+  clearResetFocusTimers();
+  focusResetPrimary();
+  // Windows may activate the BrowserWindow just after the renderer receives the
+  // guardian event. Retry only while focus is outside the takeover so a user's
+  // own choice inside the dialog is never overridden.
+  [100, 350, 750, 1_500, 2_500, 4_000, 6_500, 8_500].forEach((delay) => {
+    resetFocusTimers.push(window.setTimeout(focusResetPrimary, delay));
+  });
+}
+
+function onWindowFocus(): void {
+  if (!resetOpen.value) return;
+  void nextTick().then(focusResetPrimary);
+}
+
+watch(resetOpen, async (open) => {
+  if (open) {
+    resetReturnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await nextTick();
+    scheduleResetFocus();
+    return;
+  }
+  clearResetFocusTimers();
+  await nextTick();
+  if (focusModeUnmounted) return;
+  if (resetReturnFocus?.isConnected) resetReturnFocus.focus();
+  else document.querySelector<HTMLButtonElement>(".focus-complete")?.focus();
+  resetReturnFocus = null;
+});
+
 onMounted(() => {
   document.body.classList.add("focus-mode-active");
   window.addEventListener("keydown", onKeydown);
+  window.addEventListener("focus", onWindowFocus);
   unsubscribeFocus = platform.onFocusEvent(receiveFocusEvent);
   void platform
     .focusCapability()
@@ -313,7 +363,9 @@ onBeforeUnmount(() => {
   guardianStarting = false;
   document.body.classList.remove("focus-mode-active");
   window.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("focus", onWindowFocus);
   unsubscribeFocus();
+  clearResetFocusTimers();
   cancelEntryHold();
   if (completionTimer) window.clearTimeout(completionTimer);
   if (shouldStopGuardian) void platform.stopFocusGuardian().catch(() => undefined);
@@ -382,6 +434,67 @@ onBeforeUnmount(() => {
           </button>
           <p v-if="entryError" class="focus-entry-error" role="alert">{{ entryError }}</p>
           <p class="focus-hint">松开即取消；不需要处理整个项目</p>
+        </div>
+
+        <div
+          v-else-if="resetOpen"
+          key="reset"
+          class="focus-reset focus-reset-takeover"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="focus-reset-title"
+          aria-describedby="focus-reset-description"
+        >
+          <div class="focus-reset-copy">
+            <p class="focus-reset-kicker">停一下。你已经回来了。</p>
+            <p
+              v-if="resetCause === 'guardian' && guardianEvent?.appName"
+              id="focus-reset-description"
+              class="focus-reset-app"
+            >
+              刚才切到了 {{ guardianEvent.appName }}。
+              <template v-if="guardianEvent.violationKind === 'blocked'">
+                它在本次黑名单中。
+              </template>
+            </p>
+            <p v-else id="focus-reset-description" class="focus-reset-app">
+              这是你主动叫回的当前行动。
+            </p>
+            <h2 id="focus-reset-title">现在只完成：{{ project.action?.text }}</h2>
+            <p class="focus-reset-done">完成标准：{{ project.action?.doneDefinition }}</p>
+          </div>
+          <div class="focus-reset-actions">
+            <button
+              ref="resetPrimaryButton"
+              class="focus-reset-primary"
+              type="button"
+              :disabled="guardianBusy"
+              @click="
+                resetCause === 'guardian' ? acknowledgeGuardian('resume') : (resetOpen = false)
+              "
+            >
+              回到当前行动
+            </button>
+            <button
+              v-if="resetCause === 'guardian' && guardianEvent?.violationKind !== 'blocked'"
+              class="focus-reset-back"
+              type="button"
+              :disabled="guardianBusy"
+              @click="acknowledgeGuardian('necessary')"
+            >
+              这是必要工作 · 本次放行
+            </button>
+            <button
+              v-if="resetCause === 'guardian'"
+              class="focus-reset-back"
+              type="button"
+              :disabled="guardianBusy"
+              @click="stopGuardian"
+            >
+              结束本次守护
+            </button>
+          </div>
+          <p class="focus-reset-exit-hint">按 Esc 随时离开专注</p>
         </div>
 
         <div
@@ -530,59 +643,12 @@ onBeforeUnmount(() => {
             <p v-else class="focus-guardian-copy">{{ guardianMessage }}</p>
           </section>
 
-          <div v-if="resetOpen" class="focus-reset" role="status">
-            <div>
-              <p v-if="resetCause === 'guardian' && guardianEvent?.appName" class="focus-reset-app">
-                刚才切到了：{{ guardianEvent.appName }}
-                <template v-if="guardianEvent.violationKind === 'blocked'">（本次黑名单）</template>
-              </p>
-              <p v-else>你主动叫回了当前行动。</p>
-              <strong>现在只完成：{{ project.action?.text }}</strong>
-              <p class="focus-reset-app">完成标准：{{ project.action?.doneDefinition }}</p>
-            </div>
-            <div class="focus-reset-actions">
-              <button
-                v-if="resetCause === 'guardian' && guardianEvent?.violationKind !== 'blocked'"
-                class="focus-reset-back"
-                type="button"
-                :disabled="guardianBusy"
-                @click="acknowledgeGuardian('necessary')"
-              >
-                这是这一步需要的软件 · 本次放行
-              </button>
-              <button
-                class="focus-reset-back"
-                type="button"
-                :disabled="guardianBusy"
-                @click="
-                  resetCause === 'guardian' ? acknowledgeGuardian('resume') : (resetOpen = false)
-                "
-              >
-                {{ resetCause === "guardian" ? "不是这一步 · 回到当前行动" : "回到当前行动" }}
-              </button>
-              <button
-                v-if="resetCause === 'guardian'"
-                class="focus-reset-back"
-                type="button"
-                :disabled="guardianBusy"
-                @click="stopGuardian"
-              >
-                结束本次守护
-              </button>
-            </div>
-          </div>
-
           <div class="focus-controls">
             <button class="focus-complete" type="button" :disabled="finishing" @click="finish">
               {{ finishing ? "正在把这一块留下…" : "我留下了一个结果" }}
             </button>
-            <button
-              v-if="!(resetOpen && resetCause === 'guardian')"
-              class="focus-secondary"
-              type="button"
-              @click="openManualReset"
-            >
-              {{ resetOpen ? "收起重置" : "我偏离了，帮我回来" }}
+            <button class="focus-secondary" type="button" @click="openManualReset">
+              我偏离了，帮我回来
             </button>
             <button class="focus-secondary" type="button" @click="close">先离开一下</button>
           </div>

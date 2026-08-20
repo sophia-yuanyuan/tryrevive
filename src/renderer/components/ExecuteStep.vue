@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 import type { RevivalProject } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import { platform } from "@/renderer/platform/web";
 import FocusMode from "./FocusMode.vue";
 import StageShell from "./StageShell.vue";
 
@@ -45,7 +46,7 @@ async function finish(): Promise<void> {
 async function enterFocus(): Promise<void> {
   error.value = "";
   try {
-    await document.documentElement.requestFullscreen?.().catch(() => undefined);
+    await platform.setFullScreen(true).catch(() => false);
     focusOpen.value = true;
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "专注界面启动失败";

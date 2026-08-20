@@ -1231,6 +1231,7 @@ button:disabled {
 
 .focus-complete,
 .focus-secondary,
+.focus-reset-primary,
 .focus-reset-back {
   min-height: 2.85rem;
   border-radius: 999px;
@@ -1246,6 +1247,13 @@ button:disabled {
   background: white;
 }
 
+.focus-reset-primary {
+  border: 1px solid #f6f2e9;
+  color: #070a0d;
+  background: #f6f2e9;
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.32);
+}
+
 .focus-secondary,
 .focus-reset-back {
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1253,44 +1261,79 @@ button:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.focus-reset {
+.focus-reset-takeover {
+  position: fixed;
+  z-index: 2;
+  inset: 0;
   display: grid;
-  max-width: 40rem;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 1rem;
-  margin: 1.5rem auto 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1.25rem;
-  padding: 1rem;
-  color: rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.035);
-  text-align: left;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(1.4rem, 4vh, 2.8rem);
+  overflow-y: auto;
+  padding: max(5rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right))
+    max(2.5rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  color: rgba(255, 255, 255, 0.94);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(176, 124, 83, 0.24), transparent 24rem),
+    radial-gradient(circle at 50% 50%, rgba(38, 61, 64, 0.22), transparent 42rem), #030507;
+  text-align: center;
 }
 
-.focus-reset p,
-.focus-reset strong {
+.focus-reset-copy {
+  display: grid;
+  max-width: 58rem;
+  justify-items: center;
+  gap: 0.9rem;
+}
+
+.focus-reset-kicker,
+.focus-reset-app,
+.focus-reset-done,
+.focus-reset-exit-hint {
   margin: 0;
+  line-height: 1.7;
+}
+
+.focus-reset-kicker {
+  color: rgba(255, 220, 185, 0.82);
   font-size: 0.78rem;
-  line-height: 1.55;
+  font-weight: 750;
+  letter-spacing: 0.16em;
 }
 
-.focus-reset strong {
-  display: block;
-  margin-top: 0.2rem;
-  color: rgba(255, 255, 255, 0.9);
+.focus-reset-copy h2 {
+  max-width: 18ch;
+  margin: 0.35rem 0 0;
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(2rem, 6vw, 5.2rem);
+  font-weight: 500;
+  line-height: 1.16;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
 }
 
-.focus-reset .focus-reset-app {
-  margin-top: 0.35rem;
-  color: rgba(255, 213, 173, 0.8);
+.focus-reset-app,
+.focus-reset-done {
+  max-width: 46rem;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: clamp(0.82rem, 1.7vw, 1rem);
+}
+
+.focus-reset-done {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .focus-reset-actions {
   display: flex;
+  max-width: 50rem;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.45rem;
+  justify-content: center;
+  gap: 0.7rem;
+}
+
+.focus-reset-exit-hint {
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 0.72rem;
 }
 
 .breath-core {
@@ -2689,14 +2732,6 @@ body.focus-mode-active #app {
     flex-direction: column;
   }
 
-  .focus-reset {
-    grid-template-columns: auto 1fr;
-  }
-
-  .focus-reset-back {
-    grid-column: 1 / -1;
-  }
-
   .focus-guardian-head {
     align-items: stretch;
     flex-direction: column;
@@ -2707,12 +2742,13 @@ body.focus-mode-active #app {
   }
 
   .focus-reset-actions {
-    grid-column: 1 / -1;
-    justify-content: stretch;
+    width: 100%;
+    flex-direction: column;
   }
 
+  .focus-reset-actions .focus-reset-primary,
   .focus-reset-actions .focus-reset-back {
-    flex: 1 1 100%;
+    width: 100%;
   }
 
   .vinyl-artifact,

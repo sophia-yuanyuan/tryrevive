@@ -615,13 +615,27 @@ test("desktop app launches with an isolated bridge and persists state across res
     const foregroundProbe = launchNotepadForegroundProbe();
     try {
       await foregroundProbe.activated;
-      await expect(focus.getByText(/刚才切到了：notepad/iu)).toBeVisible({ timeout: 10_000 });
+      const recenter = focus.getByRole("alertdialog");
+      await expect(recenter.getByText(/刚才切到了 notepad/iu)).toBeVisible({ timeout: 10_000 });
+      await expect
+        .poll(() =>
+          desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())
+        )
+        .toBe(true);
+      const takeoverBox = await recenter.boundingBox();
+      const viewport = await window.evaluate(() => ({
+        width: globalThis.innerWidth,
+        height: globalThis.innerHeight
+      }));
+      expect(takeoverBox?.width ?? 0).toBeGreaterThan(viewport.width * 0.95);
+      expect(takeoverBox?.height ?? 0).toBeGreaterThan(viewport.height * 0.95);
       await expect
         .poll(async () => {
           return normalizeProcessName(await readForegroundProcessName());
         })
         .toMatch(/^(electron|tryrevive)$/u);
-      await focus.locator(".focus-reset").getByRole("button", { name: "结束本次守护" }).click();
+      await expect(recenter.getByRole("button", { name: "回到当前行动" })).toBeFocused();
+      await recenter.getByRole("button", { name: "结束本次守护" }).click();
     } finally {
       await foregroundProbe.done;
     }

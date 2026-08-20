@@ -100,6 +100,7 @@ describe("FocusMode guardian controls", () => {
 
     const wrapper = mount(FocusMode, {
       props: { project, clock: "09:59", started: true },
+      attachTo: document.body,
       global: { stubs: { Teleport: true } }
     });
     await flushPromises();
@@ -150,12 +151,18 @@ describe("FocusMode guardian controls", () => {
       message: "你离开了本次允许的软件"
     });
     await nextTick();
+    await flushPromises();
 
+    const takeover = wrapper.get('[role="alertdialog"]');
+    expect(takeover.classes()).toContain("focus-reset-takeover");
+    expect(takeover.text()).toContain("停一下。你已经回来了");
     expect(wrapper.text()).toContain("现在只完成：写完报名页第一段");
     expect(wrapper.text()).toContain("完成标准：第一段保存到文档");
-    expect(wrapper.text()).toContain("这是这一步需要的软件 · 本次放行");
-    expect(wrapper.text()).toContain("不是这一步 · 回到当前行动");
+    expect(wrapper.text()).toContain("这是必要工作 · 本次放行");
+    expect(wrapper.text()).toContain("回到当前行动");
     expect(wrapper.text()).toContain("结束本次守护");
+    expect(wrapper.text()).not.toContain("我留下了一个结果");
+    expect(document.activeElement).toBe(wrapper.get("button.focus-reset-primary").element);
 
     const necessary = wrapper
       .findAll("button")
@@ -219,6 +226,44 @@ describe("FocusMode guardian controls", () => {
     expect(mocks.start).toHaveBeenCalledWith(
       expect.objectContaining({ allowedApps: ["wps", "et", "wpp"] })
     );
+    wrapper.unmount();
+  });
+
+  it("turns a manual recenter into a full-screen alert and restores the live action", async () => {
+    const project = createProject("作品集", 1_800_000_000_000);
+    project.action = {
+      id: "action-manual-recenter",
+      text: "只改一张作品图的说明",
+      doneDefinition: "说明文字已经保存",
+      minutes: 10,
+      startedAt: 1_800_000_000_000,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "09:59", started: true },
+      attachTo: document.body,
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "我偏离了，帮我回来")
+      ?.trigger("click");
+    await nextTick();
+
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("这是你主动叫回的当前行动");
+    expect(document.activeElement).toBe(wrapper.get("button.focus-reset-primary").element);
+    expect(wrapper.text()).not.toContain("我留下了一个结果");
+    await wrapper.get("button.focus-reset-primary").trigger("click");
+    await nextTick();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("我留下了一个结果");
     wrapper.unmount();
   });
 
