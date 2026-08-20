@@ -45,21 +45,47 @@ let completionTimer = 0;
 let guardianLifecycleGeneration = 0;
 let guardianStarting = false;
 let focusModeUnmounted = false;
-const quickApps = [
-  { label: "Chrome", value: "chrome" },
-  { label: "Edge", value: "msedge" },
-  { label: "Word", value: "winword" },
-  { label: "PowerPoint", value: "powerpnt" },
-  { label: "Excel", value: "excel" },
-  { label: "VS Code", value: "Code" },
-  { label: "Cursor", value: "Cursor" },
-  { label: "Windows Terminal", value: "WindowsTerminal" }
+const quickAppGroups = [
+  {
+    label: "文档与申请",
+    apps: [
+      { label: "WPS", values: ["wps", "et", "wpp"] },
+      { label: "Word", values: ["winword"] },
+      { label: "Excel", values: ["excel"] },
+      { label: "PowerPoint", values: ["powerpnt"] },
+      { label: "Notion", values: ["Notion"] },
+      { label: "Adobe Acrobat", values: ["Acrobat"] }
+    ]
+  },
+  {
+    label: "沟通",
+    apps: [
+      { label: "飞书", values: ["Feishu"] },
+      { label: "微信", values: ["WeChat"] }
+    ]
+  },
+  {
+    label: "开发",
+    apps: [
+      { label: "VS Code", values: ["Code"] },
+      { label: "Cursor", values: ["Cursor"] },
+      { label: "JetBrains", values: ["idea64", "pycharm64", "webstorm64"] },
+      { label: "Visual Studio", values: ["devenv"] },
+      { label: "Windows Terminal", values: ["WindowsTerminal"] }
+    ]
+  },
+  {
+    label: "浏览器与设计",
+    apps: [
+      { label: "Chrome", values: ["chrome"] },
+      { label: "Edge", values: ["msedge"] },
+      { label: "Firefox", values: ["firefox"] },
+      { label: "Figma", values: ["Figma"] }
+    ]
+  }
 ];
 const lastScene = computed(
   () => props.project.evidence.at(-1)?.note ?? props.project.restore.lastCompleted
-);
-const anchor = computed(
-  () => props.project.restore.whyMatters || "你可以先回到眼前这一个可见结果。"
 );
 const entryStyle = computed(() => ({
   "--entry-progress": `${Math.round(entryProgress.value * 360)}deg`
@@ -125,18 +151,24 @@ function releaseEntryHold(): void {
   cancelEntryHold();
 }
 
-function toggleAllowedApp(value: string): void {
-  blockedApps.value = blockedApps.value.filter((item) => item !== value);
-  selectedApps.value = selectedApps.value.includes(value)
-    ? selectedApps.value.filter((item) => item !== value)
-    : [...selectedApps.value, value];
+function groupSelected(list: readonly string[], values: readonly string[]): boolean {
+  return values.every((value) => list.includes(value));
 }
 
-function toggleBlockedApp(value: string): void {
-  selectedApps.value = selectedApps.value.filter((item) => item !== value);
-  blockedApps.value = blockedApps.value.includes(value)
-    ? blockedApps.value.filter((item) => item !== value)
-    : [...blockedApps.value, value];
+function toggleAllowedAppGroup(values: readonly string[]): void {
+  const selected = groupSelected(selectedApps.value, values);
+  blockedApps.value = blockedApps.value.filter((item) => !values.includes(item));
+  selectedApps.value = selected
+    ? selectedApps.value.filter((item) => !values.includes(item))
+    : [...new Set([...selectedApps.value, ...values])];
+}
+
+function toggleBlockedAppGroup(values: readonly string[]): void {
+  const selected = groupSelected(blockedApps.value, values);
+  selectedApps.value = selectedApps.value.filter((item) => !values.includes(item));
+  blockedApps.value = selected
+    ? blockedApps.value.filter((item) => !values.includes(item))
+    : [...new Set([...blockedApps.value, ...values])];
 }
 
 function parseCustomApps(value: string): string[] {
@@ -405,47 +437,69 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <p class="focus-guardian-title">白名单 · 本次允许</p>
-              <div class="focus-apps" aria-label="本次白名单软件">
-                <button
-                  v-for="app in quickApps"
-                  :key="`allow-${app.value}`"
-                  :class="['focus-app-chip', { selected: selectedApps.includes(app.value) }]"
-                  type="button"
-                  :aria-pressed="selectedApps.includes(app.value)"
-                  @click="toggleAllowedApp(app.value)"
-                >
-                  {{ app.label }}
-                </button>
+              <div class="focus-app-groups" aria-label="本次白名单软件">
+                <div v-for="group in quickAppGroups" :key="`allow-${group.label}`">
+                  <p class="focus-app-group-label">{{ group.label }}</p>
+                  <div class="focus-apps">
+                    <button
+                      v-for="app in group.apps"
+                      :key="`allow-${app.label}`"
+                      :class="[
+                        'focus-app-chip',
+                        { selected: groupSelected(selectedApps, app.values) }
+                      ]"
+                      type="button"
+                      :aria-pressed="groupSelected(selectedApps, app.values)"
+                      @click="toggleAllowedAppGroup(app.values)"
+                    >
+                      {{ app.label }}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <label class="focus-custom-app">
-                <span>其他白名单软件（可选，用逗号分开）</span>
-                <input
-                  v-model="customAllowedAppsText"
-                  maxlength="240"
-                  placeholder="例如：Notion, Photoshop"
-                />
-              </label>
+              <details class="focus-custom-details">
+                <summary>没有找到？添加其他软件</summary>
+                <label class="focus-custom-app">
+                  <span>其他白名单软件（可选，用逗号分开）</span>
+                  <input
+                    v-model="customAllowedAppsText"
+                    maxlength="240"
+                    placeholder="例如：Photoshop, Obsidian"
+                  />
+                </label>
+              </details>
               <p class="focus-guardian-title">黑名单 · 明确排除</p>
-              <div class="focus-apps" aria-label="本次黑名单软件">
-                <button
-                  v-for="app in quickApps"
-                  :key="`block-${app.value}`"
-                  :class="['focus-app-chip', { selected: blockedApps.includes(app.value) }]"
-                  type="button"
-                  :aria-pressed="blockedApps.includes(app.value)"
-                  @click="toggleBlockedApp(app.value)"
-                >
-                  {{ app.label }}
-                </button>
+              <div class="focus-app-groups" aria-label="本次黑名单软件">
+                <div v-for="group in quickAppGroups" :key="`block-${group.label}`">
+                  <p class="focus-app-group-label">{{ group.label }}</p>
+                  <div class="focus-apps">
+                    <button
+                      v-for="app in group.apps"
+                      :key="`block-${app.label}`"
+                      :class="[
+                        'focus-app-chip',
+                        { selected: groupSelected(blockedApps, app.values) }
+                      ]"
+                      type="button"
+                      :aria-pressed="groupSelected(blockedApps, app.values)"
+                      @click="toggleBlockedAppGroup(app.values)"
+                    >
+                      {{ app.label }}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <label class="focus-custom-app">
-                <span>其他黑名单软件（可选，用逗号分开）</span>
-                <input
-                  v-model="customBlockedAppsText"
-                  maxlength="240"
-                  placeholder="例如：Discord, Steam"
-                />
-              </label>
+              <details class="focus-custom-details">
+                <summary>添加其他黑名单软件</summary>
+                <label class="focus-custom-app">
+                  <span>其他黑名单软件（可选，用逗号分开）</span>
+                  <input
+                    v-model="customBlockedAppsText"
+                    maxlength="240"
+                    placeholder="例如：Discord, Steam"
+                  />
+                </label>
+              </details>
               <button
                 class="focus-guardian-start"
                 type="button"
@@ -477,17 +531,14 @@ onBeforeUnmount(() => {
           </section>
 
           <div v-if="resetOpen" class="focus-reset" role="status">
-            <span class="breath-core" aria-hidden="true" />
             <div>
-              <p>先停一下，慢慢呼气。</p>
-              <strong v-if="resetCause === 'guardian'">
-                你现在在做什么？眼前这一步是：{{ project.action?.text }}
-              </strong>
-              <strong v-else>{{ anchor }}</strong>
               <p v-if="resetCause === 'guardian' && guardianEvent?.appName" class="focus-reset-app">
-                刚才检测到：{{ guardianEvent.appName }}
+                刚才切到了：{{ guardianEvent.appName }}
                 <template v-if="guardianEvent.violationKind === 'blocked'">（本次黑名单）</template>
               </p>
+              <p v-else>你主动叫回了当前行动。</p>
+              <strong>现在只完成：{{ project.action?.text }}</strong>
+              <p class="focus-reset-app">完成标准：{{ project.action?.doneDefinition }}</p>
             </div>
             <div class="focus-reset-actions">
               <button
@@ -497,7 +548,7 @@ onBeforeUnmount(() => {
                 :disabled="guardianBusy"
                 @click="acknowledgeGuardian('necessary')"
               >
-                这是必要工作
+                这是这一步需要的软件 · 本次放行
               </button>
               <button
                 class="focus-reset-back"
@@ -507,7 +558,7 @@ onBeforeUnmount(() => {
                   resetCause === 'guardian' ? acknowledgeGuardian('resume') : (resetOpen = false)
                 "
               >
-                我回到这一步
+                {{ resetCause === "guardian" ? "不是这一步 · 回到当前行动" : "回到当前行动" }}
               </button>
               <button
                 v-if="resetCause === 'guardian'"

@@ -121,10 +121,14 @@ describe("FocusMode guardian controls", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("严格白名单至少要选择一个");
     expect(mocks.start).not.toHaveBeenCalled();
-    await wrapper.get('[aria-label="本次白名单软件"] button.focus-app-chip').trigger("click");
     await wrapper
-      .get('[aria-label="本次黑名单软件"] button.focus-app-chip:nth-child(2)')
-      .trigger("click");
+      .findAll('[aria-label="本次白名单软件"] button.focus-app-chip')
+      .find((button) => button.text() === "Chrome")
+      ?.trigger("click");
+    await wrapper
+      .findAll('[aria-label="本次黑名单软件"] button.focus-app-chip')
+      .find((button) => button.text() === "Edge")
+      ?.trigger("click");
     await wrapper.get("button.focus-guardian-start").trigger("click");
     await flushPromises();
     expect(mocks.start).toHaveBeenCalledWith({
@@ -147,12 +151,15 @@ describe("FocusMode guardian controls", () => {
     });
     await nextTick();
 
-    expect(wrapper.text()).toContain("你现在在做什么？眼前这一步是：写完报名页第一段");
-    expect(wrapper.text()).toContain("这是必要工作");
-    expect(wrapper.text()).toContain("我回到这一步");
+    expect(wrapper.text()).toContain("现在只完成：写完报名页第一段");
+    expect(wrapper.text()).toContain("完成标准：第一段保存到文档");
+    expect(wrapper.text()).toContain("这是这一步需要的软件 · 本次放行");
+    expect(wrapper.text()).toContain("不是这一步 · 回到当前行动");
     expect(wrapper.text()).toContain("结束本次守护");
 
-    const necessary = wrapper.findAll("button").find((button) => button.text() === "这是必要工作");
+    const necessary = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("本次放行"));
     await necessary?.trigger("click");
     await flushPromises();
     expect(mocks.acknowledge).toHaveBeenCalledWith("necessary");
@@ -169,12 +176,50 @@ describe("FocusMode guardian controls", () => {
     });
     await nextTick();
     expect(wrapper.text()).toContain("本次黑名单");
-    expect(wrapper.findAll("button").some((button) => button.text() === "这是必要工作")).toBe(
+    expect(wrapper.findAll("button").some((button) => button.text().includes("本次放行"))).toBe(
       false
     );
     wrapper.unmount();
     await flushPromises();
     expect(mocks.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers one-click common apps and maps WPS to its process aliases", async () => {
+    const project = createProject("申请项目", 1_800_000_000_000);
+    project.action = {
+      id: "action-apps",
+      text: "填写报名表",
+      doneDefinition: "保存报名草稿",
+      minutes: 10,
+      startedAt: 1_800_000_000_000,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "09:59", started: true },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("飞书");
+    expect(wrapper.text()).toContain("WPS");
+    expect(wrapper.text()).toContain("Figma");
+    expect(wrapper.text()).toContain("没有找到？添加其他软件");
+    await wrapper
+      .findAll('[aria-label="本次白名单软件"] button.focus-app-chip')
+      .find((button) => button.text() === "WPS")
+      ?.trigger("click");
+    await wrapper.get("button.focus-guardian-start").trigger("click");
+    await flushPromises();
+
+    expect(mocks.start).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedApps: ["wps", "et", "wpp"] })
+    );
+    wrapper.unmount();
   });
 
   it("keeps the last real scene visible when reduced motion is requested", async () => {

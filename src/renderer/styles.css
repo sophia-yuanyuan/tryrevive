@@ -1052,6 +1052,30 @@ button:disabled {
   margin-top: 0.75rem;
 }
 
+.focus-app-groups {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.focus-app-group-label {
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.focus-custom-details {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.focus-custom-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .focus-app-chip {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;

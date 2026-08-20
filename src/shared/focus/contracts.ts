@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const FocusSessionRequestSchema = z.object({
-  allowedApps: z.array(z.string().trim().min(1).max(80)).max(16),
-  blockedApps: z.array(z.string().trim().min(1).max(80)).max(16).default([]),
+  allowedApps: z.array(z.string().trim().min(1).max(80)).max(32),
+  blockedApps: z.array(z.string().trim().min(1).max(80)).max(32).default([]),
   strictAllowlist: z.boolean().default(false),
   graceSeconds: z.number().int().min(5).max(60).default(12),
   idlePauseSeconds: z.number().int().min(30).max(600).default(90)
@@ -31,8 +31,8 @@ export const FocusEventSchema = z.object({
   appName: z.string().trim().max(80).default(""),
   graceRemainingSeconds: z.number().int().min(0).max(60).default(0),
   idleSeconds: z.number().int().min(0).default(0),
-  allowedApps: z.array(z.string().trim().min(1).max(80)).max(18),
-  blockedApps: z.array(z.string().trim().min(1).max(80)).max(16).default([]),
+  allowedApps: z.array(z.string().trim().min(1).max(80)).max(32),
+  blockedApps: z.array(z.string().trim().min(1).max(80)).max(32).default([]),
   violationKind: FocusViolationKindSchema.default(null),
   message: z.string().max(240)
 });

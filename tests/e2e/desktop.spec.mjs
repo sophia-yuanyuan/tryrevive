@@ -615,7 +615,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     const foregroundProbe = launchNotepadForegroundProbe();
     try {
       await foregroundProbe.activated;
-      await expect(focus.getByText(/刚才检测到：notepad/iu)).toBeVisible({ timeout: 10_000 });
+      await expect(focus.getByText(/刚才切到了：notepad/iu)).toBeVisible({ timeout: 10_000 });
       await expect
         .poll(async () => {
           return normalizeProcessName(await readForegroundProcessName());
