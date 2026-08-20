@@ -45,8 +45,14 @@ function powershellPath(): string {
   return executable;
 }
 
+function nativeWindowHandle(targetWindow: BrowserWindow): string {
+  const handle = targetWindow.getNativeWindowHandle();
+  return handle.length >= 8 ? handle.readBigUInt64LE().toString() : String(handle.readUInt32LE());
+}
+
 class FocusGuardian {
   private monitor: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private activator: ReturnType<typeof spawn> | null = null;
   private window: BrowserWindow | null = null;
   private request: FocusSessionRequest | null = null;
   private allowedApps: string[] = [];
@@ -189,6 +195,9 @@ class FocusGuardian {
     const monitor = this.monitor;
     this.monitor = null;
     if (monitor && !monitor.killed) monitor.kill();
+    const activator = this.activator;
+    this.activator = null;
+    if (activator && !activator.killed) activator.kill();
     this.releaseAlwaysOnTop();
 
     const event: FocusEvent = {
@@ -259,15 +268,53 @@ class FocusGuardian {
     targetWindow.setFullScreen(true);
     targetWindow.setAlwaysOnTop(true, "screen-saver");
     targetWindow.show();
+    targetWindow.moveTop();
     targetWindow.focus();
+    targetWindow.flashFrame(true);
+    this.activateResetWindow();
     if (this.releaseTopTimer) clearTimeout(this.releaseTopTimer);
     this.releaseTopTimer = setTimeout(() => this.releaseAlwaysOnTop(), 2_000);
+  }
+
+  private activateResetWindow(): void {
+    const targetWindow = this.window;
+    if (!targetWindow || targetWindow.isDestroyed()) return;
+    const previousActivator = this.activator;
+    this.activator = null;
+    if (previousActivator && !previousActivator.killed) previousActivator.kill();
+    const activator = spawn(
+      powershellPath(),
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        foregroundScriptPath(),
+        "-ActivateProcessId",
+        String(process.pid),
+        "-ActivateWindowHandle",
+        nativeWindowHandle(targetWindow)
+      ],
+      { windowsHide: true, stdio: "ignore" }
+    );
+    this.activator = activator;
+    activator.on("error", () => {
+      if (this.activator === activator) this.activator = null;
+    });
+    activator.on("exit", () => {
+      if (this.activator === activator) this.activator = null;
+    });
   }
 
   private releaseAlwaysOnTop(): void {
     if (this.releaseTopTimer) clearTimeout(this.releaseTopTimer);
     this.releaseTopTimer = null;
-    if (this.window && !this.window.isDestroyed()) this.window.setAlwaysOnTop(false);
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.setAlwaysOnTop(false);
+      this.window.flashFrame(false);
+    }
   }
 
   private fail(message: string): void {
