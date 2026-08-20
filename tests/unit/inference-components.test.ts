@@ -42,6 +42,7 @@ vi.mock("@/renderer/platform/web", () => ({
 
 import ActionStep from "@/renderer/components/ActionStep.vue";
 import InferenceConfirmStep from "@/renderer/components/InferenceConfirmStep.vue";
+import DecisionStep from "@/renderer/components/DecisionStep.vue";
 import ProjectIntake from "@/renderer/components/ProjectIntake.vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 
@@ -156,6 +157,11 @@ describe("inference-first components", () => {
     expect(store.pendingInference?.analysis.uncertainties[0]).toContain("扫描已达到");
     expect(store.pendingInference?.analysis.uncertainties[1]).toContain("疑似敏感项 2");
     expect(store.pendingInference?.analysis.uncertainties[1]).toContain("过大文件 1");
+    const confirmation = mount(InferenceConfirmStep, {
+      props: { pending: store.pendingInference! }
+    });
+    expect(confirmation.text()).toContain("这不是整个文件夹的完整总结");
+    expect(confirmation.text()).toContain("选择更小的项目文件夹");
   });
 
   it("shows folder, voice, attachment, and local text as first-page intake choices", async () => {
@@ -179,7 +185,7 @@ describe("inference-first components", () => {
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
   });
 
-  it("turns an explicit Windows local recording into the shared pending draft", async () => {
+  it("shows an editable local transcript before the user explicitly creates a draft", async () => {
     const store = useRevivalStore();
     const wrapper = mount(ProjectIntake);
     await flushPromises();
@@ -193,18 +199,52 @@ describe("inference-first components", () => {
 
     expect(mocks.localSpeechCapability).toHaveBeenCalledTimes(1);
     expect(mocks.startLocalSpeechRecording).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain("停止并本机理解");
+    expect(wrapper.text()).toContain("停止并转写");
 
     await voiceButton?.trigger("click");
     await flushPromises();
 
     expect(mocks.transcribeLocalSpeech).toHaveBeenCalledTimes(1);
     expect(store.data.projects).toHaveLength(0);
+    expect(store.pendingInference).toBeNull();
+    expect((wrapper.get("#project-context").element as HTMLTextAreaElement).value).toContain(
+      "写完项目简介"
+    );
+    expect(wrapper.text()).toContain("请先检查或修改文字");
+    expect(mocks.saveState).not.toHaveBeenCalled();
+
+    await wrapper
+      .get("#project-context")
+      .setValue("我想完成黑客松报名。上次已经修改完项目简介。现在卡在团队分工。");
+    await wrapper.get('button[type="submit"].primary-button').trigger("submit");
+    await flushPromises();
+
     expect(store.pendingInference?.sourceKind).toBe("voice");
-    expect(store.pendingInference?.analysis.sourceLabel).toContain("TryRevive 离线语音转写");
-    expect(store.pendingInference?.analysis.lastCompleted).toContain("写完项目简介");
+    expect(store.pendingInference?.analysis.sourceLabel).toContain("tryrevive 离线语音转写");
+    expect(store.pendingInference?.analysis.lastCompleted).toContain("修改完项目简介");
     expect(store.pendingInference?.analysis.stuckAt).toContain("团队分工");
     expect(mocks.saveState).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the user choose English for the offline transcription request", async () => {
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    await wrapper.get('[aria-label="语音识别语言"]').setValue("en-US");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("用 Windows 本机语音说"))
+      ?.trigger("click");
+    await flushPromises();
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("停止并转写"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(mocks.transcribeLocalSpeech).toHaveBeenCalledWith(
+      expect.objectContaining({ culture: "en-US" })
+    );
   });
 
   it("keeps the intake usable when microphone permission is denied", async () => {
@@ -281,6 +321,41 @@ describe("inference-first components", () => {
     expect(store.pendingInference?.title).toBe("我想完成黑客松报名");
   });
 
+  it("does not pretend a Feishu or application URL alone has been read", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    await wrapper
+      .get("#source-url")
+      .setValue("https://example.feishu.cn/docx/private?token=must-not-persist");
+    await wrapper.get('button[type="submit"].primary-button').trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toContain("不会只靠链接读取登录页");
+    expect(store.pendingInference).toBeNull();
+    expect(mocks.saveState).not.toHaveBeenCalled();
+  });
+
+  it("uses pasted page content while retaining only the source host", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await flushPromises();
+
+    await wrapper
+      .get("#source-url")
+      .setValue("https://hackathon.example/apply?invite=must-not-persist");
+    await wrapper
+      .get("#project-context")
+      .setValue("我想申请黑客松。上次已经写完项目简介。现在卡在团队分工。");
+    await wrapper.get('button[type="submit"].primary-button').trigger("submit");
+    await flushPromises();
+
+    expect(store.pendingInference?.sourceKind).toBe("material");
+    expect(store.pendingInference?.analysis.sourceLabel).toContain("hackathon.example");
+    expect(JSON.stringify(store.pendingInference)).not.toContain("must-not-persist");
+  });
+
   it("keeps a provided cloud analysis pending until the shared confirmation step", async () => {
     const store = useRevivalStore();
 
@@ -314,7 +389,10 @@ describe("inference-first components", () => {
       }
     });
     store.data.pendingInference = pending;
-    const wrapper = mount(InferenceConfirmStep, { props: { pending } });
+    const wrapper = mount(InferenceConfirmStep, { props: { pending }, attachTo: document.body });
+
+    await nextTick();
+    expect(document.activeElement).toBe(wrapper.get("#stage-title").element);
 
     expect(wrapper.text()).toContain("正确，继续");
     expect(wrapper.text()).toContain("修改");
@@ -350,6 +428,40 @@ describe("inference-first components", () => {
     expect(store.activeProject?.decision).toBeNull();
     expect(store.activeProject?.restore.lastCompleted).toBe("报名表单布局已经完成");
     expect(store.pendingInference).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("leads with one project judgment while keeping all alternatives including abandon", async () => {
+    const store = useRevivalStore();
+    const result = scanResult();
+    const project = confirmPendingInference(
+      createPendingInference({
+        sourceKind: "repository",
+        title: result.displayName,
+        analysis: { ...result.analysis, suggestedDecision: "shrink" },
+        repository: null
+      })
+    );
+    store.data = {
+      ...createEmptyState(),
+      activeProjectId: project.id,
+      projects: [project]
+    };
+    const wrapper = mount(DecisionStep, { props: { project } });
+
+    expect(wrapper.text()).toContain("tryrevive 建议：缩小");
+    expect(wrapper.text()).toContain("接受建议：缩小");
+    expect(wrapper.text()).toContain("这个判断不合适？换一个");
+    expect(wrapper.text()).toContain("放弃");
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("接受建议：缩小"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(store.activeProject?.decision).toBe("shrink");
+    expect(store.activeProject?.stage).toBe("action");
   });
 
   it("discards unsaved corrections when editing is canceled", async () => {

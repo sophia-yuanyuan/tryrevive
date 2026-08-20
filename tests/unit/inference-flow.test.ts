@@ -159,6 +159,7 @@ describe("inference-first confirmation", () => {
     expect(result.analysis.lastCompleted).toContain("已经完成首页");
     expect(result.analysis.stuckAt).toContain("卡在移动端导航");
     expect(result.analysis.nextAction.text).toContain("可保存最小版本");
+    expect(result.analysis.suggestedDecision).toBe("continue");
     expect(result.analysis.uncertainties[0]).toContain("本地推断");
     expect(serialized).not.toContain("C:\\Users\\Alice");
     expect(serialized).not.toContain("/srv/tryrevive");
@@ -166,6 +167,79 @@ describe("inference-first confirmation", () => {
     expect(serialized).not.toContain("sk-example-value-that-must-not-return");
     expect(serialized).not.toContain("my super secret value");
     expect(serialized).not.toContain("quoted-bearer-value-that-must-not-return");
+  });
+
+  it("recommends shrinking when the material cannot establish progress or a concrete blocker", () => {
+    const result = inferLocalProject({
+      sourceKind: "voice",
+      content: "我想申请黑客松，但是现在说不清上次做到哪里。",
+      now: 1_800_000_000_000
+    });
+
+    expect(result.analysis.suggestedDecision).toBe("shrink");
+  });
+
+  it("recommends help, pause, or abandon only when the material contains matching evidence", () => {
+    expect(
+      inferLocalProject({
+        sourceKind: "text",
+        content: "我想提交报名。已经写完简介。现在没有权限，需要主办方确认后才能提交。"
+      }).analysis.suggestedDecision
+    ).toBe("help");
+    expect(
+      inferLocalProject({
+        sourceKind: "text",
+        content: "我想补完课程。已经整理了笔记。现在先暂停，等课程重新开放。"
+      }).analysis.suggestedDecision
+    ).toBe("pause");
+    expect(
+      inferLocalProject({
+        sourceKind: "text",
+        content: "我决定放弃这个过期报名，截止时间已经错过，不再做了。"
+      }).analysis.suggestedDecision
+    ).toBe("abandon");
+  });
+
+  it("does not recommend abandonment for a successful application or a stated wish to continue", () => {
+    const result = inferLocalProject({
+      sourceKind: "voice",
+      content: "我想完成答辩。报名已经通过了初审。我不应该放弃。现在还没准备答辩材料。"
+    });
+
+    expect(result.analysis.suggestedDecision).not.toBe("abandon");
+  });
+
+  it("separates spoken sentences and recognizes an English blocker", () => {
+    const result = inferLocalProject({
+      sourceKind: "voice",
+      content:
+        "I want to finish my hackathon application. I already completed the project summary. I am waiting for organizer approval."
+    });
+
+    expect(result.analysis.originalGoal).toContain("finish my hackathon application");
+    expect(result.analysis.lastCompleted).toContain("completed the project summary");
+    expect(result.analysis.stuckAt).toContain("waiting for organizer approval");
+    expect(result.analysis.suggestedDecision).toBe("help");
+    expect(result.analysis.originalGoal).not.toBe(result.analysis.lastCompleted);
+  });
+
+  it("recomputes the recommendation after the user corrects the blocker", () => {
+    const pending = createPendingInference({
+      sourceKind: "text",
+      title: "报名",
+      analysis: analysis(),
+      repository: null
+    });
+    const corrected = correctPendingInference(pending, {
+      title: "报名",
+      originalGoal: "提交报名",
+      lastCompleted: "已经写完项目简介",
+      stuckAt: "没有提交权限，需要主办方确认",
+      whyMatters: "",
+      stallReason: "需要主办方确认权限"
+    });
+
+    expect(corrected.analysis.suggestedDecision).toBe("help");
   });
 
   it("ignores local material separators when deriving a multi-file title and goal", () => {

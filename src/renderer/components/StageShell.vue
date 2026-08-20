@@ -1,15 +1,24 @@
 <script setup lang="ts">
+import { nextTick, onMounted, ref } from "vue";
+
 defineProps<{
   eyebrow: string;
   title: string;
   description: string;
 }>();
+
+const heading = ref<HTMLHeadingElement | null>(null);
+
+onMounted(async () => {
+  await nextTick();
+  if (!document.activeElement || document.activeElement === document.body) heading.value?.focus();
+});
 </script>
 
 <template>
   <section class="stage-card" aria-labelledby="stage-title">
     <p class="eyebrow">{{ eyebrow }}</p>
-    <h1 id="stage-title" class="stage-title">{{ title }}</h1>
+    <h1 id="stage-title" ref="heading" class="stage-title" tabindex="-1">{{ title }}</h1>
     <p class="stage-description">{{ description }}</p>
     <div class="mt-8">
       <slot />

@@ -12,6 +12,7 @@ import {
   type LocalSpeechCapability,
   type LocalSpeechResult
 } from "../src/shared/speech/contracts";
+import { normalizeSpeechTranscript } from "../src/shared/speech/transcript";
 
 const execFileAsync = promisify(execFile);
 const RUNTIME_VERSION = "1.9.1";
@@ -54,7 +55,7 @@ export async function getLocalSpeechCapability(): Promise<LocalSpeechCapability>
     culture: "zh-CN",
     recognizer: `whisper.cpp ${RUNTIME_VERSION} · base-q5_1`,
     message:
-      "使用随 TryRevive 打包的离线语音模型；录音只写入临时文件，转写后立即删除，不发送给 TryRevive 后端或 OpenAI。"
+      "使用随 tryrevive 打包的离线语音模型；录音只写入临时文件，转写后立即删除，不发送给 tryrevive 后端或 OpenAI。"
   });
 }
 
@@ -70,6 +71,13 @@ export async function transcribeLocalSpeech(input: unknown): Promise<LocalSpeech
   try {
     await fs.writeFile(audioPath, request.bytes, { flag: "wx" });
     const threads = Math.max(2, Math.min(8, os.availableParallelism() - 1));
+    const whisperLanguage = request.culture.toLocaleLowerCase("en-US").startsWith("zh")
+      ? "zh"
+      : request.culture.toLocaleLowerCase("en-US").startsWith("en")
+        ? "en"
+        : "auto";
+    const promptArguments =
+      whisperLanguage === "zh" ? ["--prompt", "以下是一段简体中文普通话项目说明。"] : [];
     await execFileAsync(
       runtime.executable,
       [
@@ -78,7 +86,8 @@ export async function transcribeLocalSpeech(input: unknown): Promise<LocalSpeech
         "-f",
         audioPath,
         "-l",
-        request.culture.toLowerCase().startsWith("zh") ? "zh" : "auto",
+        whisperLanguage,
+        ...promptArguments,
         "-otxt",
         "-of",
         outputBase,
@@ -90,7 +99,10 @@ export async function transcribeLocalSpeech(input: unknown): Promise<LocalSpeech
       ],
       { encoding: "utf8", maxBuffer: 512 * 1024, timeout: 180_000, windowsHide: true }
     );
-    const transcript = (await fs.readFile(outputPath, "utf8")).trim().slice(0, 20_000);
+    const transcript = normalizeSpeechTranscript(
+      (await fs.readFile(outputPath, "utf8")).slice(0, 20_000),
+      request.culture
+    );
     if (!transcript) {
       throw new Error("没有识别出清晰语音；请靠近麦克风再试，或直接输入文字。");
     }

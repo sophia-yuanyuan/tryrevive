@@ -10,6 +10,7 @@ import {
   type ProjectAnalysis,
   type RevivalProject
 } from "./model";
+import { isConfirmedInferenceField, recommendProjectDecision } from "./decision-recommendation";
 
 const InferenceCorrectionSchema = z.object({
   title: z.string().trim().min(1).max(80),
@@ -66,6 +67,17 @@ export function correctPendingInference(
   const nextActionText =
     correction.nextActionText ||
     `先处理“${correction.stuckAt}”里能留下可见结果的一步`.slice(0, 160);
+  const suggestedDecision = recommendProjectDecision({
+    text: [
+      correction.originalGoal,
+      correction.lastCompleted,
+      correction.stuckAt,
+      correction.whyMatters,
+      correction.stallReason ?? ""
+    ].join(" "),
+    hasConfirmedProgress: isConfirmedInferenceField(correction.lastCompleted),
+    hasConcreteBlocker: isConfirmedInferenceField(correction.stuckAt)
+  });
   return PendingInferenceSchema.parse({
     ...pending,
     title: correction.title,
@@ -78,6 +90,7 @@ export function correctPendingInference(
       stallReasons: [
         correction.stallReason || `你确认的当前卡点：${correction.stuckAt}`.slice(0, 240)
       ],
+      suggestedDecision,
       nextAction: {
         text: nextActionText,
         doneDefinition: correction.doneDefinition || "留下一个可见、可保存、下次能继续的结果",

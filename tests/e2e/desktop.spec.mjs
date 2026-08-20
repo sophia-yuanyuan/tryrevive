@@ -131,7 +131,7 @@ test("desktop exposes the packaged offline speech runtime without an API key", a
     const capability = await window.evaluate(() => window.tryRevive?.localSpeechCapability());
     expect(capability).toMatchObject({ available: true, culture: "zh-CN" });
     expect(capability?.recognizer).toContain("whisper.cpp 1.9.1");
-    expect(capability?.message).toContain("不发送给 TryRevive 后端或 OpenAI");
+    expect(capability?.message).toContain("不发送给 tryrevive 后端或 OpenAI");
     await expect(
       window.evaluate(() =>
         window.tryRevive?.transcribeLocalSpeech({ bytes: new Uint8Array(44), culture: "zh-CN" })
@@ -555,13 +555,13 @@ test("desktop app launches with an isolated bridge and persists state across res
       )
       .toBe(true);
     await expect(window.getByText("已保存到本地 · 桌面版", { exact: true })).toBeVisible();
-    await expect(window.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "先把现场交给 tryrevive。" })).toBeVisible();
     await window
       .getByLabel("本地文字材料或你记得的内容")
       .fill(
         "桌面端课程项目\n我想完成桌面端课程项目。\n上次已经完成了项目入口。\n现在卡在没有进入下一步。"
       );
-    await window.getByRole("button", { name: "让 TryRevive 先猜一遍" }).click();
+    await window.getByRole("button", { name: "让 tryrevive 先整理一份草稿" }).click();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
 
     await desktop.close();
@@ -569,7 +569,7 @@ test("desktop app launches with an isolated bridge and persists state across res
     window = await desktop.firstWindow();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: /^继续/u }).click();
+    await window.getByRole("button", { name: "接受建议：继续" }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -742,7 +742,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     await window.getByLabel("实际上次做到哪里？").fill("报名表单布局已经完成");
     await window.getByRole("button", { name: "保存修改" }).click();
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: /^继续/u }).click();
+    await window.getByRole("button", { name: "接受建议：缩小" }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();
@@ -1452,7 +1452,7 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     expect(pendingState.pendingInference.sourceKind).toBe("material");
 
     await window.getByRole("button", { name: "正确，继续" }).click();
-    await window.getByRole("button", { name: /^继续/u }).click();
+    await window.getByRole("button", { name: "接受建议：缩小" }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
     ).toBeVisible();

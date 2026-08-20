@@ -3,18 +3,18 @@ import { createTextPdf } from "./material-fixtures.mjs";
 
 async function completeRevivalLoop(page) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "先把现场交给 TryRevive。" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "先把现场交给 tryrevive。" })).toBeVisible();
 
   await page
     .getByLabel("本地文字材料或你记得的内容")
     .fill(
       "课程作品集\n我想完成课程作品集。\n上次已经完成了首页布局。\n现在卡在移动端导航无法收起。"
     );
-  await page.getByRole("button", { name: "让 TryRevive 先猜一遍" }).click();
+  await page.getByRole("button", { name: "让 tryrevive 先整理一份草稿" }).click();
   await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
   await page.getByRole("button", { name: "正确，继续" }).click();
-  await expect(page.getByRole("heading", { name: "现在最诚实的选择是什么？" })).toBeVisible();
-  await page.getByRole("button", { name: /^继续/u }).click();
+  await expect(page.getByRole("heading", { name: "tryrevive 建议：继续" })).toBeVisible();
+  await page.getByRole("button", { name: "接受建议：继续" }).click();
   await expect(
     page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
   ).toBeVisible();
@@ -232,7 +232,7 @@ test("local text materials become one editable draft without persisting the sour
   await expect(page.getByText("将在本机读取的材料")).toBeVisible();
   await page.getByRole("button", { name: "从 2 份材料生成待确认草稿" }).click();
   await expect(page.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
-  await expect(page.getByText("我想完成黑客松报名", { exact: true })).toBeVisible();
+  await expect(page.getByText("我想完成黑客松报名", { exact: true }).first()).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => JSON.stringify(globalThis.localStorage)))
     .not.toContain("这是一句只用于读取的旁支说明");
@@ -243,7 +243,7 @@ test("local text materials become one editable draft without persisting the sour
   await page.getByLabel("预计时间").selectOption("5");
   await page.getByRole("button", { name: "保存修改" }).click();
   await page.getByRole("button", { name: "正确，继续" }).click();
-  await page.getByRole("button", { name: /^继续/u }).click();
+  await page.getByRole("button", { name: "接受建议：继续" }).click();
 
   await expect(
     page.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
@@ -374,7 +374,8 @@ test("an abandoned project remains available in the black-hole history", async (
   await page.getByLabel("上次最后完成了什么？").fill("读完了比赛规则");
   await page.getByLabel("具体卡在哪里？").fill("方向已经不再重要");
   await page.getByRole("button", { name: "现场找回来了" }).click();
-  await page.getByRole("button", { name: /放弃/ }).click();
+  await page.getByText("这个判断不合适？换一个", { exact: true }).click();
+  await page.getByRole("button", { name: /^放弃/u }).click();
   await expect(page.getByRole("heading", { name: "这个项目已经结束" })).toBeVisible();
 
   await page.getByRole("link", { name: "黑胶星球" }).first().click();

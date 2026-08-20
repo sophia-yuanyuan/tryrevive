@@ -561,6 +561,35 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.speech-language-control {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.35rem 0.45rem 0.35rem 0.8rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.66);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.speech-language-select {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.42rem 0.65rem;
+  color: var(--ink);
+  background: rgba(23, 81, 67, 0.08);
+  font: inherit;
+  cursor: pointer;
+}
+
+.speech-language-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .voice-button-active {
   border-color: rgba(186, 54, 45, 0.45);
   color: #922e28;

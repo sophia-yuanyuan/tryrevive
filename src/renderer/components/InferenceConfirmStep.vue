@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import type { PendingInference } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import StageShell from "./StageShell.vue";
@@ -9,6 +9,11 @@ const store = useRevivalStore();
 const editing = ref(false);
 const busy = ref(false);
 const error = ref("");
+const repositoryNeedsNarrowerScope = computed(
+  () =>
+    Boolean(props.pending.repository) &&
+    props.pending.analysis.uncertainties.some((item) => item.includes("扫描已达到"))
+);
 const form = reactive({
   title: "",
   originalGoal: "",
@@ -151,7 +156,7 @@ async function discard(): Promise<void> {
         />
       </div>
       <div class="rounded-3xl border border-[var(--line)] p-5">
-        <p class="summary-label">TryRevive 建议的下一小步</p>
+        <p class="summary-label">tryrevive 建议的下一小步</p>
         <label class="field-label mt-4" for="inference-action">这一步具体做什么？</label>
         <textarea
           id="inference-action"
@@ -218,7 +223,7 @@ async function discard(): Promise<void> {
       </article>
 
       <article class="rounded-3xl border border-[var(--focus)]/20 bg-[var(--focus)]/[0.045] p-5">
-        <p class="summary-label">TryRevive 建议的下一小步</p>
+        <p class="summary-label">tryrevive 建议的下一小步</p>
         <p class="summary-value mt-2">{{ pending.analysis.nextAction.text }}</p>
         <p class="mt-3 text-sm leading-6 text-[var(--muted)]">
           做到这里算完成：{{ pending.analysis.nextAction.doneDefinition }}
@@ -247,6 +252,16 @@ async function discard(): Promise<void> {
         </ul>
       </div>
 
+      <article
+        v-if="repositoryNeedsNarrowerScope"
+        class="rounded-3xl border border-amber-900/15 bg-amber-50/60 p-5"
+      >
+        <p class="summary-label">这不是整个文件夹的完整总结</p>
+        <p class="mt-2 text-sm leading-6 text-[var(--muted)]">
+          本次只依据安全扫描在上限内读到的部分。若你选了磁盘、桌面或很大的总目录，请先换成只属于这个项目的小文件夹。
+        </p>
+      </article>
+
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <div class="grid gap-3 sm:grid-cols-2">
         <button class="primary-button w-full" type="button" :disabled="busy" @click="confirm">
@@ -262,7 +277,11 @@ async function discard(): Promise<void> {
         </button>
       </div>
       <button class="text-button mx-auto block" type="button" :disabled="busy" @click="discard">
-        重新选择材料（丢弃这份草稿）
+        {{
+          repositoryNeedsNarrowerScope
+            ? "选择更小的项目文件夹（丢弃这份草稿）"
+            : "重新选择材料（丢弃这份草稿）"
+        }}
       </button>
       <p class="text-center text-xs leading-5 text-[var(--muted)]">
         来源：{{ pending.analysis.sourceLabel }}

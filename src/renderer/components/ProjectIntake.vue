@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import {
   startLocalSpeechRecording,
@@ -7,6 +7,7 @@ import {
 } from "@/renderer/audio/local-speech-recorder";
 import { parseProjectDump } from "@/shared/domain/intake";
 import { readLocalMaterials, type LocalMaterialBundle } from "@/shared/domain/local-materials";
+import { summarizeWebMaterialSource } from "@/shared/domain/web-source";
 import type { ProjectAnalysis } from "@/shared/domain/model";
 import { MAX_LOCAL_SPEECH_SECONDS } from "@/shared/speech/contracts";
 import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
@@ -14,20 +15,24 @@ import { platform } from "@/renderer/platform/web";
 
 const store = useRevivalStore();
 const context = ref("");
+const sourceUrl = ref("");
 const projectNames = ref("");
 const busy = ref(false);
 const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
+const contextInput = ref<HTMLTextAreaElement | null>(null);
 const localMaterials = ref<LocalMaterialBundle | null>(null);
+const contextSourceKind = ref<"text" | "voice">("text");
+const speechCulture = ref<"zh-CN" | "en-US">("zh-CN");
 const speechPhase = ref<"idle" | "requesting" | "recording" | "transcribing">("idle");
 const speechStatus = ref(
-  "Windows 桌面版使用随应用打包的离线语音模型；无需 API Key，也不会发送给 TryRevive 后端或 OpenAI。"
+  "Windows 桌面版使用随应用打包的离线语音模型；无需 API Key，也不会发送给 tryrevive 后端或 OpenAI。中文转写会统一显示为简体。"
 );
 const speechSeconds = ref(0);
 const parsedProjectNames = computed(() => parseProjectDump(projectNames.value));
 const localAnalysisLabel = computed(() => {
   const count = localMaterials.value?.materials.length ?? 0;
-  return count ? `从 ${count} 份材料生成待确认草稿` : "让 TryRevive 先猜一遍";
+  return count ? `从 ${count} 份材料生成待确认草稿` : "让 tryrevive 先整理一份草稿";
 });
 let speechRecording: LocalSpeechRecording | null = null;
 let speechAbort: AbortController | null = null;
@@ -59,22 +64,22 @@ async function finishLocalSpeech(): Promise<void> {
   speechPhase.value = "transcribing";
   busy.value = true;
   error.value = "";
-  speechStatus.value = "正在使用 TryRevive 离线语音模型转写；录音不会离开这台电脑…";
+  speechStatus.value = "正在使用 tryrevive 离线语音模型转写；录音不会离开这台电脑…";
   try {
     const bytes = await active.stop();
-    const result = await platform.transcribeLocalSpeech({ bytes, culture: "zh-CN" });
+    const result = await platform.transcribeLocalSpeech({ bytes, culture: speechCulture.value });
     if (generation !== speechGeneration) return;
     const transcript = result.transcript.trim();
     context.value = [context.value.trim(), transcript]
       .filter(Boolean)
       .join("\n\n")
       .slice(0, 20_000);
-    speechStatus.value = "已得到一份可修改的本机转写；正在生成待你确认的恢复草稿。";
-    await store.inferLocalContext({
-      content: context.value,
-      sourceKind: "voice",
-      sourceLabel: "TryRevive 离线语音转写"
-    });
+    contextSourceKind.value = "voice";
+    speechStatus.value =
+      "转写已放到下方输入框。请先检查或修改文字，再点击“生成待确认草稿”；现在还没有创建项目。";
+    await nextTick();
+    contextInput.value?.focus();
+    contextInput.value?.setSelectionRange(context.value.length, context.value.length);
   } catch (caught) {
     if (generation !== speechGeneration) return;
     error.value = caught instanceof Error ? caught.message : "本机语音转写失败";
@@ -167,8 +172,17 @@ async function analyzeContext(): Promise<void> {
   const manualContext = context.value.trim();
   const materialBundle = localMaterials.value;
   const content = [manualContext, materialBundle?.content ?? ""].filter(Boolean).join("\n\n");
+  let webSource: ReturnType<typeof summarizeWebMaterialSource>;
+  try {
+    webSource = summarizeWebMaterialSource(sourceUrl.value);
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "网页链接格式不正确";
+    return;
+  }
   if (content.length < 4) {
-    error.value = "至少写一句项目现场，或选择一份本地文字材料。";
+    error.value = webSource
+      ? "tryrevive 目前不会只靠链接读取登录页或未提交表单。请把页面要求和你已填写的内容粘贴到下方，再生成草稿。"
+      : "至少写一句项目现场，或选择一份本地文字材料。";
     return;
   }
   busy.value = true;
@@ -176,8 +190,11 @@ async function analyzeContext(): Promise<void> {
   try {
     await store.inferLocalContext({
       content,
-      sourceKind: materialBundle ? "material" : "text",
-      sourceLabel: materialBundle?.sourceLabel ?? "主动输入",
+      sourceKind: materialBundle || webSource ? "material" : contextSourceKind.value,
+      sourceLabel:
+        materialBundle?.sourceLabel ??
+        webSource?.sourceLabel ??
+        (contextSourceKind.value === "voice" ? "tryrevive 离线语音转写（已由你检查）" : "主动输入"),
       titleHint: materialBundle?.titleHint
     });
   } catch (caught) {
@@ -228,9 +245,9 @@ onBeforeUnmount(() => {
   <section class="intake-stage" aria-labelledby="intake-title">
     <div class="intake-copy">
       <p class="eyebrow">重新接上一个真实项目</p>
-      <h1 id="intake-title" class="intake-title">先把现场交给 TryRevive。</h1>
+      <h1 id="intake-title" class="intake-title">先把现场交给 tryrevive。</h1>
       <p class="intake-description">
-        选择项目文件夹、上传常见附件、说一段话，或写下你记得的内容。TryRevive
+        选择项目文件夹、上传常见附件、说一段话，或写下你记得的内容。tryrevive
         会先猜“你做到这里”，由你点正确或修改。
       </p>
       <div class="intake-principles" aria-label="理解边界">
@@ -246,6 +263,12 @@ onBeforeUnmount(() => {
         <p class="field-help">
           桌面版只读扫描最多 180
           个可读文件；跳过依赖、构建产物、隐藏目录、凭据和大文件，不运行任何脚本。
+        </p>
+        <p
+          class="mt-3 rounded-2xl bg-black/[0.035] px-4 py-3 text-sm leading-6 text-[var(--muted)]"
+        >
+          请选择只属于一个项目的文件夹，不要选择整个 D 盘、桌面或下载目录。PDF、DOCX
+          和报名材料请使用下方“选择本地材料”。
         </p>
         <button
           class="primary-button mt-4 w-full"
@@ -275,6 +298,18 @@ onBeforeUnmount(() => {
             <p class="field-help">最好包含：最初目标、上次做到哪里、现在卡在哪里。</p>
           </div>
           <div class="flex flex-wrap gap-2">
+            <label class="speech-language-control">
+              <span>语音语言</span>
+              <select
+                v-model="speechCulture"
+                class="speech-language-select"
+                :disabled="busy || speechPhase !== 'idle'"
+                aria-label="语音识别语言"
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="en-US">English</option>
+              </select>
+            </label>
             <button
               class="secondary-button voice-button"
               :class="{ 'voice-button-active': speechPhase === 'recording' }"
@@ -285,7 +320,7 @@ onBeforeUnmount(() => {
             >
               <span class="voice-dot" aria-hidden="true" />
               <template v-if="speechPhase === 'recording'">
-                停止并本机理解 {{ speechSeconds }} 秒
+                停止并转写 {{ speechSeconds }} 秒
               </template>
               <template v-else-if="speechPhase === 'requesting'">正在请求麦克风…</template>
               <template v-else-if="speechPhase === 'transcribing'">正在本机转写…</template>
@@ -311,6 +346,22 @@ onBeforeUnmount(() => {
         </div>
 
         <p class="voice-status" aria-live="polite">{{ speechStatus }}</p>
+
+        <div class="rounded-2xl border border-[var(--line)] bg-white/45 p-4">
+          <label class="field-label" for="source-url">网页或飞书链接（可选）</label>
+          <input
+            id="source-url"
+            v-model="sourceUrl"
+            class="field-input mt-2"
+            inputmode="url"
+            maxlength="2048"
+            placeholder="https://example.com/hackathon/apply"
+          />
+          <p class="mt-2 text-xs leading-5 text-[var(--muted)]">
+            当前不会自动登录或读取未提交表单。请把页面要求、截止时间和你已经填写的内容复制到下方；也可以从飞书导出
+            PDF/DOCX 后上传。草稿只保存站点名，不保存链接里的查询参数或邀请 token。
+          </p>
+        </div>
 
         <div
           v-if="localMaterials"
@@ -339,15 +390,16 @@ onBeforeUnmount(() => {
 
         <textarea
           id="project-context"
+          ref="contextInput"
           v-model="context"
           class="field-input intake-textarea"
           maxlength="20000"
           autofocus
-          placeholder="我想完成 TryRevive 桌面版。上次已经接好 Vue 页面，现在卡在不知道怎样把仓库现状变成下一小步。"
+          placeholder="我想完成 tryrevive 桌面版。上次已经接好 Vue 页面，现在卡在不知道怎样把仓库现状变成下一小步。"
         />
         <p class="voice-status">
           本机支持 TXT、Markdown、CSV、JSON、YAML、可复制文字的 PDF 和 DOCX，一次最多 8
-          份；不会发送给 TryRevive 后端或
+          份；不会发送给 tryrevive 后端或
           OpenAI。一次请选择属于同一个项目的材料；多个项目请逐个恢复。扫描图片不会
           OCR；音频文件不会冒充已理解，只有你主动点击上方本机语音并确认麦克风权限才会转写。
         </p>
