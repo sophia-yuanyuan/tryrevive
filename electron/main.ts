@@ -400,6 +400,10 @@ function createWindow(): BrowserWindow {
   window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedRendererUrl(url, process.env.ELECTRON_RENDERER_URL)) event.preventDefault();
   });
+  window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) focusGuardian.stop(false);
+  });
+  window.webContents.on("render-process-gone", () => focusGuardian.stop(false));
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => focusGuardian.stop(false));
 

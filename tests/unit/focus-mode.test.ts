@@ -316,4 +316,43 @@ describe("FocusMode guardian controls", () => {
     await flushPromises();
     expect(mocks.stop).not.toHaveBeenCalled();
   });
+
+  it("stops a guardian whose start finishes after the focus view is gone", async () => {
+    let resolveStart: (event: FocusEvent) => void = () => undefined;
+    mocks.start.mockReturnValue(
+      new Promise<FocusEvent>((resolve) => {
+        resolveStart = resolve;
+      })
+    );
+    const project = createProject("刷新安全项目", 1_800_000_000_000);
+    project.action = {
+      id: "action-late-guardian",
+      text: "只改报名页标题",
+      doneDefinition: "新标题已经保存",
+      minutes: 5,
+      startedAt: 1_800_000_000_000,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "04:59", started: true },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+    await wrapper.get("button.focus-entry-hold").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    await wrapper.get('[aria-label="本次白名单软件"] button.focus-app-chip').trigger("click");
+    await wrapper.get("button.focus-guardian-start").trigger("click");
+    expect(mocks.start).toHaveBeenCalledTimes(1);
+
+    wrapper.unmount();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+    resolveStart(startingEvent);
+    await flushPromises();
+    expect(mocks.stop).toHaveBeenCalledTimes(2);
+  });
 });

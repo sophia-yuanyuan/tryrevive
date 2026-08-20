@@ -42,6 +42,9 @@ let unsubscribeFocus: () => void = () => undefined;
 let entryAnimationFrame = 0;
 let entryStartedAt = 0;
 let completionTimer = 0;
+let guardianLifecycleGeneration = 0;
+let guardianStarting = false;
+let focusModeUnmounted = false;
 const quickApps = [
   { label: "Chrome", value: "chrome" },
   { label: "Edge", value: "msedge" },
@@ -162,34 +165,55 @@ async function startGuardian(): Promise<void> {
     guardianMessage.value = "严格白名单至少要选择一个完成这一步需要的软件。";
     return;
   }
+  const generation = ++guardianLifecycleGeneration;
+  guardianStarting = true;
   guardianBusy.value = true;
   guardianMessage.value = "";
   try {
-    receiveFocusEvent(
-      await platform.startFocusGuardian({
-        allowedApps,
-        blockedApps: [...blockedApps.value, ...parseCustomApps(customBlockedAppsText.value)],
-        strictAllowlist: strictAllowlist.value,
-        graceSeconds: 12,
-        idlePauseSeconds: 90
-      })
-    );
+    const event = await platform.startFocusGuardian({
+      allowedApps,
+      blockedApps: [...blockedApps.value, ...parseCustomApps(customBlockedAppsText.value)],
+      strictAllowlist: strictAllowlist.value,
+      graceSeconds: 12,
+      idlePauseSeconds: 90
+    });
+    if (focusModeUnmounted || generation !== guardianLifecycleGeneration) {
+      await platform.stopFocusGuardian().catch(() => undefined);
+      return;
+    }
+    receiveFocusEvent(event);
   } catch (error) {
-    guardianMessage.value = error instanceof Error ? error.message : "偏离提醒启动失败";
+    if (!focusModeUnmounted && generation === guardianLifecycleGeneration) {
+      guardianMessage.value = error instanceof Error ? error.message : "偏离提醒启动失败";
+    }
   } finally {
-    guardianBusy.value = false;
+    if (generation === guardianLifecycleGeneration) {
+      guardianStarting = false;
+      guardianBusy.value = false;
+    }
   }
 }
 
 async function stopGuardian(): Promise<void> {
-  if (!guardianActive.value) return;
+  const shouldStop = guardianActive.value || guardianStarting;
+  const generation = ++guardianLifecycleGeneration;
+  guardianStarting = false;
+  if (!shouldStop) return;
   try {
-    receiveFocusEvent(await platform.stopFocusGuardian());
+    const event = await platform.stopFocusGuardian();
+    if (!focusModeUnmounted && generation === guardianLifecycleGeneration) {
+      receiveFocusEvent(event);
+    }
   } catch (error) {
-    guardianMessage.value = error instanceof Error ? error.message : "偏离提醒停止失败";
+    if (!focusModeUnmounted && generation === guardianLifecycleGeneration) {
+      guardianMessage.value = error instanceof Error ? error.message : "偏离提醒停止失败";
+    }
   } finally {
-    guardianActive.value = false;
-    if (resetCause.value === "guardian") resetOpen.value = false;
+    if (generation === guardianLifecycleGeneration) {
+      guardianActive.value = false;
+      guardianBusy.value = false;
+      if (resetCause.value === "guardian") resetOpen.value = false;
+    }
   }
 }
 
@@ -251,12 +275,16 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  focusModeUnmounted = true;
+  const shouldStopGuardian = guardianActive.value || guardianStarting;
+  guardianLifecycleGeneration += 1;
+  guardianStarting = false;
   document.body.classList.remove("focus-mode-active");
   window.removeEventListener("keydown", onKeydown);
   unsubscribeFocus();
   cancelEntryHold();
   if (completionTimer) window.clearTimeout(completionTimer);
-  if (guardianActive.value) void platform.stopFocusGuardian().catch(() => undefined);
+  if (shouldStopGuardian) void platform.stopFocusGuardian().catch(() => undefined);
   phaseTimers.forEach(window.clearTimeout);
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
 });

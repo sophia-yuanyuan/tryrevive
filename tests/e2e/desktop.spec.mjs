@@ -527,9 +527,18 @@ test("desktop app launches with an isolated bridge and persists state across res
     await focus.getByLabel("本次白名单软件").getByRole("button", { name: "Chrome" }).click();
     await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
     await expect(focus.getByText("运行中", { exact: true })).toBeVisible();
-
     await focus.getByRole("button", { name: "结束本次守护" }).click();
     await expect(focus.getByText("默认关闭", { exact: true })).toBeVisible();
+    await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
+    await expect(focus.getByText("运行中", { exact: true })).toBeVisible();
+
+    await window.reload();
+    await expect(window.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+    await expect
+      .poll(() =>
+        window.evaluate(() => window.tryRevive.focusCapability().then((value) => value.active))
+      )
+      .toBe(false);
   } finally {
     await desktop.close().catch(() => undefined);
     await rm(userData, { recursive: true, force: true });
