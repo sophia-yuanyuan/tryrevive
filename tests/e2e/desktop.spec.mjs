@@ -767,7 +767,7 @@ test("desktop repository inference reaches focus, confirmed evidence, and the ne
     await desktop.evaluate(({ dialog }, selectedPath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
     }, repository);
-    await window.getByRole("button", { name: "选择项目文件夹并安全扫描" }).click();
+    await window.getByRole("button", { name: "我知道具体项目文件夹" }).click();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
     await expect(window.getByText(/补上报名截止日期/).first()).toBeVisible();
     await expect(window.getByText("src/main.ts", { exact: true }).first()).toBeVisible();
