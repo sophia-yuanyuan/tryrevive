@@ -13,6 +13,7 @@ import {
   type RepositoryBindingStorage
 } from "./repository-binding-store";
 import { scanLocalRepository } from "./repository-scanner";
+import { isBroadRepositoryRoot } from "./repository-selection";
 
 let bindingStorage: RepositoryBindingStorage | null = null;
 
@@ -31,12 +32,26 @@ function bindingId(rootPath: string): string {
 }
 
 async function scanBinding(binding: RepositoryBinding): Promise<RepositoryScanResult> {
+  let verifiedRoot: string;
+  try {
+    verifiedRoot = await fs.realpath(binding.rootPath);
+    if (!(await fs.stat(verifiedRoot)).isDirectory()) throw new Error("not a directory");
+  } catch (error) {
+    throw new Error("这个项目文件夹已经不可用；请重新选择一个更具体的项目文件夹", {
+      cause: error
+    });
+  }
+  if (isBroadRepositoryRoot(verifiedRoot)) {
+    throw new Error(
+      "这个旧绑定指向整个磁盘；tryrevive 已停止扫描。请重新选择只属于一个项目的文件夹。"
+    );
+  }
   try {
     return RepositoryScanResultSchema.parse(
-      await scanLocalRepository(binding.rootPath, binding.id, Date.now())
+      await scanLocalRepository(verifiedRoot, binding.id, Date.now())
     );
   } catch (error) {
-    throw new Error("TryRevive 无法安全读取这个项目文件夹；没有创建项目，也没有修改文件", {
+    throw new Error("tryrevive 无法安全读取这个项目文件夹；没有创建项目，也没有修改文件", {
       cause: error
     });
   }
@@ -65,6 +80,11 @@ export async function chooseLocalRepository(
     if (!(await fs.stat(realRoot)).isDirectory()) throw new Error("not a directory");
   } catch {
     throw new Error("选择的项目文件夹已经不可用；没有创建项目");
+  }
+  if (isBroadRepositoryRoot(realRoot)) {
+    throw new Error(
+      "不要选择整个磁盘；请选择只属于一个项目的文件夹，例如 D:\\projects\\项目名。tryrevive 没有扫描整个磁盘，也没有创建项目。"
+    );
   }
 
   const now = Date.now();
@@ -96,7 +116,7 @@ export async function rescanLocalRepository(bindingInput: unknown): Promise<Repo
   const store = await repositoryBindings().read();
   const storedBinding = store.entries.find((entry) => entry.id === id);
   if (!storedBinding) {
-    throw new Error("这个项目文件夹需要重新选择；TryRevive 没有保存它的绝对路径到项目备份");
+    throw new Error("这个项目文件夹需要重新选择；tryrevive 没有保存它的绝对路径到项目备份");
   }
   const binding = { ...storedBinding };
   const scan = await scanBinding(binding);

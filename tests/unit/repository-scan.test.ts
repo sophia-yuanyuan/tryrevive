@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isSecretFileName, scanLocalRepository } from "../../electron/repository-scanner";
+import { isBroadRepositoryRoot } from "../../electron/repository-selection";
 import { SafeRepositoryPathSchema } from "../../src/shared/domain/repository";
 
 const temporaryRoots: string[] = [];
@@ -22,6 +23,15 @@ afterEach(async () => {
 });
 
 describe("bounded local repository scan", () => {
+  it("rejects drive, UNC share, and filesystem roots before scanning", () => {
+    expect(isBroadRepositoryRoot("D:\\")).toBe(true);
+    expect(isBroadRepositoryRoot("C:/")).toBe(true);
+    expect(isBroadRepositoryRoot("\\\\server\\share\\")).toBe(true);
+    expect(isBroadRepositoryRoot("/")).toBe(true);
+    expect(isBroadRepositoryRoot("D:\\projects\\tryrevive")).toBe(false);
+    expect(isBroadRepositoryRoot("/work/tryrevive")).toBe(false);
+  });
+
   it("derives a cautious recovery draft without reading secrets or executing scripts", async () => {
     const workspace = await temporaryDirectory();
     const repository = path.join(workspace, "repo");
