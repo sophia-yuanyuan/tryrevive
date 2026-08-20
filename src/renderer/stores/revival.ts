@@ -135,13 +135,6 @@ export const useRevivalStore = defineStore("revival", () => {
     }
   }
 
-  function replaceActive(project: RevivalProject): void {
-    assertNoCandidateCommit();
-    const index = data.value.projects.findIndex((item) => item.id === project.id);
-    if (index < 0) throw new Error("找不到当前项目");
-    data.value.projects[index] = project;
-  }
-
   function stateSnapshot(): AppState {
     return AppStateSchema.parse(JSON.parse(JSON.stringify(data.value)));
   }
@@ -152,32 +145,49 @@ export const useRevivalStore = defineStore("revival", () => {
     }
   }
 
+  async function commitActiveProject(
+    update: (project: RevivalProject) => RevivalProject,
+    beforePublish?: () => void
+  ): Promise<void> {
+    const projectId = activeProject.value?.id;
+    if (!projectId) return;
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const index = candidate.projects.findIndex((project) => project.id === projectId);
+      if (index < 0) throw new Error("找不到当前项目");
+      candidate.projects[index] = update(candidate.projects[index]!);
+      return candidate;
+    }, beforePublish);
+  }
+
   async function newProject(title: string): Promise<void> {
     await newProjects([title]);
   }
 
   async function newProjects(titles: string[]): Promise<void> {
-    assertNoCandidateCommit();
-    const existing = new Set(
-      data.value.projects.map((project) => project.title.toLocaleLowerCase("zh-CN"))
-    );
-    const available = Math.max(0, 100 - data.value.projects.length);
-    const projects = titles
-      .map((title) => title.trim().slice(0, 80))
-      .filter(Boolean)
-      .filter((title) => {
-        const key = title.toLocaleLowerCase("zh-CN");
-        if (existing.has(key)) return false;
-        existing.add(key);
-        return true;
-      })
-      .slice(0, available)
-      .map((title) => createProject(title));
-    if (!projects.length) throw new Error("没有发现可新建的项目，可能都已经在本地存档中。");
-    data.value.projects.unshift(...projects);
-    data.value.activeProjectId = projects[0]?.id ?? null;
-    data.value.pendingInference = null;
-    await persist();
+    await commitCandidateBuild(() => {
+      const candidate = stateSnapshot();
+      const existing = new Set(
+        candidate.projects.map((project) => project.title.toLocaleLowerCase("zh-CN"))
+      );
+      const available = Math.max(0, 100 - candidate.projects.length);
+      const projects = titles
+        .map((title) => title.trim().slice(0, 80))
+        .filter(Boolean)
+        .filter((title) => {
+          const key = title.toLocaleLowerCase("zh-CN");
+          if (existing.has(key)) return false;
+          existing.add(key);
+          return true;
+        })
+        .slice(0, available)
+        .map((title) => createProject(title));
+      if (!projects.length) throw new Error("没有发现可新建的项目，可能都已经在本地存档中。");
+      candidate.projects.unshift(...projects);
+      candidate.activeProjectId = projects[0]?.id ?? null;
+      candidate.pendingInference = null;
+      return candidate;
+    });
   }
 
   async function inferRepository(): Promise<boolean> {
@@ -287,27 +297,19 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function recordRestore(restore: RestoreContext): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(saveRestore(activeProject.value, restore));
-    await persist();
+    await commitActiveProject((project) => saveRestore(project, restore));
   }
 
   async function applyAnalysis(analysis: ProjectAnalysis): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(applyProjectAnalysis(activeProject.value, analysis));
-    await persist();
+    await commitActiveProject((project) => applyProjectAnalysis(project, analysis));
   }
 
   async function decide(decision: Decision): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(chooseDecision(activeProject.value, decision));
-    await persist();
+    await commitActiveProject((project) => chooseDecision(project, decision));
   }
 
   async function diagnose(answers: string[]): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(saveDiagnosis(activeProject.value, answers));
-    await persist();
+    await commitActiveProject((project) => saveDiagnosis(project, answers));
   }
 
   async function setAction(input: {
@@ -315,9 +317,7 @@ export const useRevivalStore = defineStore("revival", () => {
     doneDefinition: string;
     minutes: number;
   }): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(assignAction(activeProject.value, input));
-    await persist();
+    await commitActiveProject((project) => assignAction(project, input));
   }
 
   async function setActionAndRequestFocus(input: {
@@ -325,15 +325,14 @@ export const useRevivalStore = defineStore("revival", () => {
     doneDefinition: string;
     minutes: number;
   }): Promise<void> {
-    if (!activeProject.value) return;
-    const projectId = activeProject.value.id;
-    const candidate = stateSnapshot();
-    const index = candidate.projects.findIndex((project) => project.id === projectId);
-    if (index < 0) throw new Error("找不到当前项目");
-    candidate.projects[index] = assignAction(candidate.projects[index]!, input);
-    await commitCandidate(candidate, () => {
-      focusRequestedProjectId.value = projectId;
-    });
+    const projectId = activeProject.value?.id;
+    if (!projectId) return;
+    await commitActiveProject(
+      (project) => assignAction(project, input),
+      () => {
+        focusRequestedProjectId.value = projectId;
+      }
+    );
   }
 
   function consumeFocusRequest(projectId: string): boolean {
@@ -470,9 +469,7 @@ export const useRevivalStore = defineStore("revival", () => {
   }
 
   async function resume(): Promise<void> {
-    if (!activeProject.value) return;
-    replaceActive(resumeProject(activeProject.value));
-    await persist();
+    await commitActiveProject((project) => resumeProject(project));
   }
 
   async function completeProject(mood: ProjectMood): Promise<void> {
@@ -515,19 +512,21 @@ export const useRevivalStore = defineStore("revival", () => {
     if (!imported.projects.length && !imported.pendingInference && result.state) {
       throw new Error("备份中没有可导入的项目或待确认恢复摘要");
     }
-    data.value = { ...imported, legacyMigrationCompleted: true };
+    const candidate = AppStateSchema.parse({ ...imported, legacyMigrationCompleted: true });
     const wasRecoveryRequired = recoveryRequired.value;
-    recoveryRequired.value = false;
     try {
       if (result.persisted) {
+        data.value = candidate;
         saveStatus.value = "saved";
       } else {
-        await persist();
+        recoveryRequired.value = false;
+        await commitCandidate(candidate);
       }
     } catch (error) {
       recoveryRequired.value = wasRecoveryRequired;
       throw error;
     }
+    recoveryRequired.value = false;
     errorMessage.value = "";
     recoveryNotice.value = "有效备份已导入，本地自动保存已经恢复";
     return "备份已导入";
