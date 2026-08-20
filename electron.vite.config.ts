@@ -31,6 +31,9 @@ export default defineConfig({
   renderer: {
     root: rendererRoot,
     plugins: [vue(), tailwindcss()],
+    optimizeDeps: {
+      exclude: ["pdfjs-dist"]
+    },
     resolve: {
       alias: {
         "@": path.resolve(projectRoot, "src")
