@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
-import type { RevivalProject } from "@/shared/domain/model";
+import type { ProjectAnalysis, RevivalProject } from "@/shared/domain/model";
 import { useRevivalStore } from "@/renderer/stores/revival";
 import CloudContextAssist from "./CloudContextAssist.vue";
 import StageShell from "./StageShell.vue";
@@ -22,6 +22,29 @@ async function submit(): Promise<void> {
     busy.value = false;
   }
 }
+
+async function acceptCloudAnalysis(
+  analysis: ProjectAnalysis,
+  sourceKind: "material" | "voice",
+  titleHint: string,
+  cloudOperationId: string
+): Promise<void> {
+  busy.value = true;
+  error.value = "";
+  try {
+    await store.inferProvidedAnalysis({
+      analysis,
+      sourceKind,
+      titleHint,
+      cloudOperationId
+    });
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "云端恢复草稿保存失败";
+    throw caught;
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -30,7 +53,7 @@ async function submit(): Promise<void> {
     :title="`先找回「${project.title}」的现场`"
     description="只回答最有用的四件事。不需要复盘全部，也不用把计划写得漂亮。"
   >
-    <CloudContextAssist account-only />
+    <CloudContextAssist account-only :persist-draft="acceptCloudAnalysis" />
     <form class="space-y-5" @submit.prevent="submit">
       <div>
         <label class="field-label" for="last-completed">上次最后完成了什么？</label>

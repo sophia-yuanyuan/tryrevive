@@ -53,6 +53,7 @@ import InferenceConfirmStep from "@/renderer/components/InferenceConfirmStep.vue
 import DecisionStep from "@/renderer/components/DecisionStep.vue";
 import CloudContextAssist from "@/renderer/components/CloudContextAssist.vue";
 import ProjectIntake from "@/renderer/components/ProjectIntake.vue";
+import RestoreStep from "@/renderer/components/RestoreStep.vue";
 import { useRevivalStore } from "@/renderer/stores/revival";
 
 function scanResult() {
@@ -579,6 +580,48 @@ describe("inference-first components", () => {
       operationId
     );
     expect(mocks.clearCloudAnalysisCheckpoint).toHaveBeenCalledWith(operationId);
+  });
+
+  it("recovers a completed cloud analysis from an existing project's restore page", async () => {
+    const store = useRevivalStore();
+    await store.newProject("旧项目");
+    const existingProject = store.activeProject!;
+    const operationId = "cloud-operation-existing-project-123456";
+    mocks.cloudStatus.mockResolvedValue({
+      available: true,
+      authenticated: true,
+      balance: { speechMinutes: 2, projectAnalyses: 1 },
+      secureSessionStorage: true,
+      paymentAvailable: false,
+      message: "云端测试账户已连接"
+    });
+    mocks.recoverCloudAnalysis.mockResolvedValue({
+      status: "succeeded",
+      sourceKind: "material",
+      createdAt: 1_800_000_000_000,
+      result: {
+        draft: scanResult().analysis,
+        balance: { speechMinutes: 2, projectAnalyses: 0 },
+        charged: { speechMinutes: 0, projectAnalyses: 1 },
+        idempotencyKey: operationId
+      }
+    });
+    mocks.saveState.mockClear();
+
+    const wrapper = mount(RestoreStep, { props: { project: existingProject } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("查看云端入口"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(store.data.projects).toHaveLength(1);
+    expect(store.data.projects[0]?.title).toBe("旧项目");
+    expect(store.activeProject).toBeNull();
+    expect(store.pendingInference?.analysis.id).toBe(scanResult().analysis.id);
+    expect(store.data.deliveredCloudOperations).toEqual([operationId]);
+    expect(mocks.clearCloudAnalysisCheckpoint).toHaveBeenCalledWith(operationId);
+    expect(mocks.saveState).toHaveBeenCalledTimes(1);
   });
 
   it("corrects a draft before confirmation creates one project awaiting a decision", async () => {
