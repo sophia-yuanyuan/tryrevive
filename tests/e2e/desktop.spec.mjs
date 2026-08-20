@@ -234,7 +234,9 @@ function createPendingState(title, now = 1_800_000_000_000) {
   };
 }
 
-async function startCloudSessionHarness() {
+async function startCloudSessionHarness({
+  firstRedeemBalance = { speechMinutes: 2, projectAnalyses: 1 }
+} = {}) {
   const calls = [];
   const sessions = new Map();
   const quotes = new Map();
@@ -245,6 +247,7 @@ async function startCloudSessionHarness() {
   let analysisMode = "approved";
   let costProtection = true;
   let dropNextAnalyzeResponse = false;
+  let failNextAnalyze = false;
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -283,7 +286,7 @@ async function startCloudSessionHarness() {
       const sessionToken = `session_token_${String(redeemCount).padStart(40, "0")}`;
       const balance =
         redeemCount === 1
-          ? { speechMinutes: 2, projectAnalyses: 1 }
+          ? { ...firstRedeemBalance }
           : redeemCount === 2
             ? { speechMinutes: 5, projectAnalyses: 3 }
             : { speechMinutes: 1, projectAnalyses: 1 };
@@ -450,7 +453,10 @@ async function startCloudSessionHarness() {
         charged: quote.cost,
         claimed: false,
         expiresAt: Date.now() + 10 * 60 * 1000,
-        result: null
+        result: null,
+        failed: false,
+        refunded: false,
+        errorCode: null
       });
       return send(200, {
         status: "reserved",
@@ -467,6 +473,16 @@ async function startCloudSessionHarness() {
         return send(200, { status: "not_found", idempotencyKey: body.idempotencyKey });
       }
       if (reservation.result) return send(200, { status: "succeeded", result: reservation.result });
+      if (reservation.failed) {
+        return send(200, {
+          status: "failed",
+          idempotencyKey: body.idempotencyKey,
+          balance,
+          charged: reservation.charged,
+          refunded: reservation.refunded,
+          errorCode: reservation.errorCode
+        });
+      }
       return send(200, {
         status: "pending",
         idempotencyKey: body.idempotencyKey,
@@ -487,7 +503,26 @@ async function startCloudSessionHarness() {
       ) {
         return send(409, { error: "reservation_unavailable", message: "测试预留无效" });
       }
+      if (reservation.failed) {
+        return send(409, {
+          error: "previous_attempt_failed",
+          message: "上次处理失败且额度已归还，请重新发起一次处理"
+        });
+      }
       reservation.claimed = true;
+      if (failNextAnalyze) {
+        failNextAnalyze = false;
+        balance.speechMinutes += reservation.charged.speechMinutes;
+        balance.projectAnalyses += reservation.charged.projectAnalyses;
+        reservation.failed = true;
+        reservation.refunded = true;
+        reservation.errorCode = "openai_unavailable";
+        return send(502, {
+          error: "analysis_failed",
+          message: "云端处理失败，预留算力已经归还。",
+          details: { refunded: true, balance }
+        });
+      }
       const result = {
         draft: {
           id: "analysis_cloud_e2e",
@@ -544,6 +579,9 @@ async function startCloudSessionHarness() {
     },
     dropAnalyzeResponseOnce() {
       dropNextAnalyzeResponse = true;
+    },
+    failAnalyzeOnce() {
+      failNextAnalyze = true;
     },
     close: () => new Promise((resolve) => server.close(resolve))
   };
@@ -1428,6 +1466,126 @@ test("desktop privacy center exports data, verifies no source copy, and deletes 
   }
 });
 
+test("desktop cloud quote blocks upload when balance is insufficient", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  test.setTimeout(60_000);
+  const harness = await startCloudSessionHarness({
+    firstRedeemBalance: { speechMinutes: 0, projectAnalyses: 0 }
+  });
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-insufficient-e2e-"));
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await expect(window.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
+    await window.getByLabel("算力兑换码").fill("EMPTY-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 0 分钟语音、0 次项目理解")).toBeVisible();
+    await window.locator('input[type="file"][accept*=".pptx"]').setInputFiles({
+      name: "余额不足测试.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("这段正文只能在用户确认且余额足够后上传。", "utf8")
+    });
+    await window.getByRole("button", { name: "查看预计消耗（不上传内容）" }).click();
+
+    await expect(window.getByText("上传确认", { exact: true })).toBeVisible();
+    await expect(window.getByRole("alert")).toHaveText(
+      "当前余额不足，因此不会上传。请先补充算力。"
+    );
+    await expect(window.getByRole("button", { name: "确认上传并生成草稿" })).toBeDisabled();
+    expect(harness.calls.filter((call) => call.path === "/v1/cloud/quote")).toHaveLength(1);
+    expect(
+      harness.calls.filter((call) =>
+        ["/v1/cloud/reservations", "/v1/cloud/analyze"].includes(call.path)
+      )
+    ).toHaveLength(0);
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("desktop cloud upstream failure refunds balance and can retry", async () => {
+  test.skip(
+    Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
+    "local HTTP harness is development-only"
+  );
+  test.setTimeout(75_000);
+  const harness = await startCloudSessionHarness();
+  const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-refund-e2e-"));
+  const statePath = path.join(userData, "tryrevive-state.json");
+  const checkpointPath = path.join(userData, "tryrevive-cloud-analysis-checkpoint.bin");
+  const desktop = await electron.launch({
+    args: [`--user-data-dir=${userData}`, projectRoot],
+    cwd: projectRoot,
+    env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
+  });
+
+  try {
+    const window = await desktop.firstWindow();
+    await expect(window.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
+    await window.getByLabel("算力兑换码").fill("FIRST-CODE");
+    await window.getByRole("button", { name: "兑换算力" }).click();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+    await window.locator('input[type="file"][accept*=".pptx"]').setInputFiles({
+      name: "退款重试测试.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("项目简介已经写完，现在需要整理个人分工。", "utf8")
+    });
+    await window.getByRole("button", { name: "查看预计消耗（不上传内容）" }).click();
+    await expect(window.getByText("上传确认", { exact: true })).toBeVisible();
+
+    harness.failAnalyzeOnce();
+    await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
+    await expect(window.getByRole("alert")).toHaveText("云端处理失败，预留算力已经归还。");
+    await expect(window.getByText("上次云端任务还需要对账", { exact: true })).toBeVisible();
+    await expect(window.getByRole("button", { name: "检查上次处理结果" })).toBeVisible();
+    expect((await readFile(checkpointPath)).byteLength).toBeGreaterThan(0);
+    expect(harness.calls.filter((call) => call.path === "/v1/cloud/reservations")).toHaveLength(1);
+    expect(harness.calls.filter((call) => call.path === "/v1/cloud/analyze")).toHaveLength(1);
+
+    await window.getByRole("button", { name: "检查上次处理结果" }).click();
+    await expect(
+      window.getByText("上次云端处理失败或过期，预留额度已经退回。请重新选择材料。", {
+        exact: true
+      })
+    ).toBeVisible();
+    await expect(window.getByText("还可使用 2 分钟语音、1 次项目理解")).toBeVisible();
+    await expect(window.getByText("上次云端任务还需要对账", { exact: true })).toHaveCount(0);
+    await expect(readFile(checkpointPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    await window.getByRole("button", { name: "查看预计消耗（不上传内容）" }).click();
+    await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
+    await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+
+    const quoteCalls = harness.calls.filter((call) => call.path === "/v1/cloud/quote");
+    const reserveCalls = harness.calls.filter((call) => call.path === "/v1/cloud/reservations");
+    const analyzeCalls = harness.calls.filter((call) => call.path === "/v1/cloud/analyze");
+    expect(quoteCalls).toHaveLength(2);
+    expect(reserveCalls).toHaveLength(2);
+    expect(analyzeCalls).toHaveLength(2);
+    expect(reserveCalls[0].body.idempotencyKey).not.toBe(reserveCalls[1].body.idempotencyKey);
+    const reservations = [...harness.reservations.values()];
+    expect(reservations[0]).toMatchObject({ failed: true, refunded: true });
+    expect(reservations[1].result.balance).toEqual({ speechMinutes: 2, projectAnalyses: 0 });
+    const pendingState = JSON.parse(await readFile(statePath, "utf8"));
+    expect(pendingState.projects).toHaveLength(0);
+    expect(pendingState.pendingInference.sourceKind).toBe("material");
+  } finally {
+    await desktop.close().catch(() => undefined);
+    await harness.close().catch(() => undefined);
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
 test("desktop cloud inference reserves before upload and survives a full relaunch", async () => {
   test.skip(
     Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
@@ -1479,6 +1637,16 @@ test("desktop cloud inference reserves before upload and survives a full relaunc
     harness.dropAnalyzeResponseOnce();
     await window.getByRole("button", { name: "确认上传并生成草稿" }).click();
     await expect(window.getByRole("button", { name: "检查上次处理结果" })).toBeVisible();
+    await expect(window.getByRole("button", { name: "退出云端算力" })).toBeDisabled();
+    const disconnectError = await window.evaluate(async () => {
+      try {
+        await window.tryRevive.disconnectCloud();
+        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    });
+    expect(disconnectError).toContain("仍需对账");
     const encryptedCheckpoint = await readFile(
       path.join(userData, "tryrevive-cloud-analysis-checkpoint.bin")
     );

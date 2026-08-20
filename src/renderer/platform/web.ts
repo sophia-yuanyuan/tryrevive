@@ -103,6 +103,19 @@ function pickJsonFile(): Promise<ImportResult> {
   });
 }
 
+async function callDesktopCloud<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error ?? "");
+    const message = rawMessage
+      .replace(/^Error invoking remote method '[^']+':\s*/u, "")
+      .replace(/^[A-Za-z0-9]*Error:\s*/u, "")
+      .trim();
+    throw new Error(message || "tryrevive 桌面服务暂时不可用", { cause: error });
+  }
+}
+
 const webPlatform: AppPlatform = {
   kind: "web",
   async loadState() {
@@ -255,20 +268,21 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     setFullScreen: (enabled) => bridge.setFullScreen(enabled),
     onFullScreenChanged: (listener) => bridge.onFullScreenChanged(listener),
     openExternal: (url) => bridge.openExternal(url),
-    cloudStatus: () => bridge.cloudStatus(),
-    disconnectCloud: () => bridge.disconnectCloud(),
-    exportCloudData: () => bridge.exportCloudData(),
-    deleteCloudSourceContent: () => bridge.deleteCloudSourceContent(),
-    deleteCloudAccount: (confirmation) => bridge.deleteCloudAccount(confirmation),
-    cloudPaymentPackages: () => bridge.cloudPaymentPackages(),
+    cloudStatus: () => callDesktopCloud(() => bridge.cloudStatus()),
+    disconnectCloud: () => callDesktopCloud(() => bridge.disconnectCloud()),
+    exportCloudData: () => callDesktopCloud(() => bridge.exportCloudData()),
+    deleteCloudSourceContent: () => callDesktopCloud(() => bridge.deleteCloudSourceContent()),
+    deleteCloudAccount: (confirmation) =>
+      callDesktopCloud(() => bridge.deleteCloudAccount(confirmation)),
+    cloudPaymentPackages: () => callDesktopCloud(() => bridge.cloudPaymentPackages()),
     createCloudPaymentCheckout: (packageId, idempotencyKey) =>
-      bridge.createCloudPaymentCheckout(packageId, idempotencyKey),
-    redeemCloudCode: (code) => bridge.redeemCloudCode(code),
-    quoteCloudContext: (source) => bridge.quoteCloudContext(source),
-    analyzeCloudContext: (request) => bridge.analyzeCloudContext(request),
-    recoverCloudAnalysis: () => bridge.recoverCloudAnalysis(),
+      callDesktopCloud(() => bridge.createCloudPaymentCheckout(packageId, idempotencyKey)),
+    redeemCloudCode: (code) => callDesktopCloud(() => bridge.redeemCloudCode(code)),
+    quoteCloudContext: (source) => callDesktopCloud(() => bridge.quoteCloudContext(source)),
+    analyzeCloudContext: (request) => callDesktopCloud(() => bridge.analyzeCloudContext(request)),
+    recoverCloudAnalysis: () => callDesktopCloud(() => bridge.recoverCloudAnalysis()),
     clearCloudAnalysisCheckpoint: (idempotencyKey) =>
-      bridge.clearCloudAnalysisCheckpoint(idempotencyKey),
+      callDesktopCloud(() => bridge.clearCloudAnalysisCheckpoint(idempotencyKey)),
     focusCapability: () => bridge.focusCapability(),
     startFocusGuardian: (request) => bridge.startFocusGuardian(request),
     stopFocusGuardian: () => bridge.stopFocusGuardian(),
