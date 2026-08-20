@@ -31,17 +31,6 @@ const clock = computed(() => {
   return `${minutes}:${seconds}`;
 });
 
-async function begin(): Promise<void> {
-  busy.value = true;
-  try {
-    await store.beginAction();
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "计时启动失败";
-  } finally {
-    busy.value = false;
-  }
-}
-
 async function finish(): Promise<void> {
   busy.value = true;
   try {
@@ -97,16 +86,7 @@ async function finishFromFocus(): Promise<void> {
           </span>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button
-          v-if="!started"
-          class="primary-button w-full"
-          type="button"
-          :disabled="busy"
-          @click="begin"
-        >
-          开始这一小步
-        </button>
-        <div v-else class="grid gap-3 sm:grid-cols-2">
+        <div v-if="started" class="grid gap-3 sm:grid-cols-2">
           <button class="primary-button w-full" type="button" :disabled="busy" @click="enterFocus">
             以唱针进入全屏专注
           </button>
@@ -116,7 +96,7 @@ async function finishFromFocus(): Promise<void> {
         </div>
         <button
           v-if="!started"
-          class="secondary-button w-full"
+          class="primary-button w-full"
           type="button"
           :disabled="busy"
           @click="enterFocus"

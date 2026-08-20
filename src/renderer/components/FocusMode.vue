@@ -113,6 +113,15 @@ function beginEntryHold(): void {
   entryAnimationFrame = requestAnimationFrame(updateEntryHold);
 }
 
+function releaseEntryHold(): void {
+  if (!entryHolding.value) return;
+  if (stylusReadyToDrop(entryStartedAt, performance.now())) {
+    void dropNeedle();
+    return;
+  }
+  cancelEntryHold();
+}
+
 function toggleAllowedApp(value: string): void {
   blockedApps.value = blockedApps.value.filter((item) => item !== value);
   selectedApps.value = selectedApps.value.includes(value)
@@ -295,13 +304,13 @@ onBeforeUnmount(() => {
             :disabled="entryBusy"
             aria-label="按住 0.8 秒，让唱针落下并开始这一小步"
             @pointerdown.prevent="beginEntryHold"
-            @pointerup.prevent="cancelEntryHold()"
+            @pointerup.prevent="releaseEntryHold"
             @pointerleave="cancelEntryHold()"
             @pointercancel="cancelEntryHold()"
             @keydown.space.prevent="beginEntryHold"
-            @keyup.space.prevent="cancelEntryHold()"
+            @keyup.space.prevent="releaseEntryHold"
             @keydown.enter.prevent="beginEntryHold"
-            @keyup.enter.prevent="cancelEntryHold()"
+            @keyup.enter.prevent="releaseEntryHold"
             @click.prevent
           >
             <span>{{ entryBusy ? "正在落针…" : "按住 0.8 秒，让唱针落下" }}</span>

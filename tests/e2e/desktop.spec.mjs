@@ -490,7 +490,27 @@ test("desktop app launches with an isolated bridge and persists state across res
     ).toBeVisible();
     await window.getByRole("button", { name: "就做这一步，直接进入专注" }).click();
 
-    const focus = window.getByRole("dialog", { name: "专注界面" });
+    let focus = window.getByRole("dialog", { name: "专注界面" });
+    await expect(focus).toBeVisible();
+    await window.keyboard.press("Escape");
+    await expect(focus).toHaveCount(0);
+    await expect(window.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+    await expect(window.getByRole("button", { name: "开始这一小步", exact: true })).toHaveCount(0);
+    const statePath = path.join(userData, "tryrevive-state.json");
+    await expect
+      .poll(
+        async () => JSON.parse(await readFile(statePath, "utf8")).projects[0]?.action?.startedAt
+      )
+      .toBeNull();
+
+    await desktop.close();
+    desktop = await electron.launch(launchOptions);
+    window = await desktop.firstWindow();
+    await expect(window.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+    await expect(window.getByRole("button", { name: "开始这一小步", exact: true })).toHaveCount(0);
+    expect(JSON.parse(await readFile(statePath, "utf8")).projects[0]?.action?.startedAt).toBeNull();
+    await window.getByRole("button", { name: "以唱针进入全屏专注" }).click();
+    focus = window.getByRole("dialog", { name: "专注界面" });
     await focus.getByText("已经完成了项目入口", { exact: false }).click();
     const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
     await expect(dropNeedle).toBeVisible();

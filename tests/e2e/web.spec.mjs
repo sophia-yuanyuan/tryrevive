@@ -20,8 +20,15 @@ async function completeRevivalLoop(page) {
   ).toBeVisible();
   await page.getByRole("button", { name: "就做这一步，直接进入专注" }).click();
 
-  const focus = page.getByRole("dialog", { name: "专注界面" });
+  let focus = page.getByRole("dialog", { name: "专注界面" });
   await expect(focus.getByText("已经完成了首页布局", { exact: false })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(focus).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始这一小步", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "以唱针进入全屏专注" }).click();
+  focus = page.getByRole("dialog", { name: "专注界面" });
   await focus.getByText("已经完成了首页布局", { exact: false }).click();
   const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
   await expect(dropNeedle).toBeVisible();

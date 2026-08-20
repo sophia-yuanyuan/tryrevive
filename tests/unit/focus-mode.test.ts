@@ -30,6 +30,7 @@ vi.mock("@/renderer/platform/web", () => ({
 }));
 
 import FocusMode from "@/renderer/components/FocusMode.vue";
+import { useRevivalStore } from "@/renderer/stores/revival";
 
 const startingEvent: FocusEvent = {
   phase: "starting",
@@ -202,6 +203,42 @@ describe("FocusMode guardian controls", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     await nextTick();
     expect(wrapper.text()).toContain("按住 0.8 秒，让唱针落下");
+    wrapper.unmount();
+  });
+
+  it("accepts a full hold on release even when animation frames are delayed", async () => {
+    vi.mocked(window.requestAnimationFrame).mockImplementation(() => 1);
+    vi.mocked(performance.now).mockReturnValue(1_000);
+    const revivalStore = useRevivalStore();
+    const beginAction = vi.spyOn(revivalStore, "beginAction").mockResolvedValue();
+    const project = createProject("掉帧中的课程项目", 1_800_000_000_000);
+    project.restore.lastCompleted = "已经写完报名简介";
+    project.action = {
+      id: "action-delayed-frame",
+      text: "核对报名截止时间",
+      doneDefinition: "截止时间写进项目",
+      minutes: 5,
+      startedAt: null,
+      completedAt: null,
+      createdAt: 1_800_000_000_000
+    };
+
+    const wrapper = mount(FocusMode, {
+      props: { project, clock: "05:00", started: false },
+      global: { stubs: { Teleport: true } }
+    });
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await nextTick();
+
+    const dropNeedle = wrapper.get("button.focus-entry-hold");
+    await dropNeedle.trigger("keydown", { key: "Enter" });
+    vi.mocked(performance.now).mockReturnValue(1_900);
+    await dropNeedle.trigger("keyup", { key: "Enter" });
+    await flushPromises();
+
+    expect(beginAction).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[aria-label="当前时间盒剩余时间"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
