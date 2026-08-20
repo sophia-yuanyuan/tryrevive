@@ -1428,7 +1428,7 @@ test("desktop privacy center exports data, verifies no source copy, and deletes 
   }
 });
 
-test("desktop cloud inference reserves units before uploading attachment bytes", async () => {
+test("desktop cloud inference reserves before upload and survives a full relaunch", async () => {
   test.skip(
     Boolean(process.env.ELECTRON_EXECUTABLE_PATH),
     "local HTTP harness is development-only"
@@ -1436,14 +1436,27 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
   test.setTimeout(90_000);
   const harness = await startCloudSessionHarness();
   const userData = await mkdtemp(path.join(os.tmpdir(), "tryrevive-cloud-inference-e2e-"));
-  const desktop = await electron.launch({
+  const statePath = path.join(userData, "tryrevive-state.json");
+  const existingProjectId = "cloud-recovery-existing-project";
+  await writeFile(
+    statePath,
+    JSON.stringify(createCurrentState("云端恢复旧项目", existingProjectId)),
+    "utf8"
+  );
+  const launchOptions = {
     args: [`--user-data-dir=${userData}`, projectRoot],
     cwd: projectRoot,
     env: { ...process.env, TRYREVIVE_CLOUD_URL: harness.url }
-  });
+  };
+  let desktop = await electron.launch(launchOptions);
 
   try {
-    const window = await desktop.firstWindow();
+    let window = await desktop.firstWindow();
+    await expect(
+      window.getByRole("heading", { name: "先找回「云端恢复旧项目」的现场" })
+    ).toBeVisible();
+    await window.getByRole("button", { name: "打开项目与数据设置" }).click();
+    await window.getByRole("button", { name: "新建另一个项目" }).click();
     await expect(window.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
     await window.getByLabel("算力兑换码").fill("FIRST-CODE");
     await window.getByRole("button", { name: "兑换算力" }).click();
@@ -1471,7 +1484,25 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     );
     expect(encryptedCheckpoint.toString("utf8")).not.toContain("真实姓名");
     expect(encryptedCheckpoint.toString("utf8")).not.toContain("已经写完项目简介");
-    await window.reload();
+
+    await window.getByRole("button", { name: "打开项目与数据设置" }).click();
+    await window.getByRole("button", { name: /云端恢复旧项目/ }).click();
+    await expect(
+      window.getByRole("heading", { name: "先找回「云端恢复旧项目」的现场" })
+    ).toBeVisible();
+    const stateBeforeRelaunch = JSON.parse(await readFile(statePath, "utf8"));
+    expect(stateBeforeRelaunch.projects).toHaveLength(1);
+    expect(stateBeforeRelaunch.projects[0]?.id).toBe(existingProjectId);
+    expect(stateBeforeRelaunch.activeProjectId).toBe(existingProjectId);
+    expect(stateBeforeRelaunch.pendingInference).toBeNull();
+
+    await desktop.close();
+    desktop = await electron.launch(launchOptions);
+    window = await desktop.firstWindow();
+    await expect(
+      window.getByRole("heading", { name: "先找回「云端恢复旧项目」的现场" })
+    ).toBeVisible();
+    await window.getByRole("button", { name: "查看云端入口" }).click();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
 
     const relevantCalls = harness.calls.filter((call) =>
@@ -1498,11 +1529,14 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     ).toHaveLength(1);
     await window.reload();
     await expect(window.getByRole("heading", { name: "我猜你做到这里" })).toBeVisible();
+    expect(
+      harness.calls.filter((call) => call.path === "/v1/cloud/operations/status")
+    ).toHaveLength(1);
     await expect(window.getByText("完成黑客松报名", { exact: true }).first()).toBeVisible();
-    const pendingState = JSON.parse(
-      await readFile(path.join(userData, "tryrevive-state.json"), "utf8")
-    );
-    expect(pendingState.projects).toHaveLength(0);
+    const pendingState = JSON.parse(await readFile(statePath, "utf8"));
+    expect(pendingState.projects).toHaveLength(1);
+    expect(pendingState.projects[0]?.id).toBe(existingProjectId);
+    expect(pendingState.activeProjectId).toBeNull();
     expect(pendingState.pendingInference.sourceKind).toBe("material");
     expect(pendingState.deliveredCloudOperations).toHaveLength(1);
     expect(pendingState.deliveredCloudOperations[0]).toBe(analyzeCall.body.idempotencyKey);
@@ -1514,6 +1548,9 @@ test("desktop cloud inference reserves units before uploading attachment bytes",
     ).toBe(true);
 
     await window.getByRole("button", { name: "正确，继续" }).click();
+    await expect
+      .poll(async () => JSON.parse(await readFile(statePath, "utf8")).projects.length)
+      .toBe(2);
     await window.getByRole("button", { name: "接受建议：缩小" }).click();
     await expect(
       window.getByRole("heading", { name: "这是 TryRevive 给你的最小下一步" })
