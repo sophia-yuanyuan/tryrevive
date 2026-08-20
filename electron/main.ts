@@ -31,7 +31,12 @@ import {
 import { focusGuardian } from "./focus";
 import { IPC_CHANNELS } from "./ipc";
 import { isTrustedRendererUrl } from "./renderer-trust";
-import { chooseLocalRepository, rescanLocalRepository } from "./repository";
+import {
+  chooseLocalRepository,
+  chooseRepositoryDiscoveryRoot,
+  rescanLocalRepository,
+  scanDiscoveredRepository
+} from "./repository";
 import { getLocalSpeechCapability, transcribeLocalSpeech } from "./speech";
 
 const APP_SCHEME = "app";
@@ -252,6 +257,16 @@ function registerIpc(): void {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) throw new Error("找不到当前 TryRevive 窗口");
     return chooseLocalRepository(window);
+  });
+  ipcMain.handle(IPC_CHANNELS.discoverRepositories, async (event) => {
+    assertTrustedSender(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error("找不到当前 tryrevive 窗口");
+    return chooseRepositoryDiscoveryRoot(window);
+  });
+  ipcMain.handle(IPC_CHANNELS.scanDiscoveredRepository, async (event, selection: unknown) => {
+    assertTrustedSender(event);
+    return scanDiscoveredRepository(selection);
   });
   ipcMain.handle(IPC_CHANNELS.rescanRepository, async (event, bindingId: unknown) => {
     assertTrustedSender(event);

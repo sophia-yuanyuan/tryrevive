@@ -6,6 +6,7 @@ import {
   assignAction,
   chooseDecision,
   completeAction,
+  createDirectActionProject,
   resumeProject,
   saveRestore,
   scheduleReturn,
@@ -104,6 +105,40 @@ describe("revival domain flow", () => {
     expect(() =>
       assignAction(project, { text: "写一个问题", doneDefinition: "问题已保存", minutes: 21 })
     ).toThrow();
+  });
+
+  it("creates an explicit user-defined action without pretending materials were analyzed", () => {
+    const project = createDirectActionProject(
+      {
+        title: "申请黑客松",
+        text: "填写项目简介",
+        doneDefinition: "简介已经保存为可继续修改的草稿",
+        minutes: 10
+      },
+      1_800_000_000_000
+    );
+
+    expect(project).toMatchObject({
+      title: "申请黑客松",
+      decision: "continue",
+      stage: "execute",
+      analysis: null,
+      repository: null
+    });
+    expect(project.action).toMatchObject({
+      text: "填写项目简介",
+      doneDefinition: "简介已经保存为可继续修改的草稿",
+      minutes: 10,
+      startedAt: null
+    });
+    expect(() =>
+      createDirectActionProject({
+        title: "",
+        text: "填写项目简介",
+        doneDefinition: "保存草稿",
+        minutes: 10
+      })
+    ).toThrow("项目名称");
   });
 
   it("treats pause and abandon as explicit, recoverable decisions", () => {

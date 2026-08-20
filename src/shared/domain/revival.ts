@@ -12,7 +12,8 @@ import {
   ReturnPlanSchema,
   type RevivalAction,
   type RevivalProject,
-  createId
+  createId,
+  createProject
 } from "./model";
 import { captureLegacyMusicRecipe } from "../audio/music-recipe";
 
@@ -118,6 +119,29 @@ export function assignAction(
         ? { ...project.repository, actionBaseline: null }
         : project.repository,
       stage: "execute"
+    },
+    now
+  );
+}
+
+export function createDirectActionProject(
+  input: {
+    title: string;
+    text: string;
+    doneDefinition: string;
+    minutes: number;
+  },
+  now = Date.now()
+): RevivalProject {
+  const title = input.title.trim();
+  if (!title) throw new Error("先写下项目名称。");
+  const project = createProject(title.slice(0, 80), now);
+  return assignAction(
+    chooseDecision(project, "continue", now),
+    {
+      text: input.text,
+      doneDefinition: input.doneDefinition,
+      minutes: input.minutes
     },
     now
   );

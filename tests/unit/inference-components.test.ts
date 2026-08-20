@@ -8,6 +8,8 @@ import { chooseDecision } from "@/shared/domain/revival";
 
 const mocks = vi.hoisted(() => ({
   chooseRepository: vi.fn(),
+  discoverRepositories: vi.fn(),
+  scanDiscoveredRepository: vi.fn(),
   cloudStatus: vi.fn(),
   quoteCloudContext: vi.fn(),
   analyzeCloudContext: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock("@/renderer/platform/web", () => ({
   platform: {
     kind: "desktop",
     chooseRepository: mocks.chooseRepository,
+    discoverRepositories: mocks.discoverRepositories,
+    scanDiscoveredRepository: mocks.scanDiscoveredRepository,
     cloudStatus: mocks.cloudStatus,
     quoteCloudContext: mocks.quoteCloudContext,
     analyzeCloudContext: mocks.analyzeCloudContext,
@@ -99,6 +103,22 @@ describe("inference-first components", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mocks.chooseRepository.mockReset().mockResolvedValue(scanResult());
+    mocks.discoverRepositories.mockReset().mockResolvedValue({
+      canceled: false,
+      sessionId: "discovery_0123456789abcdef01234567",
+      scopeLabel: "D 盘",
+      candidates: [
+        {
+          id: "candidate_0123456789abcdef01234567",
+          displayName: "course-demo",
+          relativeLocation: "projects/course-demo",
+          markers: ["package.json", "README.md"],
+          modifiedAt: 1_800_000_000_000
+        }
+      ],
+      boundary: { visitedEntries: 120, skippedDirectoryCount: 8, truncated: false }
+    });
+    mocks.scanDiscoveredRepository.mockReset().mockResolvedValue(scanResult());
     mocks.cloudStatus.mockReset().mockResolvedValue({
       available: false,
       authenticated: false,
@@ -133,7 +153,10 @@ describe("inference-first components", () => {
     const store = useRevivalStore();
     const wrapper = mount(ProjectIntake);
 
-    await wrapper.get("button.primary-button").trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("我知道具体项目文件夹"))
+      ?.trigger("click");
     await flushPromises();
 
     expect(mocks.chooseRepository).toHaveBeenCalledTimes(1);
@@ -151,7 +174,10 @@ describe("inference-first components", () => {
     const store = useRevivalStore();
     const wrapper = mount(ProjectIntake);
 
-    await wrapper.get("button.primary-button").trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("我知道具体项目文件夹"))
+      ?.trigger("click");
     await flushPromises();
 
     expect(store.pendingInference?.analysis.uncertainties[0]).toContain("扫描已达到");
@@ -169,6 +195,8 @@ describe("inference-first components", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("从项目文件夹恢复");
+    expect(wrapper.text()).toContain("从 C／D 盘或大文件夹找项目");
+    expect(wrapper.text()).toContain("我已经知道下一步，直接开始");
     expect(wrapper.text()).toContain("语音或常见附件");
     expect(wrapper.text()).toContain("说一段话，或上传现有材料");
     expect(wrapper.text()).toContain("本地文字材料或你记得的内容");
@@ -183,6 +211,63 @@ describe("inference-first components", () => {
     expect(wrapper.text()).toContain("当前不会上传任何内容");
     expect(wrapper.text()).not.toContain("语音理解暂缓");
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("discovers drive candidates from metadata and scans only the candidate the user selects", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("从 C／D 盘"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(mocks.discoverRepositories).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("只依据名称和元数据找到 1 个候选");
+    expect(wrapper.text()).toContain("projects/course-demo");
+    expect(store.pendingInference).toBeNull();
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("读取这个项目"))
+      ?.trigger("click");
+    await flushPromises();
+
+    expect(mocks.scanDiscoveredRepository).toHaveBeenCalledWith({
+      sessionId: "discovery_0123456789abcdef01234567",
+      candidateId: "candidate_0123456789abcdef01234567"
+    });
+    expect(store.pendingInference?.title).toBe("course-demo");
+    expect(store.data.projects).toHaveLength(0);
+  });
+
+  it("lets a user with a known goal skip inference and persist one unstarted action", async () => {
+    const store = useRevivalStore();
+    const wrapper = mount(ProjectIntake);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("我已经知道下一步"))
+      ?.trigger("click");
+    await nextTick();
+
+    const inputs = wrapper.findAll("input");
+    await inputs
+      .find((input) => input.attributes("placeholder")?.includes("申请黑客松"))
+      ?.setValue("黑客松报名");
+    const textareas = wrapper.findAll("textarea");
+    await textareas[0]!.setValue("填写项目简介");
+    await textareas[1]!.setValue("项目简介已经保存为草稿");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(store.pendingInference).toBeNull();
+    expect(store.activeProject).toMatchObject({
+      title: "黑客松报名",
+      decision: "continue",
+      stage: "execute",
+      analysis: null
+    });
+    expect(store.activeProject?.action?.startedAt).toBeNull();
   });
 
   it("shows an editable local transcript before the user explicitly creates a draft", async () => {

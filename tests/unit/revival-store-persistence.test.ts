@@ -185,4 +185,46 @@ describe("revival store save-before-publish", () => {
     expect(store.activeProject?.stage).toBe("action");
     expect(store.consumeFocusRequest(project.id)).toBe(false);
   });
+
+  it("publishes a direct action and one focus request only after the single save succeeds", async () => {
+    const store = useRevivalStore();
+    store.data = createEmptyState(1_800_000_000_000);
+
+    await store.createDirectActionAndRequestFocus({
+      title: "申请黑客松",
+      text: "填写项目简介",
+      doneDefinition: "简介已保存为草稿",
+      minutes: 10
+    });
+
+    expect(mocks.saveState).toHaveBeenCalledTimes(1);
+    expect(store.activeProject).toMatchObject({
+      title: "申请黑客松",
+      decision: "continue",
+      stage: "execute",
+      analysis: null
+    });
+    expect(store.activeProject?.action?.startedAt).toBeNull();
+    expect(store.consumeFocusRequest(store.activeProject!.id)).toBe(true);
+    expect(store.consumeFocusRequest(store.activeProject!.id)).toBe(false);
+  });
+
+  it("does not create a direct project or focus request when its save fails", async () => {
+    const store = useRevivalStore();
+    store.data = createEmptyState(1_800_000_000_000);
+    mocks.saveState.mockRejectedValueOnce(new Error("disk unavailable"));
+
+    await expect(
+      store.createDirectActionAndRequestFocus({
+        title: "申请黑客松",
+        text: "填写项目简介",
+        doneDefinition: "简介已保存为草稿",
+        minutes: 10
+      })
+    ).rejects.toThrow("disk unavailable");
+
+    expect(store.data.projects).toHaveLength(0);
+    expect(store.data.activeProjectId).toBeNull();
+    expect(store.consumeFocusRequest("project-unknown")).toBe(false);
+  });
 });

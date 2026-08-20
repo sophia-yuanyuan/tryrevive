@@ -5,6 +5,8 @@ export const IPC_CHANNELS = {
   exportAudio: "audio:export",
   importState: "state:import",
   chooseRepository: "repository:choose",
+  discoverRepositories: "repository:discover",
+  scanDiscoveredRepository: "repository:scan-discovered",
   rescanRepository: "repository:rescan",
   localSpeechCapability: "speech:local-capability",
   transcribeLocalSpeech: "speech:local-transcribe",

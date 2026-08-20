@@ -30,6 +30,7 @@ import {
   assignAction,
   chooseDecision,
   completeAction,
+  createDirectActionProject,
   markProjectCompleted,
   resumeProject,
   saveDiagnosis,
@@ -193,6 +194,22 @@ export const useRevivalStore = defineStore("revival", () => {
   async function inferRepository(): Promise<boolean> {
     const result = await platform.chooseRepository();
     if (result.canceled) return false;
+    await persistRepositoryScanResult(result);
+    return true;
+  }
+
+  async function inferDiscoveredRepository(selection: {
+    sessionId: string;
+    candidateId: string;
+  }): Promise<void> {
+    const result = await platform.scanDiscoveredRepository(selection);
+    if (result.canceled) return;
+    await persistRepositoryScanResult(result);
+  }
+
+  async function persistRepositoryScanResult(
+    result: Exclude<Awaited<ReturnType<typeof platform.chooseRepository>>, { canceled: true }>
+  ): Promise<void> {
     const candidate = stateSnapshot();
     candidate.activeProjectId = null;
     candidate.pendingInference = createPendingInference({
@@ -207,7 +224,42 @@ export const useRevivalStore = defineStore("revival", () => {
       }
     });
     await commitCandidate(candidate);
-    return true;
+  }
+
+  async function createDirectActionAndRequestFocus(input: {
+    title: string;
+    text: string;
+    doneDefinition: string;
+    minutes: number;
+  }): Promise<void> {
+    let projectId = "";
+    await commitCandidateBuild(
+      () => {
+        const candidate = stateSnapshot();
+        if (candidate.projects.length >= 100) {
+          throw new Error("本地项目已达到 100 个，请先导出备份再整理。");
+        }
+        const normalizedTitle = input.title.trim().toLocaleLowerCase("zh-CN");
+        if (
+          candidate.projects.some(
+            (project) =>
+              !["abandoned", "completed"].includes(project.status) &&
+              project.title.trim().toLocaleLowerCase("zh-CN") === normalizedTitle
+          )
+        ) {
+          throw new Error("已经有一个同名的进行中项目；请从项目列表继续，或换一个更具体的名称。");
+        }
+        const project = createDirectActionProject(input);
+        projectId = project.id;
+        candidate.projects.unshift(project);
+        candidate.activeProjectId = project.id;
+        candidate.pendingInference = null;
+        return candidate;
+      },
+      () => {
+        focusRequestedProjectId.value = projectId;
+      }
+    );
   }
 
   async function inferLocalContext(request: Omit<LocalInferenceRequest, "now">): Promise<void> {
@@ -547,6 +599,7 @@ export const useRevivalStore = defineStore("revival", () => {
     newProject,
     newProjects,
     inferRepository,
+    inferDiscoveredRepository,
     inferLocalContext,
     inferProvidedAnalysis,
     correctInference,
@@ -561,6 +614,7 @@ export const useRevivalStore = defineStore("revival", () => {
     diagnose,
     setAction,
     setActionAndRequestFocus,
+    createDirectActionAndRequestFocus,
     consumeFocusRequest,
     beginAction,
     finishAction,

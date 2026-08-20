@@ -11,6 +11,9 @@ const bridge: DesktopBridge = {
   exportAudio: (request) => ipcRenderer.invoke(IPC_CHANNELS.exportAudio, request),
   importState: () => ipcRenderer.invoke(IPC_CHANNELS.importState),
   chooseRepository: () => ipcRenderer.invoke(IPC_CHANNELS.chooseRepository),
+  discoverRepositories: () => ipcRenderer.invoke(IPC_CHANNELS.discoverRepositories),
+  scanDiscoveredRepository: (selection) =>
+    ipcRenderer.invoke(IPC_CHANNELS.scanDiscoveredRepository, selection),
   rescanRepository: (bindingId) => ipcRenderer.invoke(IPC_CHANNELS.rescanRepository, bindingId),
   localSpeechCapability: () => ipcRenderer.invoke(IPC_CHANNELS.localSpeechCapability),
   transcribeLocalSpeech: (request) =>

@@ -21,6 +21,10 @@ import type {
 } from "../focus/contracts";
 import type { RepositoryScanResult } from "../domain/repository-inference";
 import type {
+  RepositoryDiscoveryResult,
+  RepositoryDiscoverySelection
+} from "../domain/repository-discovery";
+import type {
   LocalSpeechCapability,
   LocalSpeechRequest,
   LocalSpeechResult
@@ -51,6 +55,8 @@ export interface AppPlatform {
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   chooseRepository(): Promise<RepositoryScanResult>;
+  discoverRepositories(): Promise<RepositoryDiscoveryResult>;
+  scanDiscoveredRepository(selection: RepositoryDiscoverySelection): Promise<RepositoryScanResult>;
   rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
   localSpeechCapability(): Promise<LocalSpeechCapability>;
   transcribeLocalSpeech(request: LocalSpeechRequest): Promise<LocalSpeechResult>;
@@ -85,6 +91,8 @@ export interface DesktopBridge {
   exportAudio(request: AudioExportRequest): Promise<ExportResult>;
   importState(): Promise<ImportResult>;
   chooseRepository(): Promise<RepositoryScanResult>;
+  discoverRepositories(): Promise<RepositoryDiscoveryResult>;
+  scanDiscoveredRepository(selection: RepositoryDiscoverySelection): Promise<RepositoryScanResult>;
   rescanRepository(bindingId: string): Promise<RepositoryScanResult>;
   localSpeechCapability(): Promise<LocalSpeechCapability>;
   transcribeLocalSpeech(request: LocalSpeechRequest): Promise<LocalSpeechResult>;

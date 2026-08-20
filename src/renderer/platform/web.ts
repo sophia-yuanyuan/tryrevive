@@ -119,6 +119,12 @@ const webPlatform: AppPlatform = {
   async chooseRepository() {
     throw new Error("项目文件夹安全扫描当前仅在 TryRevive Windows 桌面版提供");
   },
+  async discoverRepositories() {
+    throw new Error("本机磁盘候选发现当前仅在 tryrevive Windows 桌面版提供");
+  },
+  async scanDiscoveredRepository() {
+    throw new Error("本机磁盘候选发现当前仅在 tryrevive Windows 桌面版提供");
+  },
   async rescanRepository() {
     throw new Error("项目文件夹安全扫描当前仅在 TryRevive Windows 桌面版提供");
   },
@@ -234,6 +240,8 @@ function desktopPlatform(bridge: DesktopBridge): AppPlatform {
     exportAudio: (request) => bridge.exportAudio(request),
     importState: () => bridge.importState(),
     chooseRepository: () => bridge.chooseRepository(),
+    discoverRepositories: () => bridge.discoverRepositories(),
+    scanDiscoveredRepository: (selection) => bridge.scanDiscoveredRepository(selection),
     rescanRepository: (bindingId) => bridge.rescanRepository(bindingId),
     localSpeechCapability: () => bridge.localSpeechCapability(),
     transcribeLocalSpeech: (request) => bridge.transcribeLocalSpeech(request),

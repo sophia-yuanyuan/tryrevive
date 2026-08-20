@@ -146,6 +146,35 @@ test("student can complete the P0 loop and resume after reload", async ({ page }
   await expect(page.getByText(/课程作品集 · 计划回来时间/)).toBeVisible();
 });
 
+test("a known goal can skip inference but still requires the stylus hold before work starts", async ({
+  page
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /我已经知道下一步，直接开始/ }).click();
+  await page.getByLabel("项目名称").fill("黑客松报名");
+  await page.getByLabel("现在只做什么").fill("填写项目简介");
+  await page.getByLabel("做到什么状态算完成").fill("项目简介已经保存为可修改草稿");
+  await page.getByLabel("时间盒").selectOption("5");
+  await page.getByRole("button", { name: "保存并进入专注" }).click();
+
+  let focus = page.getByRole("dialog", { name: "专注界面" });
+  await expect(focus).toBeVisible();
+  await expect(focus.getByText("填写项目简介", { exact: false })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "现在只处理这一小步" })).toBeVisible();
+  await expect(page.getByText("填写项目简介", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "以唱针进入全屏专注" }).click();
+  focus = page.getByRole("dialog", { name: "专注界面" });
+  await focus.getByText("填写项目简介", { exact: false }).first().click();
+  const dropNeedle = focus.getByRole("button", { name: /按住 0.8 秒，让唱针落下/ });
+  await expect(dropNeedle).toBeVisible();
+  await dropNeedle.press("Enter", { delay: 900 });
+  await expect(focus.getByLabel("当前时间盒剩余时间")).toBeVisible();
+});
+
 test("settings exposes local backup controls without requiring an account", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "打开项目与数据设置" }).click();

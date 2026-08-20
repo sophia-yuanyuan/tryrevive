@@ -14,6 +14,11 @@ import {
 } from "./repository-binding-store";
 import { scanLocalRepository } from "./repository-scanner";
 import { isBroadRepositoryRoot } from "./repository-selection";
+import {
+  discoverRepositoryCandidates,
+  resolveRepositoryDiscoveryCandidate
+} from "./repository-discovery";
+import type { RepositoryDiscoveryResult } from "../src/shared/domain/repository-discovery";
 
 let bindingStorage: RepositoryBindingStorage | null = null;
 
@@ -57,6 +62,31 @@ async function scanBinding(binding: RepositoryBinding): Promise<RepositoryScanRe
   }
 }
 
+async function bindAndScanRepository(realRoot: string): Promise<RepositoryScanResult> {
+  if (isBroadRepositoryRoot(realRoot)) {
+    throw new Error("不能把整个磁盘当成一个项目深读。请先查找候选项目，再选择其中一个具体文件夹。");
+  }
+  const now = Date.now();
+  const id = bindingId(realRoot);
+  const binding: RepositoryBinding = {
+    id,
+    rootPath: realRoot,
+    displayName: path.basename(realRoot).trim().slice(0, 120) || "未命名项目",
+    createdAt: now,
+    lastUsedAt: now
+  };
+  const scan = await scanBinding(binding);
+  await repositoryBindings().update((store) => {
+    const existing = store.entries.find((entry) => entry.id === id);
+    const nextBinding = existing ? { ...existing, rootPath: realRoot, lastUsedAt: now } : binding;
+    return {
+      version: 1,
+      entries: [nextBinding, ...store.entries.filter((entry) => entry.id !== id)].slice(0, 100)
+    };
+  });
+  return scan;
+}
+
 export async function chooseLocalRepository(
   parentWindow?: BrowserWindow
 ): Promise<RepositoryScanResult> {
@@ -87,25 +117,35 @@ export async function chooseLocalRepository(
     );
   }
 
-  const now = Date.now();
-  const id = bindingId(realRoot);
-  const binding: RepositoryBinding = {
-    id,
-    rootPath: realRoot,
-    displayName: path.basename(realRoot).trim().slice(0, 120) || "未命名项目",
-    createdAt: now,
-    lastUsedAt: now
+  return bindAndScanRepository(realRoot);
+}
+
+export async function chooseRepositoryDiscoveryRoot(
+  parentWindow?: BrowserWindow
+): Promise<RepositoryDiscoveryResult> {
+  const options = {
+    title: "从磁盘或大文件夹里查找项目",
+    buttonLabel: "只查找候选项目",
+    properties: ["openDirectory", "dontAddToRecent"] as Array<"openDirectory" | "dontAddToRecent">
   };
-  const scan = await scanBinding(binding);
-  await repositoryBindings().update((store) => {
-    const existing = store.entries.find((entry) => entry.id === id);
-    const nextBinding = existing ? { ...existing, rootPath: realRoot, lastUsedAt: now } : binding;
-    return {
-      version: 1,
-      entries: [nextBinding, ...store.entries.filter((entry) => entry.id !== id)].slice(0, 100)
-    };
-  });
-  return scan;
+  const result = parentWindow
+    ? await dialog.showOpenDialog(parentWindow, options)
+    : await dialog.showOpenDialog(options);
+  const selectedPath = result.filePaths[0];
+  if (result.canceled || !selectedPath) return { canceled: true };
+  return discoverRepositoryCandidates(selectedPath);
+}
+
+export async function scanDiscoveredRepository(input: unknown): Promise<RepositoryScanResult> {
+  const selectedPath = resolveRepositoryDiscoveryCandidate(input);
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(selectedPath);
+    if (!(await fs.stat(realRoot)).isDirectory()) throw new Error("not a directory");
+  } catch (error) {
+    throw new Error("这个候选项目已经不可用；请重新查找", { cause: error });
+  }
+  return bindAndScanRepository(realRoot);
 }
 
 export async function rescanLocalRepository(bindingInput: unknown): Promise<RepositoryScanResult> {
