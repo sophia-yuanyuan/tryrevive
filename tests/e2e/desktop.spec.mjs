@@ -1,12 +1,97 @@
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test } from "@playwright/test";
 import { createTextPdf } from "./material-fixtures.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const execFileAsync = promisify(execFile);
+
+function launchNotepadForegroundProbe() {
+  const child = spawn(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      path.join(projectRoot, "tests/helpers/windows-notepad-foreground.ps1")
+    ],
+    { cwd: projectRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
+  );
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  let activationSettled = false;
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  const activated = new Promise((resolve, reject) => {
+    const inspectOutput = (chunk) => {
+      if (!activationSettled && String(chunk).includes("TRYREVIVE_PROBE_ACTIVATED:notepad")) {
+        activationSettled = true;
+        resolve();
+      }
+    };
+    child.stdout.on("data", inspectOutput);
+    child.once("error", (error) => {
+      if (!activationSettled) {
+        activationSettled = true;
+        reject(error);
+      }
+    });
+    child.once("exit", (code) => {
+      if (!activationSettled) {
+        activationSettled = true;
+        reject(new Error(`记事本前台探测提前退出（${code ?? "未知"}）：${stderr || stdout}`));
+      }
+    });
+  });
+  const done = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`记事本前台探测失败（${code ?? "未知"}）：${stderr || stdout}`));
+    });
+  });
+  return { activated, done };
+}
+
+async function readForegroundProcessName() {
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      path.join(projectRoot, "resources/windows/foreground-monitor.ps1"),
+      "-Once"
+    ],
+    { cwd: projectRoot, windowsHide: true, encoding: "utf8" }
+  );
+  return stdout.trim().split(/\r?\n/u).at(-1) ?? "";
+}
+
+function normalizeProcessName(value) {
+  return value
+    .toLowerCase()
+    .replace(/\.exe$/u, "")
+    .replace(/[\s._-]+/gu, "");
+}
 
 function createAudiblePcmWav() {
   const sampleRate = 16_000;
@@ -527,7 +612,19 @@ test("desktop app launches with an isolated bridge and persists state across res
     await focus.getByLabel("本次白名单软件").getByRole("button", { name: "Chrome" }).click();
     await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
     await expect(focus.getByText("运行中", { exact: true })).toBeVisible();
-    await focus.getByRole("button", { name: "结束本次守护" }).click();
+    const foregroundProbe = launchNotepadForegroundProbe();
+    try {
+      await foregroundProbe.activated;
+      await expect(focus.getByText(/刚才检测到：notepad/iu)).toBeVisible({ timeout: 10_000 });
+      await expect
+        .poll(async () => {
+          return normalizeProcessName(await readForegroundProcessName());
+        })
+        .toMatch(/^(electron|tryrevive)$/u);
+      await focus.locator(".focus-reset").getByRole("button", { name: "结束本次守护" }).click();
+    } finally {
+      await foregroundProbe.done;
+    }
     await expect(focus.getByText("默认关闭", { exact: true })).toBeVisible();
     await focus.getByRole("button", { name: "开启本次白／黑名单守护" }).click();
     await expect(focus.getByText("运行中", { exact: true })).toBeVisible();
