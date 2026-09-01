@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Try Revive — Liquid Glass Concept</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #142033;
+      --muted: #68758a;
+      --coral: #ff6f61;
+      --violet: #8069ff;
+      --cyan: #3ec6e0;
+      --glass-line: rgba(255, 255, 255, .72);
+      --glass-shadow: 0 22px 70px rgba(59, 75, 110, .16), inset 0 1px 0 rgba(255,255,255,.88);
+      --mx: 50vw;
+      --my: 40vh;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-height: 100%; background: #eaf2ff; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 20%, rgba(255, 194, 178, .8), transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(171, 223, 255, .85), transparent 30%),
+        radial-gradient(circle at 78% 84%, rgba(205, 188, 255, .75), transparent 31%),
+        linear-gradient(145deg, #f9fbff 0%, #edf6ff 42%, #f8f2ff 100%);
+    }
+
+    .ambient {
+      position: fixed;
+      inset: -15%;
+      pointer-events: none;
+      overflow: hidden;
+      filter: saturate(1.06);
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(3px);
+      opacity: .78;
+      animation: float 16s ease-in-out infinite alternate;
+    }
+    .orb.one { width: 380px; height: 380px; left: 4%; top: 20%; background: linear-gradient(140deg, rgba(255,132,111,.55), rgba(255,211,164,.32)); }
+    .orb.two { width: 460px; height: 460px; right: 2%; top: 3%; background: linear-gradient(140deg, rgba(89,194,255,.4), rgba(167,140,255,.38)); animation-delay: -6s; }
+    .orb.three { width: 320px; height: 320px; right: 24%; bottom: 0; background: linear-gradient(140deg, rgba(123,241,220,.34), rgba(195,169,255,.42)); animation-delay: -11s; }
+    @keyframes float { to { transform: translate3d(34px, -24px, 0) scale(1.08); } }
+
+    .grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .025;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .glass {
+      --lx: 50%;
+      --ly: 35%;
+      position: relative;
+      isolation: isolate;
+      border: 1px solid rgba(255,255,255,.78);
+      background:
+        radial-gradient(180px circle at var(--lx) var(--ly), rgba(255,255,255,.68), transparent 64%),
+        linear-gradient(145deg, rgba(255,255,255,.48), rgba(255,255,255,.18));
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(26px) saturate(1.35) brightness(1.04);
+      -webkit-backdrop-filter: blur(26px) saturate(1.35) brightness(1.04);
+    }
+
+    .glass::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 1px;
+      pointer-events: none;
+      border-radius: inherit;
+      background: linear-gradient(120deg, rgba(255,255,255,.34), transparent 36%, rgba(255,255,255,.08) 62%, rgba(255,255,255,.28));
+      opacity: .8;
+    }
+
+    .glass::after {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: inset 0 -1px 0 rgba(255,255,255,.24), inset 0 1px 1px rgba(255,255,255,.94);
+    }
+
+    .app {
+      position: relative;
+      z-index: 2;
+      width: min(1180px, calc(100% - 30px));
+      margin: 0 auto;
+      padding: 18px 0 42px;
+    }
+
+    .floating-bar {
+      position: sticky;
+      top: 14px;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      min-height: 66px;
+      padding: 8px 10px 8px 16px;
+      border-radius: 23px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      color: white;
+      border-radius: 13px;
+      background: linear-gradient(145deg, #ff8172, #ff5f58 48%, #a05cff);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,.72), 0 8px 20px rgba(255,95,88,.22);
+      font-weight: 700;
+    }
+    .brand strong { display: block; font-size: 15px; letter-spacing: -.01em; }
+    .brand small { display: block; margin-top: 1px; color: var(--muted); font-size: 9px; }
+
+    .segmented {
+      display: flex;
+      gap: 3px;
+      padding: 4px;
+      border-radius: 15px;
+      background: rgba(255,255,255,.27);
+      box-shadow: inset 0 1px 3px rgba(67,82,112,.08);
+    }
+    button { font: inherit; }
+    .segment,
+    .icon-btn {
+      border: 0;
+      color: #667287;
+      background: transparent;
+      cursor: pointer;
+    }
+    .segment { padding: 9px 15px; border-radius: 12px; font-size: 11px; transition: .22s cubic-bezier(.2,.8,.2,1); }
+    .segment:hover { color: var(--ink); background: rgba(255,255,255,.34); }
+    .segment.active { color: #19243a; background: rgba(255,255,255,.78); box-shadow: 0 5px 14px rgba(58,76,112,.13), inset 0 1px 0 white; font-weight: 600; }
+
+    .bar-actions { display: flex; justify-content: flex-end; gap: 7px; }
+    .icon-btn {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(255,255,255,.58);
+      border-radius: 50%;
+      background: rgba(255,255,255,.34);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,.76);
+      transition: transform .24s cubic-bezier(.2,.8,.2,1), background .2s;
+    }
+    .icon-btn:hover { transform: scale(1.08); background: rgba(255,255,255,.62); }
+
+    .content-layer {
+      position: relative;
+      min-height: 720px;
+      margin-top: 16px;
+      padding: 68px 60px 50px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.76);
+      border-radius: 36px;
+      background: rgba(249,252,255,.72);
+      box-shadow: 0 35px 100px rgba(58,72,105,.13), inset 0 1px 0 white;
+      backdrop-filter: blur(8px);
+    }
+
+    .content-layer::before {
+      content: "";
+      position: absolute;
+      width: 620px;
+      height: 620px;
+      right: -230px;
+      top: -300px;
+      border-radius: 50%;
+      background: conic-gradient(from 210deg, rgba(255,128,111,.28), rgba(90,195,255,.31), rgba(153,121,255,.3), rgba(255,128,111,.28));
+      filter: blur(8px);
+    }
+
+    .hero { position: relative; z-index: 2; max-width: 790px; }
+    .eyebrow { margin-bottom: 14px; color: #6f6aee; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 780px; font-size: clamp(42px, 5.8vw, 76px); font-weight: 650; line-height: 1.03; letter-spacing: -.055em; }
+    h1 span { color: transparent; background: linear-gradient(100deg, #ff655b 8%, #9b63ef 50%, #35a9d0 92%); background-clip: text; }
+    .hero p { max-width: 600px; margin: 20px 0 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+
+    .workspace {
+      position: relative;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 18px;
+      margin-top: 48px;
+    }
+
+    .conversation {
+      position: relative;
+      min-height: 360px;
+      padding: 28px;
+      border: 1px solid rgba(114,130,164,.14);
+      border-radius: 25px;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 18px 54px rgba(58,75,109,.1), inset 0 1px 0 white;
+    }
+    .conversation-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .conversation-label { color: #7a67df; font-size: 10px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+    .step { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 10px; }
+    .step-track { width: 94px; height: 4px; overflow: hidden; border-radius: 8px; background: #e8edf5; }
+    .step-fill { display: block; width: 12.5%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--coral), var(--violet)); transition: width .45s ease; }
+
+    .question-block { max-width: 650px; margin: 50px auto 0; }
+    .question-block h2 { margin: 0; font-size: clamp(22px, 3vw, 32px); font-weight: 600; line-height: 1.4; letter-spacing: -.025em; }
+    .question-block p { margin: 10px 0 22px; color: var(--muted); font-size: 12px; }
+
+    .input-glass {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 7px;
+      border-radius: 19px;
+    }
+    .input-glass input { min-width: 0; padding: 0 14px; color: var(--ink); font: 13px inherit; border: 0; outline: 0; background: transparent; }
+    .input-glass input::placeholder { color: #8b96a9; }
+    .send {
+      min-width: 90px;
+      min-height: 48px;
+      padding: 0 18px;
+      color: white;
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #ff8475, #ff5f58 54%, #9a62ec);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,.65), 0 10px 24px rgba(255,95,88,.24);
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s;
+    }
+    .send:hover { transform: scale(1.035); box-shadow: inset 0 1px 1px rgba(255,255,255,.7), 0 14px 32px rgba(255,95,88,.3); }
+    .secondary-actions { display: flex; justify-content: space-between; margin-top: 14px; }
+    .secondary-actions button { padding: 8px 0; color: var(--muted); border: 0; background: transparent; cursor: pointer; font-size: 11px; }
+
+    .brief {
+      padding: 22px;
+      border: 1px solid rgba(114,130,164,.13);
+      border-radius: 25px;
+      background: rgba(248,250,255,.68);
+      box-shadow: inset 0 1px 0 white;
+    }
+    .brief small { color: #7a67df; font-size: 9px; font-weight: 650; letter-spacing: .11em; text-transform: uppercase; }
+    .brief h2 { margin: 9px 0 18px; font-size: 18px; letter-spacing: -.02em; }
+    .brief-item { display: grid; grid-template-columns: 7px 1fr; gap: 10px; margin: 14px 0; color: #657187; font-size: 11px; line-height: 1.55; }
+    .brief-item::before { content: ""; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 4px rgba(62,198,224,.12); }
+    .brief-item:nth-of-type(2)::before { background: var(--violet); box-shadow: 0 0 0 4px rgba(128,105,255,.11); }
+    .brief-item:nth-of-type(3)::before { background: var(--coral); box-shadow: 0 0 0 4px rgba(255,111,97,.11); }
+
+    .project-pill {
+      position: absolute;
+      right: 28px;
+      bottom: 26px;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 52px;
+      padding: 6px 16px 6px 7px;
+      color: var(--ink);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .pill-icon { display: grid; place-items: center; width: 40px; height: 40px; color: white; border-radius: 50%; background: linear-gradient(145deg, #5bc8e7, #8069ff); box-shadow: inset 0 1px 1px rgba(255,255,255,.65); }
+    .project-pill span { font-size: 11px; font-weight: 600; }
+
+    .drawer {
+      position: fixed;
+      z-index: 40;
+      top: 96px;
+      right: max(18px, calc((100vw - 1180px) / 2));
+      width: min(360px, calc(100vw - 30px));
+      min-height: 520px;
+      padding: 24px;
+      border-radius: 30px;
+      opacity: 0;
+      transform: translateX(28px) scale(.96);
+      pointer-events: none;
+      transition: opacity .32s ease, transform .36s cubic-bezier(.2,.8,.2,1);
+    }
+    .drawer.open { opacity: 1; transform: translateX(0) scale(1); pointer-events: auto; }
+    .drawer-head { display: flex; justify-content: space-between; align-items: center; }
+    .drawer h2 { margin: 0; font-size: 20px; }
+    .drawer p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .drawer-card { margin-top: 18px; padding: 16px; border-radius: 18px; background: rgba(255,255,255,.44); box-shadow: inset 0 1px 0 white; }
+    .drawer-card strong { display: block; font-size: 13px; }
+    .drawer-card span { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; }
+
+    .lens {
+      position: fixed;
+      z-index: 80;
+      width: 68px;
+      height: 68px;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      pointer-events: none;
+      border: 1px solid rgba(255,255,255,.78);
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 28%, rgba(255,255,255,.72), rgba(255,255,255,.16) 45%, rgba(128,105,255,.1));
+      box-shadow: 0 12px 30px rgba(66,78,112,.12), inset 0 1px 1px white;
+      backdrop-filter: blur(5px) saturate(1.5);
+      transform: translate(-50%, -50%) scale(.72);
+      transition: opacity .18s, transform .22s cubic-bezier(.2,.8,.2,1);
+    }
+    body.pointer-on .lens { opacity: .88; transform: translate(-50%, -50%) scale(1); }
+    body.pointer-over-control .lens { transform: translate(-50%, -50%) scale(.62); opacity: .55; }
+
+    .shake { animation: shake .32s ease; }
+    @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+    @media (max-width: 820px) {
+      .app { width: min(100% - 18px, 620px); padding-top: 9px; }
+      .floating-bar { top: 8px; grid-template-columns: 1fr auto; min-height: 58px; border-radius: 20px; }
+      .segmented { display: none; }
+      .brand small { display: none; }
+      .content-layer { min-height: 790px; padding: 50px 18px 82px; border-radius: 29px; }
+      .hero p { font-size: 13px; }
+      .workspace { grid-template-columns: 1fr; margin-top: 34px; }
+      .conversation { min-height: 410px; padding: 20px; }
+      .question-block { margin-top: 46px; }
+      .input-glass { grid-template-columns: 1fr; }
+      .send { width: 100%; }
+      .brief { display: none; }
+      .project-pill { right: 18px; bottom: 18px; }
+    }
+
+    @media (pointer: coarse), (prefers-reduced-motion: reduce) {
+      .lens { display: none; }
+      .orb { animation: none; }
+      * { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="lens" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="floating-bar glass glass-reactive">
+      <div class="brand">
+        <div class="mark">↗</div>
+        <div><strong>Try Revive</strong><small>从停滞，到一个真实动作</small></div>
+      </div>
+      <nav class="segmented" aria-label="主要功能">
+        <button class="segment active">复活项目</button>
+        <button class="segment">注意力工具</button>
+        <button class="segment" id="nav-projects">项目与复盘</button>
+      </nav>
+      <div class="bar-actions">
+        <button class="icon-btn" aria-label="搜索">⌕</button>
+        <button class="icon-btn" aria-label="设置">•••</button>
+      </div>
+    </header>
+
+    <main class="content-layer">
+      <section class="hero">
+        <div class="eyebrow">ONE QUIET CONVERSATION</div>
+        <h1>让项目重新拥有<br><span>一个下一次。</span></h1>
+        <p>一次只回答一个问题。Try Revive 会把答案整理成 Revival Brief，并留下一个 5–10 分钟就能开始的真实动作。</p>
+      </section>
+
+      <section class="workspace">
+        <article class="conversation" aria-labelledby="question">
+          <div class="conversation-head">
+            <span class="conversation-label">Revival conversation</span>
+            <div class="step"><span id="step-label">1 / 8</span><span class="step-track"><span class="step-fill" id="step-fill"></span></span></div>
+          </div>
+          <div class="question-block">
+            <h2 id="question">先告诉我：你想重新启动的项目叫什么？</h2>
+            <p id="helper">不用准备完整计划，先给它一个你认得出来的名字。</p>
+            <div class="input-glass glass glass-reactive" id="input-shell">
+              <input id="answer" type="text" autocomplete="off" placeholder="例如：个人作品集网站" aria-label="回答当前问题">
+              <button class="send" id="send" type="button">发送</button>
+            </div>
+            <div class="secondary-actions"><button type="button">取消对话</button><button type="button">切换完整表单</button></div>
+          </div>
+        </article>
+
+        <aside class="brief">
+          <small>Live brief · Auto fill</small>
+          <h2>Revival Brief</h2>
+          <div class="brief-item" id="brief-name">项目名称会从对话中自动出现</div>
+          <div class="brief-item">停滞时间和阻力等待填写</div>
+          <div class="brief-item">最终生成一个 5–10 分钟动作</div>
+        </aside>
+      </section>
+
+      <button class="project-pill glass glass-reactive" id="project-pill" type="button">
+        <span class="pill-icon">≡</span><span>项目与复盘</span><span>›</span>
+      </button>
+    </main>
+  </div>
+
+  <aside class="drawer glass glass-reactive" id="drawer" aria-hidden="true">
+    <div class="drawer-head"><h2>项目与复盘</h2><button class="icon-btn" id="close-drawer" aria-label="关闭">×</button></div>
+    <p>次要信息留在玻璃控制层中，需要时才浮现，不占用启动项目时的注意力。</p>
+    <div class="drawer-card"><strong>还没有项目</strong><span>第一次复活会自动保存在这里。</span></div>
+    <div class="drawer-card"><strong>本周复盘</strong><span>完成第一次真实动作后生成。</span></div>
+  </aside>
+
+  <script>
+    const root = document.documentElement;
+    const body = document.body;
+    const lens = document.querySelector('.lens');
+    let pointerX = innerWidth / 2;
+    let pointerY = innerHeight / 2;
+    let lensX = pointerX;
+    let lensY = pointerY;
+
+    if (matchMedia('(pointer: fine)').matches) {
+      addEventListener('pointermove', (event) => {
+        pointerX = event.clientX;
+        pointerY = event.clientY;
+        root.style.setProperty('--mx', `${pointerX}px`);
+        root.style.setProperty('--my', `${pointerY}px`);
+        body.classList.add('pointer-on');
+      });
+
+      const animateLens = () => {
+        lensX += (pointerX - lensX) * .18;
+        lensY += (pointerY - lensY) * .18;
+        lens.style.left = `${lensX}px`;
+        lens.style.top = `${lensY}px`;
+        requestAnimationFrame(animateLens);
+      };
+      animateLens();
+
+      document.querySelectorAll('.glass-reactive').forEach((glass) => {
+        glass.addEventListener('pointermove', (event) => {
+          const rect = glass.getBoundingClientRect();
+          glass.style.setProperty('--lx', `${event.clientX - rect.left}px`);
+          glass.style.setProperty('--ly', `${event.clientY - rect.top}px`);
+        });
+      });
+
+      document.querySelectorAll('button, input').forEach((control) => {
+        control.addEventListener('pointerenter', () => body.classList.add('pointer-over-control'));
+        control.addEventListener('pointerleave', () => body.classList.remove('pointer-over-control'));
+      });
+    }
+
+    const drawer = document.getElementById('drawer');
+    const openDrawer = () => { drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); };
+    const closeDrawer = () => { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); };
+    document.getElementById('project-pill').addEventListener('click', openDrawer);
+    document.getElementById('nav-projects').addEventListener('click', openDrawer);
+    document.getElementById('close-drawer').addEventListener('click', closeDrawer);
+    addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDrawer(); });
+
+    const answer = document.getElementById('answer');
+    const inputShell = document.getElementById('input-shell');
+    const advance = () => {
+      const value = answer.value.trim();
+      if (!value) {
+        inputShell.classList.remove('shake');
+        void inputShell.offsetWidth;
+        inputShell.classList.add('shake');
+        answer.focus();
+        return;
+      }
+      document.getElementById('brief-name').textContent = `项目：${value}`;
+      document.getElementById('question').textContent = '你最后一次真正推进它，完成了什么？';
+      document.getElementById('helper').textContent = '只写已经发生的事实，不需要评价自己。';
+      document.getElementById('step-label').textContent = '2 / 8';
+      document.getElementById('step-fill').style.width = '25%';
+      answer.value = '';
+      answer.placeholder = '例如：完成了首页的第一版线框图';
+      answer.focus();
+    };
+    document.getElementById('send').addEventListener('click', advance);
+    answer.addEventListener('keydown', (event) => { if (event.key === 'Enter') advance(); });
+  </script>
+</body>
+</html>
