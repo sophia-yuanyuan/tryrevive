@@ -1,22 +1,24 @@
 @import "tailwindcss";
+@import "./design-system/generated/tokens.css";
+@import "./design-system/foundations.css";
+@import "./design-system/primitives.css";
 
 @theme {
-  --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--tr-typography-body-family);
+  --font-mono: var(--tr-typography-code-family);
 }
 
 :root {
-  color-scheme: light;
-  --paper: #f4f1e8;
-  --paper-deep: #ebe6d8;
-  --surface: rgba(255, 254, 250, 0.86);
-  --ink: #20251f;
-  --muted: #697066;
-  --line: rgba(32, 37, 31, 0.13);
-  --accent: #d66b3d;
-  --accent-dark: #ae4e29;
-  --focus: #256d57;
+  --paper: var(--tr-color-canvas);
+  --paper-deep: var(--tr-color-canvas-muted);
+  --surface: var(--tr-color-surface);
+  --ink: var(--tr-color-text);
+  --muted: var(--tr-color-text-secondary);
+  --line: var(--tr-color-border);
+  --accent: var(--tr-color-action);
+  --accent-dark: var(--tr-color-action-hover);
+  --focus: var(--tr-color-focus);
+  --danger: var(--tr-color-danger);
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;

@@ -1,0 +1,196 @@
+{
+  "$schema": "https://tr.designtokens.org/reference.schema.json",
+  "meta": {
+    "name": "TryRevive Warm Precision",
+    "version": "1.0.0",
+    "principles": ["warm", "precise", "calm", "accessible", "student-first"]
+  },
+  "color": {
+    "neutral": {
+      "0": "#FFFFFF",
+      "25": "#FCFBF8",
+      "50": "#F8F7F3",
+      "100": "#F1EFE8",
+      "200": "#E4E1D8",
+      "300": "#CAC6BC",
+      "400": "#A4A098",
+      "450": "#898A84",
+      "500": "#74746E",
+      "550": "#696A65",
+      "600": "#565A56",
+      "700": "#3A403C",
+      "800": "#252B27",
+      "900": "#1A1F1C",
+      "950": "#111512"
+    },
+    "coral": {
+      "50": "#FFF4F0",
+      "100": "#FFE5DC",
+      "200": "#FFC9B7",
+      "300": "#F6A085",
+      "400": "#DD6F4E",
+      "500": "#B9472A",
+      "600": "#98371F",
+      "700": "#782B1A"
+    },
+    "green": {
+      "50": "#EEF8F3",
+      "100": "#D7EEE3",
+      "500": "#2F6B55",
+      "600": "#245541",
+      "700": "#1D4435"
+    },
+    "blue": {
+      "50": "#EFF6FD",
+      "100": "#D8E9F8",
+      "500": "#315E8C",
+      "600": "#274C72",
+      "700": "#203D5B"
+    },
+    "amber": {
+      "50": "#FFF8E8",
+      "100": "#F9EAC0",
+      "500": "#8A5A12",
+      "600": "#70470D",
+      "700": "#573709"
+    },
+    "red": {
+      "50": "#FFF1F0",
+      "100": "#FDDAD7",
+      "500": "#B42318",
+      "600": "#931B13",
+      "700": "#74150F"
+    },
+    "alpha": {
+      "white08": "rgba(255, 255, 255, 0.08)",
+      "white16": "rgba(255, 255, 255, 0.16)",
+      "white48": "rgba(255, 255, 255, 0.48)",
+      "white72": "rgba(255, 255, 255, 0.72)",
+      "white88": "rgba(255, 255, 255, 0.88)",
+      "black08": "rgba(17, 21, 18, 0.08)",
+      "black12": "rgba(17, 21, 18, 0.12)",
+      "black18": "rgba(17, 21, 18, 0.18)",
+      "black56": "rgba(17, 21, 18, 0.56)",
+      "transparent": "transparent"
+    }
+  },
+  "font": {
+    "family": {
+      "sans": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
+      "display": "ui-serif, 'Iowan Old Style', 'Noto Serif SC', 'Songti SC', Georgia, serif",
+      "mono": "'SFMono-Regular', Consolas, 'Liberation Mono', monospace"
+    },
+    "size": {
+      "100": "0.75rem",
+      "200": "0.8125rem",
+      "300": "0.875rem",
+      "400": "1rem",
+      "500": "1.125rem",
+      "600": "1.25rem",
+      "700": "1.5rem",
+      "800": "2rem",
+      "900": "2.5rem",
+      "1000": "3.25rem"
+    },
+    "weight": {
+      "regular": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
+    },
+    "leading": {
+      "tight": "1.12",
+      "snug": "1.35",
+      "normal": "1.5",
+      "relaxed": "1.7"
+    },
+    "tracking": {
+      "tight": "-0.025em",
+      "normal": "0",
+      "wide": "0.08em",
+      "caps": "0.14em"
+    }
+  },
+  "space": {
+    "0": "0",
+    "1": "0.25rem",
+    "2": "0.5rem",
+    "3": "0.75rem",
+    "4": "1rem",
+    "5": "1.25rem",
+    "6": "1.5rem",
+    "8": "2rem",
+    "10": "2.5rem",
+    "12": "3rem",
+    "16": "4rem",
+    "20": "5rem",
+    "24": "6rem"
+  },
+  "size": {
+    "controlSm": "2.25rem",
+    "controlMd": "2.75rem",
+    "controlLg": "3.25rem",
+    "contentSm": "30rem",
+    "contentMd": "42rem",
+    "contentLg": "64rem",
+    "contentXl": "80rem"
+  },
+  "radius": {
+    "none": "0",
+    "sm": "0.5rem",
+    "md": "0.75rem",
+    "lg": "1rem",
+    "xl": "1.5rem",
+    "2xl": "2rem",
+    "full": "999px"
+  },
+  "border": {
+    "thin": "1px",
+    "strong": "2px",
+    "focus": "3px"
+  },
+  "shadow": {
+    "none": "none",
+    "xs": "0 1px 2px rgba(17, 21, 18, 0.06)",
+    "sm": "0 6px 18px rgba(17, 21, 18, 0.08)",
+    "md": "0 16px 44px rgba(17, 21, 18, 0.10)",
+    "lg": "0 28px 80px rgba(17, 21, 18, 0.13)",
+    "focus": "0 0 0 4px rgba(185, 71, 42, 0.18)"
+  },
+  "blur": {
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px"
+  },
+  "motion": {
+    "duration": {
+      "instant": "80ms",
+      "fast": "140ms",
+      "normal": "220ms",
+      "slow": "360ms"
+    },
+    "easing": {
+      "standard": "cubic-bezier(0.2, 0, 0, 1)",
+      "enter": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "exit": "cubic-bezier(0.4, 0, 1, 1)"
+    }
+  },
+  "opacity": {
+    "disabled": "0.48",
+    "muted": "0.68",
+    "scrim": "0.58"
+  },
+  "z": {
+    "base": "0",
+    "raised": "10",
+    "sticky": "30",
+    "overlay": "60",
+    "toast": "90"
+  },
+  "breakpoint": {
+    "compact": "30rem",
+    "medium": "48rem",
+    "wide": "60rem",
+    "max": "90rem"
+  }
+}
