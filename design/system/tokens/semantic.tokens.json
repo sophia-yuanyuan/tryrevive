@@ -1,0 +1,43 @@
+{
+  "$schema": "https://tr.designtokens.org/semantic.schema.json",
+  "color": {
+    "canvas": { "light": "{ref.color.neutral.50}", "dark": "{ref.color.neutral.950}" },
+    "canvasMuted": { "light": "{ref.color.neutral.100}", "dark": "{ref.color.neutral.900}" },
+    "surface": { "light": "{ref.color.neutral.0}", "dark": "{ref.color.neutral.900}" },
+    "surfaceRaised": { "light": "{ref.color.neutral.25}", "dark": "{ref.color.neutral.800}" },
+    "surfaceSunken": { "light": "{ref.color.neutral.100}", "dark": "{ref.color.neutral.950}" },
+    "surfaceGlass": { "light": "{ref.color.alpha.white88}", "dark": "{ref.color.alpha.black56}" },
+    "text": { "light": "{ref.color.neutral.900}", "dark": "{ref.color.neutral.50}" },
+    "textSecondary": { "light": "{ref.color.neutral.600}", "dark": "{ref.color.neutral.300}" },
+    "textTertiary": { "light": "{ref.color.neutral.550}", "dark": "{ref.color.neutral.400}" },
+    "textInverse": { "light": "{ref.color.neutral.0}", "dark": "{ref.color.neutral.950}" },
+    "border": { "light": "{ref.color.neutral.200}", "dark": "{ref.color.neutral.700}" },
+    "borderStrong": { "light": "{ref.color.neutral.450}", "dark": "{ref.color.neutral.500}" },
+    "focus": { "light": "{ref.color.coral.500}", "dark": "{ref.color.coral.300}" },
+    "action": { "light": "{ref.color.coral.500}", "dark": "{ref.color.coral.300}" },
+    "actionHover": { "light": "{ref.color.coral.600}", "dark": "{ref.color.coral.200}" },
+    "actionPressed": { "light": "{ref.color.coral.700}", "dark": "{ref.color.coral.100}" },
+    "actionSubtle": { "light": "{ref.color.coral.50}", "dark": "{ref.color.coral.700}" },
+    "onAction": { "light": "{ref.color.neutral.0}", "dark": "{ref.color.neutral.950}" },
+    "success": { "light": "{ref.color.green.500}", "dark": "{ref.color.green.100}" },
+    "successSubtle": { "light": "{ref.color.green.50}", "dark": "{ref.color.green.700}" },
+    "info": { "light": "{ref.color.blue.500}", "dark": "{ref.color.blue.100}" },
+    "infoSubtle": { "light": "{ref.color.blue.50}", "dark": "{ref.color.blue.700}" },
+    "warning": { "light": "{ref.color.amber.500}", "dark": "{ref.color.amber.100}" },
+    "warningSubtle": { "light": "{ref.color.amber.50}", "dark": "{ref.color.amber.700}" },
+    "danger": { "light": "{ref.color.red.500}", "dark": "{ref.color.red.100}" },
+    "dangerSubtle": { "light": "{ref.color.red.50}", "dark": "{ref.color.red.700}" },
+    "overlay": { "light": "{ref.color.alpha.black56}", "dark": "{ref.color.alpha.black56}" }
+  },
+  "typography": {
+    "bodyFamily": "{ref.font.family.sans}",
+    "displayFamily": "{ref.font.family.display}",
+    "codeFamily": "{ref.font.family.mono}"
+  },
+  "layout": {
+    "gutter": "clamp(1rem, 4vw, 2.5rem)",
+    "sectionGap": "clamp(3rem, 8vw, 6rem)",
+    "contentWidth": "{ref.size.contentLg}",
+    "readingWidth": "{ref.size.contentMd}"
+  }
+}

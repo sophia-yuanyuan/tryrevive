@@ -1,0 +1,200 @@
+:root {
+  font-family: var(--tr-typography-body-family);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --tr-text-display: clamp(var(--tr-ref-font-size-800), 6vw, var(--tr-ref-font-size-1000));
+  --tr-text-title: clamp(var(--tr-ref-font-size-700), 4vw, var(--tr-ref-font-size-900));
+  --tr-text-heading: var(--tr-ref-font-size-700);
+  --tr-text-body: var(--tr-ref-font-size-400);
+  --tr-text-label: var(--tr-ref-font-size-300);
+  --tr-text-caption: var(--tr-ref-font-size-200);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  color: var(--tr-color-text);
+  background: var(--tr-color-canvas);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--tr-color-text);
+  background: var(--tr-color-canvas);
+  font-size: var(--tr-text-body);
+  line-height: var(--tr-ref-font-leading-normal);
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[tabindex]:not([tabindex="-1"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, a, input, select, textarea, [role="button"], [role="radio"], [tabindex]):focus-visible {
+  outline: var(--tr-component-focus-ring-width) solid var(--tr-component-focus-ring-color);
+  outline-offset: var(--tr-component-focus-ring-offset);
+}
+
+:where(button, [role="button"], input[type="checkbox"], input[type="radio"], select) {
+  min-width: var(--tr-ref-size-control-md);
+  min-height: var(--tr-ref-size-control-md);
+}
+
+:where(button, [role="button"]):not(:disabled) {
+  cursor: pointer;
+}
+
+:where(button, [role="button"]):disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--tr-ref-opacity-disabled);
+}
+
+::selection {
+  color: var(--tr-color-text);
+  background: var(--tr-color-action-subtle);
+}
+
+.tr-display,
+.tr-title,
+.tr-heading {
+  margin: 0;
+  color: var(--tr-color-text);
+  text-wrap: balance;
+}
+
+.tr-display,
+.tr-title {
+  font-family: var(--tr-typography-display-family);
+  font-weight: var(--tr-ref-font-weight-semibold);
+  letter-spacing: var(--tr-ref-font-tracking-tight);
+}
+
+.tr-display {
+  font-size: var(--tr-text-display);
+  line-height: var(--tr-ref-font-leading-tight);
+}
+
+.tr-title {
+  font-size: var(--tr-text-title);
+  line-height: var(--tr-ref-font-leading-tight);
+}
+
+.tr-heading {
+  font-size: var(--tr-text-heading);
+  font-weight: var(--tr-ref-font-weight-semibold);
+  line-height: var(--tr-ref-font-leading-snug);
+}
+
+.tr-body,
+.tr-caption,
+.tr-label {
+  margin: 0;
+}
+
+.tr-body {
+  color: var(--tr-color-text-secondary);
+  font-size: var(--tr-text-body);
+  line-height: var(--tr-ref-font-leading-relaxed);
+}
+
+.tr-label {
+  color: var(--tr-color-text);
+  font-size: var(--tr-text-label);
+  font-weight: var(--tr-ref-font-weight-semibold);
+  line-height: var(--tr-ref-font-leading-snug);
+}
+
+.tr-caption {
+  color: var(--tr-color-text-tertiary);
+  font-size: var(--tr-text-caption);
+  line-height: var(--tr-ref-font-leading-normal);
+}
+
+.tr-page {
+  width: min(100%, var(--tr-layout-content-width));
+  margin-inline: auto;
+  padding-inline: var(--tr-layout-gutter);
+}
+
+.tr-reading-width {
+  max-width: var(--tr-layout-reading-width);
+}
+
+.tr-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tr-stack-gap, var(--tr-ref-space-4));
+}
+
+.tr-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tr-cluster-gap, var(--tr-ref-space-3));
+}
+
+.tr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --tr-color-border: var(--tr-color-border-strong);
+  }
+
+  :where(button, a, input, select, textarea, [role="button"], [role="radio"]):focus-visible {
+    outline-width: calc(var(--tr-component-focus-ring-width) + 1px);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --tr-color-surface-glass: var(--tr-color-surface-raised);
+    --tr-component-navigation-bg: var(--tr-color-surface-raised);
+  }
+}
+
+@media (forced-colors: active) {
+  :where(button, a, input, select, textarea, [role="button"], [role="radio"]):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

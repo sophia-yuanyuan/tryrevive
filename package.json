@@ -12,6 +12,10 @@
   "scripts": {
     "dev": "vite",
     "dev:desktop": "npm run speech:install && electron-vite dev",
+    "design:build": "node scripts/build-design-tokens.mjs",
+    "design:check:tokens": "node scripts/check-design-tokens.mjs",
+    "design:audit": "node scripts/check-design-system.mjs",
+    "design:check": "npm run design:check:tokens && node scripts/check-design-system.mjs --strict",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
