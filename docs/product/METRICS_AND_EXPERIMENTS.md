@@ -176,7 +176,7 @@ reminderHelpful
 
 `反馈事件 → 重复模式 → 小改动提案 → 可见开发集评测 → 不可见晋级集评测 → 小流量验证 → 护栏检查 → 人工批准或回滚`
 
-候选只能修改白名单内的规则、问题树或提示词；评测器、指标定义、原始事件日志、预算和不可见晋级集必须只读。系统不得基于在线数据直接自我修改生产规则。完整决策见 [`../decisions/ADR-002_EVIDENCE_GATED_LEARNING_LOOP.md`](../decisions/ADR-002_EVIDENCE_GATED_LEARNING_LOOP.md)。
+候选只能修改白名单内的规则、问题树或提示词；评测器、指标定义、原始事件日志、预算和不可见晋级集必须只读。系统不得基于在线数据直接自我修改生产规则。完整决策见 [`../engineering/decisions/ADR-002_EVIDENCE_GATED_LEARNING_LOOP.md`](../engineering/decisions/ADR-002_EVIDENCE_GATED_LEARNING_LOOP.md)。
 
 ## 12. 增长计划边界
 

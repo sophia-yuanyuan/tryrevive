@@ -194,7 +194,7 @@ npm exec wrangler -- d1 migrations list tryrevive-cloud-staging --remote --confi
 npm exec wrangler -- d1 migrations apply tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 ```
 
-通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql`、`0004_cloud_analysis_limits.sql` 都显示已应用。第四段只增加限额准入和不含账号/会话标识的 UTC 日总量；Cloudflare 会在应用迁移前创建备份，任何一段失败都不要手工跳号。完整数据库规范和 PostgreSQL 切换门槛见 [`database/README.md`](../../database/README.md)。
+通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql`、`0004_cloud_analysis_limits.sql` 都显示已应用。第四段只增加限额准入和不含账号/会话标识的 UTC 日总量；Cloudflare 会在应用迁移前创建备份，任何一段失败都不要手工跳号。完整数据库规范和 PostgreSQL 切换门槛见 [`../engineering/database/MIGRATIONS.md`](../engineering/database/MIGRATIONS.md)。
 
 ### 6.3 以“全部关闭”状态首次部署
 

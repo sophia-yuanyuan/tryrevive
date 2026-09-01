@@ -1,7 +1,7 @@
 # TryRevive 旧 Demo AI 与公众号公开文章导入服务
 
 > 状态：仅保留给旧网页 Demo，不能作为收费云服务直接上线。新的账户、预付算力、语音/附件处理和权限边界见
-> `docs/product/IMMERSIVE_PLATFORM_ARCHITECTURE.md`。
+> [`IMMERSIVE_PLATFORM_ARCHITECTURE.md`](../../product/IMMERSIVE_PLATFORM_ARCHITECTURE.md)。
 
 这个 Worker 提供两项能力：
 

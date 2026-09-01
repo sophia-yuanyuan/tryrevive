@@ -60,12 +60,11 @@ python -m http.server 8000
 - `chrome-extension/`：Chrome Extension MV3 原型。
 - `worker/`：Cloudflare Worker 后端。
 - `tests/`：核心模块与浏览器端测试。
-- `docs/`：产品、部署和功能文档。
-- `design/`：设计系统、素材、参考资料与本地原型。
-- `marketing/`：产品介绍、目标受众、用户故事与对外话术草案。
+- `docs/`：产品、研究、增长、工程、运维和协作文档的统一归档入口。
+- `design/`：运行时设计资产、本地原型和设计 Token 构建输入。
 - `tools/`：不参与线上运行的一次性辅助脚本。
 
-详细说明见 [`docs/README.md`](docs/README.md)、[`design/README.md`](design/README.md)、[`marketing/README.md`](marketing/README.md) 和 [`tools/README.md`](tools/README.md)。
+全部项目文档从 [`docs/README.md`](docs/README.md) 进入；仓库根目录只保留 GitHub 与 AI 协作所需的标准入口文件。
 
 ## 数据与边界
 

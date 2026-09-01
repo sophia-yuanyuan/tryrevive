@@ -43,7 +43,7 @@ TryRevive 首发阶段只聚焦一个人群：
 
 正式开始计算 90 天目标前，需要具备获得用户同意的去标识、假名化事件统计或等价测量方案。当前仓库尚未提供已经验证的线上增长统计，不能用访问量推测用户数。
 
-详细定义与 90 天执行计划分别见 [`../docs/product/METRICS_AND_EXPERIMENTS.md`](../docs/product/METRICS_AND_EXPERIMENTS.md) 和 [`../docs/growth/90_DAY_1000_STUDENTS.md`](../docs/growth/90_DAY_1000_STUDENTS.md)。
+详细定义与 90 天执行计划分别见 [`../../product/METRICS_AND_EXPERIMENTS.md`](../../product/METRICS_AND_EXPERIMENTS.md) 和 [`../90_DAY_1000_STUDENTS.md`](../90_DAY_1000_STUDENTS.md)。
 
 ## 创业者的角色：参与者，不是第二 ICP
 
@@ -153,11 +153,11 @@ TryRevive 首发阶段只聚焦一个人群：
 
 ## 前 1,000 名用户的学习原则
 
-阶段数字、周目标和资源分配只由 [`../docs/growth/90_DAY_1000_STUDENTS.md`](../docs/growth/90_DAY_1000_STUDENTS.md) 维护。本画像文档只保留一个不变原则：先确认问题，再确认激活和 7 天实质成果，最后才扩大；不因为追求人数重新扩展到泛人群。
+阶段数字、周目标和资源分配只由 [`../90_DAY_1000_STUDENTS.md`](../90_DAY_1000_STUDENTS.md) 维护。本画像文档只保留一个不变原则：先确认问题，再确认激活和 7 天实质成果，最后才扩大；不因为追求人数重新扩展到泛人群。
 
 ## Build in Public 渠道原则
 
-首轮假设是用小红书与抖音直接验证中国大学生需求，用 X 与 Reddit 研究语言、记录学习并获得转介绍；最终以激活、7 天实质成果和创始人时间判断。所有平台格式、频次、规则与内容码只在 [`../docs/growth/BUILD_IN_PUBLIC_PLAYBOOK.md`](../docs/growth/BUILD_IN_PUBLIC_PLAYBOOK.md) 维护。
+首轮假设是用小红书与抖音直接验证中国大学生需求，用 X 与 Reddit 研究语言、记录学习并获得转介绍；最终以激活、7 天实质成果和创始人时间判断。所有平台格式、频次、规则与内容码只在 [`../BUILD_IN_PUBLIC_PLAYBOOK.md`](../BUILD_IN_PUBLIC_PLAYBOOK.md) 维护。
 
 ## 暂不聚焦
 

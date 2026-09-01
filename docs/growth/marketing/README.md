@@ -17,17 +17,17 @@
 
 ## 关联执行文档
 
-- [`../docs/growth/90_DAY_1000_STUDENTS.md`](../docs/growth/90_DAY_1000_STUDENTS.md)：90 天漏斗、阶段、归因和停止条件。
-- [`../docs/growth/BUILD_IN_PUBLIC_PLAYBOOK.md`](../docs/growth/BUILD_IN_PUBLIC_PLAYBOOK.md)：小红书、抖音、X 和 Reddit 的原生内容策略与平台边界。
-- [`../docs/product/PRD_STUDENT_MVP.md`](../docs/product/PRD_STUDENT_MVP.md)：学生 MVP 的产品范围和验收标准。
-- [`../docs/research/RESEARCH_LOG.md`](../docs/research/RESEARCH_LOG.md)：真实用户证据、反证和授权状态。
+- [`../90_DAY_1000_STUDENTS.md`](../90_DAY_1000_STUDENTS.md)：90 天漏斗、阶段、归因和停止条件。
+- [`../BUILD_IN_PUBLIC_PLAYBOOK.md`](../BUILD_IN_PUBLIC_PLAYBOOK.md)：小红书、抖音、X 和 Reddit 的原生内容策略与平台边界。
+- [`../../product/PRD_STUDENT_MVP.md`](../../product/PRD_STUDENT_MVP.md)：学生 MVP 的产品范围和验收标准。
+- [`../../research/RESEARCH_LOG.md`](../../research/RESEARCH_LOG.md)：真实用户证据、反证和授权状态。
 
 ## 内容来源
 
-- [项目 README](../README.md)
-- [V3 产品需求文档](../docs/product/PRD_V3_REVIVAL_CORE.md)
-- [版本地图](../docs/product/VERSIONS.md)
-- [部署前清单](../docs/deployment/DEPLOYMENT_D_DRIVE.md)
+- [项目 README](../../../README.md)
+- [V3 产品需求文档](../../product/PRD_V3_REVIVAL_CORE.md)
+- [版本地图](../../product/VERSIONS.md)
+- [部署前清单](../../operations/deployment/DEPLOYMENT_D_DRIVE.md)
 
 ## 外发前检查
 

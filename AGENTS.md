@@ -56,8 +56,8 @@ SYNC
 | 页面、文案、状态与响应式要求 | `docs/product/STUDENT_MVP_EXPERIENCE_SPEC.md` |
 | 当前代码已经支持什么 | 指定 base commit 的代码与测试 |
 | 技术状态机和数据结构 | `docs/product/PRD_V3_REVIVAL_CORE.md` 与代码 |
-| 长期技术/产品决策 | `docs/decisions/` |
-| 视觉规范 | 已批准的原型 manifest 与 `design/system/` |
+| 长期技术/产品决策 | `docs/engineering/decisions/` |
+| 视觉规范 | `docs/engineering/design/system/`、`design/system/tokens/` 与已批准的原型 manifest |
 | 当前是否已经发布 | 远端 commit、部署状态和线上验证三者共同确认 |
 
 产品规格描述目标状态，代码描述当前能力。两者不一致时，必须写明 `CURRENT`、`PARTIAL CURRENT` 或 `NEW CONCEPT`，不能选择性忽略。

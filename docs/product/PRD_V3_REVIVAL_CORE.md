@@ -39,7 +39,7 @@ TryRevive 与现有 Agent/Skill 的关系：
 
 ### 目标用户
 
-- 首发只聚焦高校在读学生，具体画像与排除范围见 [`../../marketing/AUDIENCE_AND_POSITIONING.md`](../../marketing/AUDIENCE_AND_POSITIONING.md)。
+- 首发只聚焦高校在读学生，具体画像与排除范围见 [`../growth/marketing/AUDIENCE_AND_POSITIONING.md`](../growth/marketing/AUDIENCE_AND_POSITIONING.md)。
 - 优先处理课程、竞赛、作品集、科研和毕业设计中的真实停滞项目。
 - 独立开发者、职场知识工作者和成熟团队不属于前三个月的主动获客对象。
 
@@ -192,7 +192,7 @@ GitHub 连接不要求令牌，不读取私有仓库，也不会创建 Issue、�
 
 当前 V3 的核心闭环不依赖 AI，因此即使后端暂时下线，用户仍可恢复项目、生成规则动作、记录证据和安排回流。
 
-该方向的正式边界见 [`../decisions/ADR-001_PROVIDER_DECOUPLING.md`](../decisions/ADR-001_PROVIDER_DECOUPLING.md)。它不是学生 MVP 的 P0 用户功能，也不能使用“彻底解除所有外部依赖”这类不准确表述。
+该方向的正式边界见 [`../engineering/decisions/ADR-001_PROVIDER_DECOUPLING.md`](../engineering/decisions/ADR-001_PROVIDER_DECOUPLING.md)。它不是学生 MVP 的 P0 用户功能，也不能使用“彻底解除所有外部依赖”这类不准确表述。
 
 ### 6.2 目标架构
 

@@ -32,7 +32,7 @@ python -m http.server 8000
 
 ## 部署
 
-按照 `worker/README.md` 部署 Cloudflare Worker，然后在 TryRevive 的「⚙️ 设置偏好」中填写 Worker 地址。网页会把公开文章链接发给 `${Worker地址}/knowledge/import`，AI 问答仍使用 Worker 根路径。
+按照 [`../worker/LEGACY_WORKER.md`](../worker/LEGACY_WORKER.md) 部署 Cloudflare Worker，然后在 TryRevive 的「⚙️ 设置偏好」中填写 Worker 地址。网页会把公开文章链接发给 `${Worker地址}/knowledge/import`，AI 问答仍使用 Worker 根路径。
 
 ## 边界
 

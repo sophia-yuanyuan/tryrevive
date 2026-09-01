@@ -111,8 +111,8 @@ P0 目标链路：
 | 技术实现规格 | `docs/product/PRD_V3_REVIVAL_CORE.md` |
 | 版本地图 | `docs/product/VERSIONS.md` |
 | 用户研究 | `docs/research/STUDENT_MVP_VALIDATION_PLAN.md`、`RESEARCH_LOG.md` |
-| 长期决策 | `docs/decisions/` |
-| 视觉系统 | `design/system/` 与获批原型 manifest |
+| 长期决策 | `docs/engineering/decisions/` |
+| 视觉系统 | `docs/engineering/design/system/`、`design/system/tokens/` 与获批原型 manifest |
 | AI 协作 | `AGENTS.md`、`docs/collaboration/AI_HANDOFF_PLAYBOOK.md` |
 
 ### 文档状态说明

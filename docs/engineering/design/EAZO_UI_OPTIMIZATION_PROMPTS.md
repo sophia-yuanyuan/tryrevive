@@ -54,8 +54,8 @@ Eazo 的隐私政策说明，Creator 可以处理提示词、文件、图片、�
 ### UX 审计轮
 
 - 4–6 张最能代表首次流程的桌面端和手机端截图；
-- [`../marketing/AUDIENCE_AND_POSITIONING.md`](../marketing/AUDIENCE_AND_POSITIONING.md)；
-- [`../docs/product/STUDENT_MVP_EXPERIENCE_SPEC.md`](../docs/product/STUDENT_MVP_EXPERIENCE_SPEC.md)。
+- [`../../growth/marketing/AUDIENCE_AND_POSITIONING.md`](../../growth/marketing/AUDIENCE_AND_POSITIONING.md)；
+- [`../../product/STUDENT_MVP_EXPERIENCE_SPEC.md`](../../product/STUDENT_MVP_EXPERIENCE_SPEC.md)。
 
 ### 原型轮
 

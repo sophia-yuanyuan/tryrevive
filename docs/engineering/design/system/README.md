@@ -4,9 +4,9 @@ This directory is the single source of truth for TryRevive's visual language. It
 
 ## Token layers
 
-1. `tokens/reference.tokens.json` contains raw palette, type, spacing, radius, shadow, motion, size, opacity, z-index, and breakpoint primitives.
-2. `tokens/semantic.tokens.json` assigns product meaning and light/dark themes. Product code should consume this layer by default.
-3. `tokens/component.tokens.json` defines stable contracts for buttons, fields, cards, chips, dialogs, navigation, and focus rings.
+1. [`design/system/tokens/reference.tokens.json`](../../../../design/system/tokens/reference.tokens.json) contains raw palette, type, spacing, radius, shadow, motion, size, opacity, z-index, and breakpoint primitives.
+2. [`design/system/tokens/semantic.tokens.json`](../../../../design/system/tokens/semantic.tokens.json) assigns product meaning and light/dark themes. Product code should consume this layer by default.
+3. [`design/system/tokens/component.tokens.json`](../../../../design/system/tokens/component.tokens.json) defines stable contracts for buttons, fields, cards, chips, dialogs, navigation, and focus rings.
 4. `src/renderer/design-system/generated/` is generated output. Never edit it by hand.
 
 Run `npm run design:build` after changing token JSON. Run `npm run design:check:tokens` to verify generated artifacts are current.

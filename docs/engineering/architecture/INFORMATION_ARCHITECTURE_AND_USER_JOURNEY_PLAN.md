@@ -50,7 +50,7 @@ TryRevive 当前真正的问题不是“核心流程做不通”，而是“核�
 - 运行候选平台现有 Web E2E：桌面 1440×900、移动 390×844，共 `24/24` 通过；
 - 只读查询 GitHub refs；
 - 通过 DNS-over-HTTPS 查询 `tryrevive.online`、`www`、`app` 和 `docs`；
-- 盘点 `docs/` 与 `marketing/` 共 24 份 Markdown 文件的入口、状态与元数据。
+- 盘点统一归档后的 `docs/` 文档入口、状态与元数据。
 
 ### 2.3 未验证事项
 
