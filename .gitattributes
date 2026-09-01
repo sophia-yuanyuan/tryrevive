@@ -1,0 +1,11 @@
+# Phase 1: only stabilize line endings for the collaboration baseline.
+# Repository-wide normalization is deferred until the existing dirty index is
+# reviewed and split into intentional commits.
+.gitattributes text eol=lf
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
+CODEX.md text eol=lf
+GEMINI.md text eol=lf
+CHANGELOG.md text eol=lf
+docs/PROJECT_STATE.md text eol=lf
+docs/collaboration/*.md text eol=lf
