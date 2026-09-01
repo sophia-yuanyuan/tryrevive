@@ -209,19 +209,6 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // ---- 临时诊断端点（定位问题后移除） ----
-    if (request.method === "GET" && url.pathname === "/debug") {
-      const probe = { model: "deepseek-chat", max_tokens: 1, messages: [{ role: "user", content: "hi" }] };
-      const real = await callDeepSeek((env.DEEPSEEK_API_KEY || "").trim(), probe);
-      const fake = await callDeepSeek("sk-fake-key-for-network-test", probe);
-      const keyRaw = env.DEEPSEEK_API_KEY || "";
-      return new Response(JSON.stringify({
-        keyInfo: { defined: !!env.DEEPSEEK_API_KEY, length: keyRaw.length, startsWithSk: keyRaw.trim().startsWith("sk-") },
-        realKeyCall: { status: real.status, body: real.text.slice(0, 300) },
-        fakeKeyCall: { status: fake.status, body: fake.text.slice(0, 300) }
-      }, null, 2), { headers: { "content-type": "application/json" } });
-    }
-
     const origin = request.headers.get("Origin") || "";
     const allowed = ALLOWED_ORIGINS.includes(origin);
 

@@ -1,4 +1,4 @@
-// Tryrevive WeChat public-article knowledge base.
+// TryRevive WeChat public-article knowledge base.
 // Imports only user-supplied public links/text or articles explicitly captured by the extension.
 (function () {
   "use strict";
@@ -95,7 +95,7 @@
           <div class="wechat-kb-view" data-kb-panel="ask">
             <div class="wechat-kb-card">
               <h4>你想从已收录文章里找什么？</h4>
-              <p class="wechat-kb-help">例如：朋友们对 Try Revive 的目标用户有什么建议？</p>
+              <p class="wechat-kb-help">例如：朋友们对 TryRevive 的目标用户有什么建议？</p>
               <div class="wechat-kb-row">
                 <input class="wechat-kb-input" id="wechat-kb-question" placeholder="输入问题或关键词" autocomplete="off">
                 <button class="wechat-kb-primary" id="wechat-kb-ask">查找并回答</button>
@@ -245,7 +245,7 @@
     if (!articles.length) {
       const empty = document.createElement("p");
       empty.className = "wechat-kb-help";
-      empty.textContent = "还没有文章。可以导入公开链接、粘贴文字，或用浏览器扩展在文章页点击“收录到 Tryrevive”。";
+      empty.textContent = "还没有文章。可以导入公开链接、粘贴文字，或用浏览器扩展在文章页点击“收录到 TryRevive”。";
       list.appendChild(empty);
       return;
     }

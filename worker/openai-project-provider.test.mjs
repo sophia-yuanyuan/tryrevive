@@ -1,0 +1,405 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  analysisLimitsFromEnvironment,
+  createProviderFromEnvironment,
+  providerModeFromEnvironment
+} from "./cloud-service.js";
+import { createOpenAIProjectProvider } from "./openai-project-provider.js";
+
+const ANALYSIS_LIMIT_ENVIRONMENT = Object.freeze({
+  CLOUD_LIMIT_ACCOUNT_PER_MINUTE: "20",
+  CLOUD_LIMIT_SESSION_PER_MINUTE: "10",
+  CLOUD_LIMIT_ACCOUNT_DAILY_ANALYSES: "100",
+  CLOUD_LIMIT_ACCOUNT_DAILY_SPEECH_MINUTES: "120",
+  CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES: "1000",
+  CLOUD_LIMIT_GLOBAL_DAILY_SPEECH_MINUTES: "1200"
+});
+
+function withAnalysisLimits(environment) {
+  return { ...ANALYSIS_LIMIT_ENVIRONMENT, ...environment };
+}
+
+const ANALYSIS = {
+  originalGoal: "完成黑客松报名",
+  lastCompleted: "整理了项目说明",
+  stuckAt: "还没有写个人分工",
+  deadline: "本周日",
+  whyMatters: "想验证项目",
+  stallReasons: ["等待队友信息"],
+  suggestedDecision: "shrink",
+  nextAction: {
+    text: "先写自己的职责",
+    doneDefinition: "文档中留下 80 字职责说明",
+    minutes: 10
+  },
+  uncertainties: ["队友是否最终参加"]
+};
+
+const SAFETY_IDENTIFIER = "a".repeat(64);
+
+function jsonResponse(value, status = 200) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+function providerWith(fetchImpl) {
+  return createOpenAIProjectProvider({
+    apiKey: "server-secret",
+    analysisModel: "approved-analysis-model",
+    fetchImpl
+  });
+}
+
+function textSource(text = "我已经完成了项目说明，但个人分工还没写。") {
+  return {
+    metadata: {
+      kind: "text",
+      name: "文字",
+      mimeType: "text/plain",
+      sizeBytes: new TextEncoder().encode(text).byteLength,
+      durationSeconds: null
+    },
+    text
+  };
+}
+
+test("text analysis uses server authorization, store:false and strict structured output", async () => {
+  const calls = [];
+  const provider = providerWith(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ output_text: JSON.stringify(ANALYSIS) });
+  });
+
+  const result = await provider.analyze({
+    projectTitle: "报名项目",
+    source: textSource(),
+    safetyIdentifier: SAFETY_IDENTIFIER
+  });
+
+  assert.deepEqual(result, ANALYSIS);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.openai.com/v1/responses");
+  assert.equal(calls[0].options.headers.authorization, "Bearer server-secret");
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.model, "approved-analysis-model");
+  assert.deepEqual(body.reasoning, { effort: "medium" });
+  assert.equal(body.safety_identifier, SAFETY_IDENTIFIER);
+  assert.equal(body.store, false);
+  assert.equal(body.text.format.type, "json_schema");
+  assert.equal(body.text.format.strict, true);
+  assert.equal(body.text.format.schema.additionalProperties, false);
+  assert.match(body.input[1].content[0].text, /个人分工还没写/);
+});
+
+test("audio is transcribed first and only the transcript enters project analysis", async () => {
+  const calls = [];
+  const provider = providerWith(async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith("/audio/transcriptions")) {
+      return jsonResponse({ text: "我做到报名说明，卡在个人分工。" });
+    }
+    return jsonResponse({ output_text: JSON.stringify(ANALYSIS) });
+  });
+
+  await provider.analyze({
+    projectTitle: "报名项目",
+    safetyIdentifier: SAFETY_IDENTIFIER,
+    source: {
+      metadata: {
+        kind: "audio",
+        name: "我的秘密录音.webm",
+        mimeType: "audio/webm",
+        sizeBytes: 4,
+        durationSeconds: 12
+      },
+      bytes: new Uint8Array([1, 2, 3, 4])
+    }
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, "https://api.openai.com/v1/audio/transcriptions");
+  assert.equal(calls[0].options.body.get("model"), "gpt-4o-mini-transcribe");
+  const uploadedFile = calls[0].options.body.get("file");
+  assert.equal(uploadedFile.name, "tryrevive-audio.webm");
+  assert.equal(calls[0].options.body.has("safety_identifier"), false);
+  const analysisBody = JSON.parse(calls[1].options.body);
+  assert.equal(analysisBody.safety_identifier, SAFETY_IDENTIFIER);
+  assert.match(analysisBody.input[1].content[0].text, /我做到报名说明/);
+  assert.doesNotMatch(calls[1].options.body, /我的秘密录音/);
+});
+
+test("attachment uses a private filename and an inline file input without Files API persistence", async () => {
+  const calls = [];
+  const provider = providerWith(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ output_text: JSON.stringify(ANALYSIS) });
+  });
+
+  await provider.analyze({
+    projectTitle: "报名项目",
+    safetyIdentifier: SAFETY_IDENTIFIER,
+    source: {
+      metadata: {
+        kind: "attachment",
+        name: "客户真实姓名-报名材料.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 3,
+        durationSeconds: null
+      },
+      bytes: new Uint8Array([1, 2, 3])
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.openai.com/v1/responses");
+  const body = JSON.parse(calls[0].options.body);
+  const file = body.input[1].content[0];
+  assert.equal(file.type, "input_file");
+  assert.equal(file.filename, "tryrevive-context.pdf");
+  assert.equal(file.file_data, "data:application/pdf;base64,AQID");
+  assert.doesNotMatch(calls[0].options.body, /客户真实姓名/);
+});
+
+test("provider failures expose only stable codes and never upstream response content", async () => {
+  const provider = providerWith(async () =>
+    jsonResponse({ error: { message: "raw provider diagnostic with private material" } }, 429)
+  );
+
+  await assert.rejects(
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: SAFETY_IDENTIFIER
+      }),
+    (error) => {
+      assert.equal(error.code, "openai_rate_limited");
+      assert.doesNotMatch(error.message, /private material/);
+      return true;
+    }
+  );
+});
+
+test("invalid structured output is rejected instead of entering the project state", async () => {
+  const provider = providerWith(async () => jsonResponse({ output_text: "not-json" }));
+
+  await assert.rejects(
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: SAFETY_IDENTIFIER
+      }),
+    (error) => error.code === "openai_invalid_analysis"
+  );
+});
+
+test("analysis rejects missing or raw safety identifiers before sending content upstream", async () => {
+  let calls = 0;
+  const provider = providerWith(async () => {
+    calls += 1;
+    return jsonResponse({ output_text: JSON.stringify(ANALYSIS) });
+  });
+
+  await assert.rejects(
+    () => provider.analyze({ projectTitle: "报名项目", source: textSource() }),
+    /safety identifier is required/
+  );
+  await assert.rejects(
+    () =>
+      provider.analyze({
+        projectTitle: "报名项目",
+        source: textSource(),
+        safetyIdentifier: "acct_raw-identifier"
+      }),
+    /must be a SHA-256 hex digest/
+  );
+  assert.equal(calls, 0);
+});
+
+test("configuration rejects missing, placeholder, and insecure provider settings", () => {
+  assert.throws(
+    () =>
+      createOpenAIProjectProvider({
+        apiKey: "server-secret",
+        analysisModel: "approved",
+        reasoningEffort: "automatic"
+      }),
+    /reasoning effort is invalid/
+  );
+  assert.throws(
+    () => createOpenAIProjectProvider({ apiKey: "", analysisModel: "approved" }),
+    /API key is required/
+  );
+  assert.throws(
+    () =>
+      createOpenAIProjectProvider({
+        apiKey: "server-secret",
+        analysisModel: "REPLACE_WITH_APPROVED_MODEL"
+      }),
+    /analysis model is invalid/
+  );
+  assert.throws(
+    () =>
+      createOpenAIProjectProvider({
+        apiKey: "server-secret",
+        analysisModel: "approved",
+        baseUrl: "http://api.example.test/v1"
+      }),
+    /must use HTTPS/
+  );
+});
+
+test("the production provider remains off until every server-side gate is explicit", () => {
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "false",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "approved"
+    }),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      OPENAI_API_KEY: "server-secret"
+    }),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "approved"
+    }),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "approved"
+    }))?.reasoningEffort,
+    "medium"
+  );
+  assert.equal(
+    createProviderFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "review-candidate"
+    })),
+    null
+  );
+  assert.equal(
+    createProviderFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef",
+      OPENAI_API_KEY: "server-secret",
+      OPENAI_ANALYSIS_MODEL: "review-candidate",
+      OPENAI_REASONING_EFFORT: "low"
+    }))?.reasoningEffort,
+    "low"
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
+    })),
+    "review"
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
+    })),
+    "approved"
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ACCESS_TOKEN: "review_access_0123456789abcdef0123456789abcdef"
+    })),
+    null
+  );
+  assert.equal(
+    providerModeFromEnvironment(withAnalysisLimits({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "staging",
+      OPENAI_MODEL_REVIEW_ENABLED: "true",
+      OPENAI_MODEL_APPROVED: "false"
+    })),
+    null
+  );
+  assert.equal(
+    providerModeFromEnvironment({
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
+    }),
+    null
+  );
+  assert.equal(
+    analysisLimitsFromEnvironment({
+      ...ANALYSIS_LIMIT_ENVIRONMENT,
+      CLOUD_LIMIT_GLOBAL_DAILY_ANALYSES: "0"
+    }),
+    null
+  );
+  assert.deepEqual(analysisLimitsFromEnvironment(ANALYSIS_LIMIT_ENVIRONMENT), {
+    accountReservationsPerMinute: 20,
+    sessionReservationsPerMinute: 10,
+    accountProjectAnalysesPerDay: 100,
+    accountSpeechMinutesPerDay: 120,
+    globalProjectAnalysesPerDay: 1000,
+    globalSpeechMinutesPerDay: 1200
+  });
+});
+
+test("every malformed or missing analysis limit fails closed", () => {
+  const invalidValues = ["", "0", "-1", "1.5", " 1", "2147483648"];
+  for (const key of Object.keys(ANALYSIS_LIMIT_ENVIRONMENT)) {
+    const missing = { ...ANALYSIS_LIMIT_ENVIRONMENT };
+    delete missing[key];
+    assert.equal(analysisLimitsFromEnvironment(missing), null, `${key} missing`);
+    for (const value of invalidValues) {
+      assert.equal(
+        analysisLimitsFromEnvironment({ ...ANALYSIS_LIMIT_ENVIRONMENT, [key]: value }),
+        null,
+        `${key}=${JSON.stringify(value)}`
+      );
+    }
+  }
+  assert.equal(
+    providerModeFromEnvironment({
+      ...ANALYSIS_LIMIT_ENVIRONMENT,
+      CLOUD_LIMIT_ACCOUNT_PER_MINUTE: "0",
+      CLOUD_PROVIDER_ENABLED: "true",
+      CLOUD_DEPLOYMENT_ENVIRONMENT: "production",
+      OPENAI_MODEL_APPROVED: "true",
+      OPENAI_MODEL_REVIEW_ENABLED: "false"
+    }),
+    null
+  );
+});

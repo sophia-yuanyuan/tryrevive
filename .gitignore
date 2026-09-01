@@ -12,6 +12,14 @@ desktop.ini
 # Node (如果将来添加)
 node_modules/
 npm-debug.log*
+dist/
+out/
+release/
+coverage/
+playwright-report/
+test-results/
+.cache/
+resources/vendor/whisper/windows-x64/
 
 # 日志
 *.log
@@ -31,3 +39,10 @@ npm-debug.log*
 
 # 本地私有草稿（不得提交到公开仓库）
 private/
+
+worker/wrangler.cloud.staging.toml
+worker/wrangler.cloud.production.toml
+
+# Flyway local credentials and generated state
+flyway.user.toml
+.flyway/

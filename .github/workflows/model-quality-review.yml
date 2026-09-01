@@ -1,0 +1,73 @@
+name: Staging model quality review
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_label:
+        description: Exact staging analysis model id recorded for this review
+        required: true
+        type: string
+      reasoning_effort:
+        description: Exact GPT-5.6 reasoning effort deployed to staging
+        required: true
+        default: medium
+        type: choice
+        options:
+          - none
+          - low
+          - medium
+          - high
+          - xhigh
+          - max
+      confirm_staging_usage:
+        description: This run consumes 10 project analyses and at least 1 speech minute
+        required: true
+        default: CANCEL
+        type: choice
+        options:
+          - CANCEL
+          - I_ACCEPT_10_MODEL_REVIEWS
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: inputs.confirm_staging_usage == 'I_ACCEPT_10_MODEL_REVIEWS'
+    runs-on: windows-latest
+    environment: tryrevive-staging
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Create synthetic voice, PDF, and DOCX fixtures
+        shell: powershell
+        run: >-
+          ./scripts/create-remote-e2e-fixtures.ps1
+          -OutputDirectory "${{ runner.temp }}\tryrevive-model-review-fixtures"
+      - name: Run ten-case staging quality gate
+        run: npm run test:e2e:model-quality
+        env:
+          TRYREVIVE_MODEL_REVIEW: "1"
+          TRYREVIVE_REMOTE_BASE_URL: "https://tryrevive-cloud-staging.tryrevive.workers.dev"
+          TRYREVIVE_REMOTE_FIXTURE_DIR: "${{ runner.temp }}\tryrevive-model-review-fixtures"
+          TRYREVIVE_REMOTE_FUNDED_SESSION: "${{ secrets.TRYREVIVE_REMOTE_FUNDED_SESSION }}"
+          TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN: "${{ secrets.TRYREVIVE_MODEL_REVIEW_ACCESS_TOKEN }}"
+          TRYREVIVE_MODEL_REVIEW_LABEL: "${{ inputs.model_label }}"
+          TRYREVIVE_MODEL_REVIEW_REASONING_EFFORT: "${{ inputs.reasoning_effort }}"
+          TRYREVIVE_MODEL_REVIEW_COMMIT: "${{ github.sha }}"
+          TRYREVIVE_MODEL_REVIEW_ACTOR: "${{ github.actor }}"
+          TRYREVIVE_MODEL_REVIEW_REPORT: "${{ runner.temp }}\tryrevive-model-review.md"
+      - name: Upload review record for human sign-off
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tryrevive-model-review-${{ github.run_id }}
+          path: ${{ runner.temp }}\tryrevive-model-review.md
+          if-no-files-found: error
+          retention-days: 30

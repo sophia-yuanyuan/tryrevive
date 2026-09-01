@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: npm run check
+      - run: npm run test:e2e
+
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: npm run test:e2e:desktop
+      - run: npm run dist:win
+      - run: npm run verify:dist:win
+      - run: npm run test:e2e:packaged
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tryrevive-windows-unsigned
+          path: |
+            release/TryRevive-Setup-*-x64.exe
+            release/TryRevive-Portable-*-x64.exe
+            release/SHA256SUMS.txt

@@ -1,0 +1,9 @@
+[flyway]
+locations = ["filesystem:database/migrations/postgresql"]
+defaultSchema = "public"
+table = "flyway_schema_history"
+validateMigrationNaming = true
+failOnMissingLocations = true
+cleanDisabled = true
+baselineOnMigrate = false
+outOfOrder = false

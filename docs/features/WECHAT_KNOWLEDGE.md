@@ -1,10 +1,10 @@
-# Tryrevive 公众号知识库
+# TryRevive 公众号知识库
 
 ## 已实现
 
 - 用户粘贴一到多个公开公众号文章链接后导入，单次最多 8 篇。
 - 用户可以直接粘贴标题、公众号、原文链接和正文。
-- Chrome 扩展在当前公开公众号文章页显示「📚 收录到 Tryrevive」按钮，一键保存当前文章。
+- Chrome 扩展在当前公开公众号文章页显示「📚 收录到 TryRevive」按钮，一键保存当前文章。
 - 文章保存在当前浏览器的 localStorage，最多 50 篇、每篇正文最多 4 万字。
 - 提问时先做本地相关性检索，只把最相关的少量片段发给 AI。
 - AI 回答必须基于所给片段，并显示可点击的原文来源；未配置 AI 时自动显示本地相关原文。
@@ -25,14 +25,14 @@ python -m http.server 8000
 2. 打开「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择本项目的 `chrome-extension` 文件夹。
 4. 打开一篇公开的 `mp.weixin.qq.com/s/...` 文章。
-5. 点击页面右下角的「📚 收录到 Tryrevive」。
-6. 打开 Tryrevive，文章会自动同步到「文章列表」。
+5. 点击页面右下角的「📚 收录到 TryRevive」。
+6. 打开 TryRevive，文章会自动同步到「文章列表」。
 
 修改扩展代码后，需要在扩展管理页点一次「重新加载」。
 
 ## 部署
 
-按照 `worker/README.md` 部署 Cloudflare Worker，然后在 Tryrevive 的「⚙️ 设置偏好」中填写 Worker 地址。网页会把公开文章链接发给 `${Worker地址}/knowledge/import`，AI 问答仍使用 Worker 根路径。
+按照 `worker/README.md` 部署 Cloudflare Worker，然后在 TryRevive 的「⚙️ 设置偏好」中填写 Worker 地址。网页会把公开文章链接发给 `${Worker地址}/knowledge/import`，AI 问答仍使用 Worker 根路径。
 
 ## 边界
 

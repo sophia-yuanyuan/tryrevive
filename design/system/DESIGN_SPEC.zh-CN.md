@@ -18,7 +18,7 @@ Cohere 的设计系统如同一座戒备森严的金库：其力量并非源于�
 
 | Token | 值 | 用法 |
 |---|---|---|
-| `--primary` | `#FF8A65` | Tryrevive 主按钮、选中状态、链接与焦点 |
+| `--primary` | `#FF8A65` | TryRevive 主按钮、选中状态、链接与焦点 |
 | `--bg` | `#FFFFFF` | main background |
 | `--bg-soft` | `#F9FAFB` | card background |
 | `--ink` | `#000000` | body text |
@@ -27,7 +27,7 @@ Cohere 的设计系统如同一座戒备森严的金库：其力量并非源于�
 | `--accent` | `#1E1E1E` | single accent |
 | `--line` | `rgba(229, 231, 235, 1.0)` | divider |
 
-**用色原则:** 高对比度中性色负责信息层级；Tryrevive Warm Coral `#FF8A65` 是唯一主色，只用于主按钮、选中、链接和焦点，每屏最多一个主按钮。
+**用色原则:** 高对比度中性色负责信息层级；TryRevive Warm Coral `#FF8A65` 是唯一主色，只用于主按钮、选中、链接和焦点，每屏最多一个主按钮。
 
 原则是绝对的：对比度与清晰度优先，仅在传达特定功能含义时使用色彩。
 
@@ -116,5 +116,5 @@ Cohere 的设计系统如同一座戒备森严的金库：其力量并非源于�
 ## System Prompt（粘进 AI 工具）
 
 ```
-这是 Tryrevive 的克制型注意力工具界面。它采用高对比度中性色，搭配唯一 Primary Color：Tryrevive Warm Coral #FF8A65。主色只用于主按钮、选中状态、链接和 focus ring，每屏最多一个主按钮。字体建立从56px标题到14px注释的清晰层级，布局使用标准8pt间距。避免复杂渐变、装饰性图标、卡片套卡片和多个强调色竞争；文案温和、直接，并始终把用户带回下一步行动。
+这是 TryRevive 的克制型注意力工具界面。它采用高对比度中性色，搭配唯一 Primary Color：TryRevive Warm Coral #FF8A65。主色只用于主按钮、选中状态、链接和 focus ring，每屏最多一个主按钮。字体建立从56px标题到14px注释的清晰层级，布局使用标准8pt间距。避免复杂渐变、装饰性图标、卡片套卡片和多个强调色竞争；文案温和、直接，并始终把用户带回下一步行动。
 ```
