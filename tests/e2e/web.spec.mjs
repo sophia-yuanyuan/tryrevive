@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createTextPdf } from "./material-fixtures.mjs";
 
 async function completeRevivalLoop(page) {
-  await page.goto("/");
+  await page.goto("/#/start");
   await expect(page.getByRole("heading", { name: "先把现场交给 tryrevive。" })).toBeVisible();
 
   await page
@@ -115,7 +115,7 @@ async function seedCollectionState(page) {
     updatedAt: now
   };
 
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.evaluate(async (value) => {
     await new Promise((resolve, reject) => {
       const request = globalThis.indexedDB.open("tryrevive", 1);
@@ -146,10 +146,52 @@ test("student can complete the P0 loop and resume after reload", async ({ page }
   await expect(page.getByText(/课程作品集 · 计划回来时间/)).toBeVisible();
 });
 
+test("landing gives a new visitor one direct path into the project journey", async ({ page }) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "停下来的项目，也可以找回下一步。" })
+  ).toBeVisible();
+  await expect(page.getByText("模拟示例 · 不是用户案例", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "成果", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "复活我的项目", exact: true }).first().click();
+  await expect(page).toHaveURL(/#\/start$/u);
+  await expect(page.getByRole("heading", { name: "先把现场交给 tryrevive。" })).toBeVisible();
+});
+
+test("landing resumes an existing local project instead of creating a second entry", async ({
+  page
+}) => {
+  await page.goto("/#/start");
+  await page.getByText("只先收纳多个项目名称", { exact: true }).click();
+  await page.getByLabel("所有还在心里的项目").fill("返场项目");
+  await page.getByRole("button", { name: "收下这 1 个项目" }).click();
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: "从「返场项目」继续", exact: true }).first()
+  ).toBeVisible();
+  await page.getByRole("link", { name: "从「返场项目」继续", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "先找回「返场项目」的现场" })).toBeVisible();
+});
+
+test("help preserves a safe return to the journey and unknown routes render a real 404", async ({
+  page
+}) => {
+  await page.goto("/#/start");
+  await page.getByRole("link", { name: "帮助", exact: true }).click();
+  await expect(page).toHaveURL(/#\/help\?returnTo=\/start$/u);
+  await page.getByRole("link", { name: "返回项目", exact: true }).click();
+  await expect(page).toHaveURL(/#\/start$/u);
+
+  await page.goto("/#/missing-page?token=do-not-copy");
+  await expect(page.getByRole("heading", { name: "这条路没有接到 TryRevive。" })).toBeVisible();
+  await expect(page.getByText("/missing-page", { exact: true })).toBeVisible();
+  await expect(page.getByText("do-not-copy", { exact: false })).toHaveCount(0);
+});
+
 test("a known goal can skip inference but still requires the stylus hold before work starts", async ({
   page
 }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.getByRole("button", { name: /我已经知道下一步，直接开始/ }).click();
   await page.getByLabel("项目名称").fill("黑客松报名");
   await page.getByLabel("现在只做什么").fill("填写项目简介");
@@ -176,7 +218,7 @@ test("a known goal can skip inference but still requires the stylus hold before 
 });
 
 test("settings exposes local backup controls without requiring an account", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.getByRole("button", { name: "打开项目与数据设置" }).click();
   await expect(page.getByRole("dialog")).toContainText("备份与恢复");
   await expect(page.getByRole("button", { name: "导出备份" })).toBeVisible();
@@ -199,7 +241,7 @@ test("privacy center explains the real data boundary without pretending web clou
 });
 
 test("an unreadable JSON backup cannot replace existing local projects", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page.getByLabel("所有还在心里的项目").fill("必须保留的现有项目");
   await page.getByRole("button", { name: "收下这 1 个项目" }).click();
@@ -224,7 +266,7 @@ test("an unreadable JSON backup cannot replace existing local projects", async (
 });
 
 test("multiple unfinished projects can be collected in one local intake", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page
     .getByLabel("所有还在心里的项目")
@@ -241,7 +283,7 @@ test("multiple unfinished projects can be collected in one local intake", async 
 test("local text materials become one editable draft without persisting the source", async ({
   page
 }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.locator('input[type="file"][multiple]').setInputFiles([
     {
       name: "README.md",
@@ -283,7 +325,7 @@ test("local text materials become one editable draft without persisting the sour
 test("a searchable local PDF becomes a draft while a scanned PDF stays explicit", async ({
   page
 }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   const input = page.locator('input[type="file"][accept*=".yaml"]');
 
   await input.setInputFiles({
@@ -315,7 +357,7 @@ test("a searchable local PDF becomes a draft while a scanned PDF stays explicit"
 test("initial intake exposes cloud choices safely and never asks for an API key", async ({
   page
 }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await expect(page.getByText("说一段话，或上传现有材料", { exact: true })).toBeVisible();
   await expect(page.getByText("当前不会上传任何内容")).toBeVisible();
   await expect(page.getByText(/仅在桌面版内测/)).toBeVisible();
@@ -335,7 +377,7 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
   await page.getByRole("button", { name: /踏实的骄傲/ }).click();
   await expect(page.getByRole("heading", { name: "这个项目已经完成" })).toBeVisible();
 
-  await page.getByRole("link", { name: "黑胶星球" }).first().click();
+  await page.getByRole("link", { name: "成果", exact: true }).click();
   await expect(page.getByRole("heading", { name: "黑胶星球" })).toBeVisible();
   await expect(page.getByText("课程作品集", { exact: true }).first()).toBeVisible();
   const planet = page.locator(".vinyl-planet-scene");
@@ -396,7 +438,7 @@ test("a completed project becomes a persistent playable and exportable vinyl rec
 });
 
 test("an abandoned project remains available in the black-hole history", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/#/start");
   await page.getByText("只先收纳多个项目名称", { exact: true }).click();
   await page.getByLabel("所有还在心里的项目").fill("不再参加的比赛");
   await page.getByRole("button", { name: "收下这 1 个项目" }).click();
@@ -407,7 +449,7 @@ test("an abandoned project remains available in the black-hole history", async (
   await page.getByRole("button", { name: /^放弃/u }).click();
   await expect(page.getByRole("heading", { name: "这个项目已经结束" })).toBeVisible();
 
-  await page.getByRole("link", { name: "黑胶星球" }).first().click();
+  await page.getByRole("link", { name: "成果", exact: true }).click();
   await expect(page.locator(".vinyl-planet-scene")).toHaveAttribute(
     "data-renderer",
     /webgl|fallback/
@@ -458,8 +500,8 @@ test("the 3D collection keeps one DOM selection source across projects and route
     await expect(history).toHaveAttribute("aria-pressed", "true");
   }
 
-  await page.getByRole("link", { name: "工作台", exact: true }).click();
-  await page.getByRole("link", { name: "黑胶星球", exact: true }).click();
+  await page.getByRole("link", { name: "项目", exact: true }).click();
+  await page.getByRole("link", { name: "成果", exact: true }).click();
   await expect(page.locator(".vinyl-planet-scene")).toHaveAttribute(
     "data-renderer",
     /webgl|fallback/

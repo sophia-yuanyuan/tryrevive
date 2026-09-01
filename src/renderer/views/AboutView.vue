@@ -1,5 +1,15 @@
+<script setup lang="ts">
+import { computed, inject } from "vue";
+import { routeLocationKey } from "vue-router";
+import { safeReturnPath } from "@/renderer/navigation";
+
+const route = inject(routeLocationKey);
+const returnTo = computed(() => safeReturnPath(route?.query.returnTo));
+const returnLabel = computed(() => (returnTo.value === "/" ? "返回首页" : "返回项目"));
+</script>
+
 <template>
-  <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-16">
+  <main id="main-content" class="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-16">
     <article class="stage-card prose-copy">
       <p class="eyebrow">关于 TryRevive</p>
       <h1 class="stage-title">让停滞项目重新有一个可继续的位置</h1>
@@ -21,7 +31,12 @@
           <p class="summary-value">留下实际结果，下次无需重新回忆全部背景。</p>
         </section>
       </div>
-      <RouterLink class="secondary-button mt-8 inline-flex" to="/">返回工作台</RouterLink>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <RouterLink class="primary-button inline-flex items-center" :to="returnTo">
+          <span>{{ returnLabel }}</span>
+        </RouterLink>
+        <RouterLink class="text-button inline-flex items-center" to="/help">查看帮助</RouterLink>
+      </div>
     </article>
   </main>
 </template>

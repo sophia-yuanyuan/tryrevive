@@ -71,7 +71,7 @@ async function saveMood(mood: ProjectMood): Promise<void> {
 </script>
 
 <template>
-  <main class="collection-page">
+  <main id="main-content" class="collection-page">
     <header class="collection-hero">
       <div>
         <p class="eyebrow">你的项目收藏空间</p>

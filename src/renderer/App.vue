@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
+import { useRoute, useRouter } from "vue-router";
 import {
   DialogClose,
   DialogContent,
@@ -12,15 +13,23 @@ import {
   DialogTrigger
 } from "reka-ui";
 import { useRevivalStore } from "@/renderer/stores/revival";
+import { returnPathFor } from "@/renderer/navigation";
 import { platform } from "@/renderer/platform/web";
 
 const store = useRevivalStore();
+const route = useRoute();
+const router = useRouter();
 const { activeProject, data, errorMessage, recoveryNotice, recoveryRequired, saveStatus } =
   storeToRefs(store);
 const settingsOpen = ref(false);
 const notice = ref("");
 const isFullScreen = ref(false);
 let unsubscribeFullScreen: () => void = () => undefined;
+
+const hasCollection = computed(() =>
+  data.value.projects.some((project) => ["completed", "abandoned"].includes(project.status))
+);
+const currentReturnPath = computed(() => returnPathFor(route));
 
 const saveLabel = computed(() => {
   if (saveStatus.value === "saving") return "正在保存";
@@ -70,15 +79,29 @@ async function runDataAction(action: "export" | "import"): Promise<void> {
 async function startNewProject(): Promise<void> {
   await store.prepareNewProject();
   settingsOpen.value = false;
+  await router.push("/start");
+}
+
+async function reviewInference(): Promise<void> {
+  await store.reviewInference();
+  settingsOpen.value = false;
+  await router.push("/start");
+}
+
+async function selectProject(projectId: string): Promise<void> {
+  await store.selectProject(projectId);
+  settingsOpen.value = false;
+  await router.push("/start");
 }
 </script>
 
 <template>
   <div class="app-shell min-h-screen">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
     <div class="ambient ambient-one" aria-hidden="true" />
     <div class="ambient ambient-two" aria-hidden="true" />
     <header class="app-header">
-      <RouterLink class="brand" to="/" aria-label="TryRevive 工作台">
+      <RouterLink class="brand" to="/" aria-label="TryRevive 首页">
         <span class="brand-mark" aria-hidden="true">T</span>
         <span>
           <strong class="block text-sm leading-none tracking-tight">TryRevive</strong>
@@ -89,8 +112,11 @@ async function startNewProject(): Promise<void> {
       </RouterLink>
 
       <nav class="app-nav" aria-label="主要页面">
-        <RouterLink to="/">工作台</RouterLink>
-        <RouterLink to="/collection">黑胶星球</RouterLink>
+        <RouterLink to="/start">项目</RouterLink>
+        <RouterLink v-if="hasCollection" to="/collection">成果</RouterLink>
+        <RouterLink :to="{ path: '/help', query: { returnTo: currentReturnPath } }">
+          帮助
+        </RouterLink>
       </nav>
 
       <div class="flex items-center gap-2">
@@ -142,7 +168,7 @@ async function startNewProject(): Promise<void> {
                     :class="{ 'project-row-active': !activeProject }"
                     type="button"
                     :disabled="saveStatus === 'saving'"
-                    @click="store.reviewInference().then(() => (settingsOpen = false))"
+                    @click="reviewInference"
                   >
                     <span class="min-w-0">
                       <strong class="block truncate text-sm font-semibold">
@@ -159,7 +185,7 @@ async function startNewProject(): Promise<void> {
                     :class="{ 'project-row-active': activeProject?.id === project.id }"
                     type="button"
                     :disabled="saveStatus === 'saving'"
-                    @click="store.selectProject(project.id).then(() => (settingsOpen = false))"
+                    @click="selectProject(project.id)"
                   >
                     <span class="min-w-0">
                       <strong class="block truncate text-sm font-semibold">{{
@@ -222,16 +248,17 @@ async function startNewProject(): Promise<void> {
               </div>
 
               <RouterLink
+                v-if="hasCollection"
                 class="text-button mt-6 inline-flex"
                 to="/collection"
                 @click="settingsOpen = false"
               >
-                打开黑胶星球
+                打开成果记录
               </RouterLink>
 
               <RouterLink
                 class="text-button ml-4 mt-6 inline-flex"
-                to="/about"
+                :to="{ path: '/about', query: { returnTo: currentReturnPath } }"
                 @click="settingsOpen = false"
               >
                 TryRevive 如何工作
@@ -239,7 +266,7 @@ async function startNewProject(): Promise<void> {
 
               <RouterLink
                 class="text-button ml-4 mt-6 inline-flex"
-                to="/privacy"
+                :to="{ path: '/privacy', query: { returnTo: currentReturnPath } }"
                 @click="settingsOpen = false"
               >
                 隐私与数据控制
@@ -256,6 +283,7 @@ async function startNewProject(): Promise<void> {
     </p>
     <main
       v-if="recoveryRequired"
+      id="main-content"
       class="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8"
     >
       <section class="stage-card" aria-labelledby="recovery-title">
@@ -281,7 +309,10 @@ async function startNewProject(): Promise<void> {
     <RouterView v-else />
     <footer class="px-4 pb-7 text-center text-xs leading-5 text-[var(--muted)]">
       TryRevive 不替代老师、同伴或专业支持；项目方向与完成状态由你决定。
-      <RouterLink class="ml-2 underline underline-offset-4" to="/privacy">
+      <RouterLink
+        class="ml-2 underline underline-offset-4"
+        :to="{ path: '/privacy', query: { returnTo: currentReturnPath } }"
+      >
         隐私与数据控制
       </RouterLink>
     </footer>

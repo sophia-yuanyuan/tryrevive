@@ -11,6 +11,7 @@ const { ready, activeProject, pendingInference } = storeToRefs(store);
 
 <template>
   <main
+    id="main-content"
     class="mx-auto w-full flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8"
     :class="activeProject ? 'max-w-5xl' : 'max-w-7xl'"
   >
