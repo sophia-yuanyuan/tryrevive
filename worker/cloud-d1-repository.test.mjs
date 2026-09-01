@@ -85,14 +85,20 @@ class SqliteD1 {
 async function createDatabase() {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
-  const first = await readFile(new URL("./migrations/0001_cloud_billing.sql", import.meta.url), "utf8");
-  const second = await readFile(new URL("./migrations/0002_cloud_ledger.sql", import.meta.url), "utf8");
+  const first = await readFile(
+    new URL("../database/migrations/d1/0001_cloud_billing.sql", import.meta.url),
+    "utf8"
+  );
+  const second = await readFile(
+    new URL("../database/migrations/d1/0002_cloud_ledger.sql", import.meta.url),
+    "utf8"
+  );
   const third = await readFile(
-    new URL("./migrations/0003_cloud_payments.sql", import.meta.url),
+    new URL("../database/migrations/d1/0003_cloud_payments.sql", import.meta.url),
     "utf8"
   );
   const fourth = await readFile(
-    new URL("./migrations/0004_cloud_analysis_limits.sql", import.meta.url),
+    new URL("../database/migrations/d1/0004_cloud_analysis_limits.sql", import.meta.url),
     "utf8"
   );
   database.exec(first);

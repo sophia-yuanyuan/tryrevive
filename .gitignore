@@ -38,3 +38,7 @@ resources/vendor/whisper/windows-x64/
 .wrangler/
 worker/wrangler.cloud.staging.toml
 worker/wrangler.cloud.production.toml
+
+# Flyway local credentials and generated state
+flyway.user.toml
+.flyway/

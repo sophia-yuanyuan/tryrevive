@@ -184,14 +184,17 @@ Copy-Item worker\wrangler.cloud.example.toml worker\wrangler.cloud.staging.toml
 
 这个本地配置已被部署手册定义为账户专属文件，不应提交。提交前每次用 `git status --short` 检查。
 
-### 6.2 应用四段 D1 迁移
+### 6.2 应用四段 D1 历史迁移
+
+D1 历史迁移统一保存在 `database/migrations/d1/`，由 Wrangler 配置中的
+`migrations_dir = "../database/migrations/d1"` 读取。不要重命名或修改已经应用的四个文件；新的 PostgreSQL/Flyway 迁移只写入 `database/migrations/postgresql/`，不能混入 D1 的 `d1_migrations` 历史。
 
 ```powershell
 npm exec wrangler -- d1 migrations list tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 npm exec wrangler -- d1 migrations apply tryrevive-cloud-staging --remote --config worker\wrangler.cloud.staging.toml
 ```
 
-通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql`、`0004_cloud_analysis_limits.sql` 都显示已应用。第四段只增加限额准入和不含账号/会话标识的 UTC 日总量；Cloudflare 会在应用迁移前创建备份，任何一段失败都不要手工跳号。
+通过：`0001_cloud_billing.sql`、`0002_cloud_ledger.sql`、`0003_cloud_payments.sql`、`0004_cloud_analysis_limits.sql` 都显示已应用。第四段只增加限额准入和不含账号/会话标识的 UTC 日总量；Cloudflare 会在应用迁移前创建备份，任何一段失败都不要手工跳号。完整数据库规范和 PostgreSQL 切换门槛见 [`database/README.md`](../../database/README.md)。
 
 ### 6.3 以“全部关闭”状态首次部署
 

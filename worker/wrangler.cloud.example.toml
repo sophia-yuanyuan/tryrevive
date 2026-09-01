@@ -29,7 +29,7 @@ STRIPE_CANCEL_URL = "https://tryrevive.online/#/payment/canceled"
 binding = "CLOUD_DB"
 database_name = "tryrevive-cloud"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
-migrations_dir = "migrations"
+migrations_dir = "../database/migrations/d1"
 
 [triggers]
 crons = ["*/10 * * * *"]
