@@ -6,14 +6,15 @@
   "use strict";
 
   const SCHEMA_VERSION = 2;
-  const PROJECT_STATUSES = Object.freeze(["brief", "running", "evidence", "completed", "paused"]);
+  const PROJECT_STATUSES = Object.freeze(["brief", "running", "evidence", "completed", "paused", "finished"]);
   const EVIDENCE_TRUST_LEVELS = Object.freeze(["claimed", "observed", "verified"]);
   const TRANSITIONS = Object.freeze({
     brief: ["running", "paused"],
     running: ["brief", "evidence", "paused"],
     evidence: ["running", "completed", "paused"],
-    completed: ["brief", "paused"],
-    paused: ["brief"]
+    completed: ["brief", "paused", "finished"],
+    paused: ["brief", "finished"],
+    finished: ["brief"]
   });
 
   function uid(prefix) {
