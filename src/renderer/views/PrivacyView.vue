@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
+import { routeLocationKey } from "vue-router";
+import { safeReturnPath } from "@/renderer/navigation";
 import { platform } from "@/renderer/platform/web";
 import type { CloudStatus } from "@/shared/cloud/contracts";
 
 const status = ref<CloudStatus | null>(null);
+const route = inject(routeLocationKey);
 const busy = ref<"export" | "source" | "account" | null>(null);
 const notice = ref("");
 const error = ref("");
 const deletePhrase = ref("");
+const returnTo = computed(() => safeReturnPath(route?.query.returnTo));
+const returnLabel = computed(() => (returnTo.value === "/" ? "返回首页" : "返回项目"));
 
 const canManageCloudData = computed(
   () => platform.kind === "desktop" && status.value?.authenticated === true
@@ -81,7 +86,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6 sm:py-16">
+  <main id="main-content" class="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6 sm:py-16">
     <article class="stage-card prose-copy">
       <p class="eyebrow">TryRevive 隐私中心</p>
       <h1 class="stage-title">你的项目原文不应该变成一笔糊涂账</h1>
@@ -231,8 +236,13 @@ onMounted(() => {
       </section>
 
       <div class="mt-9 flex flex-wrap gap-3">
-        <RouterLink class="secondary-button inline-flex" to="/">返回工作台</RouterLink>
-        <RouterLink class="text-button inline-flex items-center" to="/about">
+        <RouterLink class="primary-button inline-flex items-center" :to="returnTo">
+          <span>{{ returnLabel }}</span>
+        </RouterLink>
+        <RouterLink
+          class="text-button inline-flex items-center"
+          :to="{ path: '/about', query: { returnTo: '/privacy' } }"
+        >
           TryRevive 如何工作
         </RouterLink>
       </div>
